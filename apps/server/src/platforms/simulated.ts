@@ -1,4 +1,4 @@
-import type { RoomStats, ViewerEvent } from '@fluxion/shared';
+import type { RoomStats, ViewerEvent } from '@hyperion/shared';
 import type { PlatformAdapter } from './types.js';
 
 // Lets a host test their setup from the dashboard without going live.

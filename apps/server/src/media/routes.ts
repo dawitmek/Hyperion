@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { MAX_MEDIA_BYTES, MAX_MEDIA_TOTAL_BYTES, type MediaItem } from '@fluxion/shared';
-import { media } from '../db/schema.js';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { MAX_MEDIA_BYTES, MAX_MEDIA_TOTAL_BYTES, type MediaItem } from '@hyperion/shared';
+import { actions, hiddenMedia, media } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { sniff } from './sniff.js';
 
@@ -14,6 +14,7 @@ const listed = {
   mime: media.mime,
   size: media.size,
   createdAt: media.createdAt,
+  builtIn: sql<boolean>`${media.hostId} is null`,
 };
 const toItem = (row: Omit<MediaItem, 'createdAt'> & { createdAt: Date }): MediaItem => ({ ...row, createdAt: row.createdAt.getTime() });
 
@@ -24,9 +25,27 @@ export async function mediaRoutes(app: FastifyInstance) {
   // Uploads are the raw file as the request body, whatever type the browser says it is; sniff() decides.
   app.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: MAX_MEDIA_BYTES }, (_req, body, done) => done(null, body));
 
+  // The host's own files, newest first, then the built-in ones they haven't removed.
   app.get('/', async (req) =>
-    (await db.select(listed).from(media).where(eq(media.hostId, req.hostId)).orderBy(desc(media.createdAt))).map(toItem),
+    (
+      await db
+        .select(listed)
+        .from(media)
+        .where(
+          or(
+            eq(media.hostId, req.hostId),
+            and(isNull(media.hostId), sql`not exists (select 1 from ${hiddenMedia} h where h.host_id = ${req.hostId} and h.media_id = ${media.id})`),
+          ),
+        )
+        .orderBy(sql`${media.hostId} is null`, sql`case when ${media.hostId} is null then null else ${media.createdAt} end desc`, media.name)
+    ).map(toItem),
   );
+
+  // Brings back every built-in file this host removed.
+  app.delete('/hidden', async (req, reply) => {
+    await db.delete(hiddenMedia).where(eq(hiddenMedia.hostId, req.hostId));
+    return reply.code(204).send();
+  });
 
   app.post<{ Querystring: { name: string }; Body: Buffer }>(
     '/',
@@ -66,7 +85,13 @@ export async function mediaRoutes(app: FastifyInstance) {
       .delete(media)
       .where(and(eq(media.id, req.params.id), eq(media.hostId, req.hostId)))
       .returning({ id: media.id });
-    if (!deleted) return reply.code(404).send({ error: 'File not found' });
+    if (!deleted) {
+      // A built-in file stays for everyone: it's only hidden here, and this host's actions let go of it.
+      const [shared] = await db.select({ id: media.id }).from(media).where(and(eq(media.id, req.params.id), isNull(media.hostId)));
+      if (!shared) return reply.code(404).send({ error: 'File not found' });
+      await db.insert(hiddenMedia).values({ hostId: req.hostId, mediaId: shared.id }).onConflictDoNothing();
+      await db.update(actions).set({ mediaId: null }).where(and(eq(actions.hostId, req.hostId), eq(actions.mediaId, shared.id)));
+    }
     await app.live.reload(req.hostId);
     return reply.code(204).send();
   });

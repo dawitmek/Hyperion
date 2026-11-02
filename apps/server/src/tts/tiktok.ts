@@ -1,4 +1,4 @@
-import { TIKTOK_VOICES } from '@fluxion/shared';
+import { TIKTOK_VOICES } from '@hyperion/shared';
 
 // TikTok's own text-to-speech, the endpoint its app uses. It's unofficial: it needs a signed-in TikTok
 // session (the sessionid cookie) and may change without notice. The host signs in from the companion app.

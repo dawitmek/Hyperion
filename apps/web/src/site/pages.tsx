@@ -86,7 +86,7 @@ const FEATURES: { title: string; text: string; points: string[]; art: ReactNode 
   },
   {
     title: 'Safe by default',
-    text: 'Chat is unpredictable. Fluxion is built so it can’t take over your PC.',
+    text: 'Chat is unpredictable. Hyperion is built so it can’t take over your PC.',
     points: [
       'A cap on key presses per second, set by you.',
       'A cooldown per viewer on each command.',
@@ -137,7 +137,7 @@ export function HowItWorksPage() {
             <div>
               <h2>Create your account</h2>
               <p>
-                Sign up with an email and password, then add your TikTok username in Settings. Fluxion reads your public LIVE
+                Sign up with an email and password, then add your TikTok username in Settings. Hyperion reads your public LIVE
                 chat by username; it never asks for your TikTok password.
               </p>
             </div>
@@ -190,7 +190,7 @@ export function HowItWorksPage() {
 export function SelfHostingPage() {
   return (
     <SiteLayout>
-      <PageHero title="Run Fluxion on your own server">
+      <PageHero title="Run Hyperion on your own server">
         One container runs the server, dashboard and overlay; a second runs Postgres. Your settings, API keys and leaderboard
         stay on your machine.
       </PageHero>
@@ -202,13 +202,13 @@ export function SelfHostingPage() {
               <p>You need Docker and Git. Migrations run on startup.</p>
               <pre className="s-code">
                 <code>
-                  git clone {GITHUB_URL} && cd Fluxion{'\n'}cp .env.example .env{'\n'}
+                  git clone {GITHUB_URL} && cd Hyperion{'\n'}cp .env.example .env{'\n'}
                   <span className="c"># edit .env: set POSTGRES_PASSWORD, and SECRETS_KEY to: openssl rand -base64 32</span>
                   {'\n'}docker compose -f docker/compose.yml --env-file .env up -d --build
                 </code>
               </pre>
               <p>
-                Fluxion is now on <code>http://127.0.0.1:3000</code>. Update with <code>git pull</code> and the same command.
+                Hyperion is now on <code>http://127.0.0.1:3000</code>. Update with <code>git pull</code> and the same command.
               </p>
             </div>
           </li>
@@ -221,7 +221,7 @@ export function SelfHostingPage() {
               </p>
               <pre className="s-code">
                 <code>
-                  fluxion.example.com {'{'}
+                  hyperion.example.com {'{'}
                   {'\n'}
                   {'  '}reverse_proxy 127.0.0.1:3000{'\n'}
                   {'}'}
@@ -254,13 +254,13 @@ export function SelfHostingPage() {
                   </tr>
                   <tr>
                     <td>
-                      <code>FLUXION_BIND</code>
+                      <code>HYPERION_BIND</code>
                     </td>
                     <td>Interface to publish on; 127.0.0.1 by default, 0.0.0.0 for your network</td>
                   </tr>
                   <tr>
                     <td>
-                      <code>FLUXION_PORT</code>
+                      <code>HYPERION_PORT</code>
                     </td>
                     <td>Published port, 3000 by default</td>
                   </tr>
@@ -286,8 +286,8 @@ export function SelfHostingPage() {
 }
 
 const QUESTIONS: [string, ReactNode][] = [
-  ['Is Fluxion free?', 'Yes. Fluxion is free and open source under the GPL-3.0. The only optional cost is a cloud voice provider, if you choose to use your own Google, Azure or ElevenLabs key.'],
-  ['Is this made by TikTok?', 'No. Fluxion is an independent project and is not affiliated with TikTok. It reads your public LIVE chat by username, the same way other LIVE tools do.'],
+  ['Is Hyperion free?', 'Yes. Hyperion is free and open source under the GPL-3.0. The only optional cost is a cloud voice provider, if you choose to use your own Google, Azure or ElevenLabs key.'],
+  ['Is this made by TikTok?', 'No. Hyperion is an independent project and is not affiliated with TikTok. It reads your public LIVE chat by username, the same way other LIVE tools do.'],
   ['Do I need my TikTok password?', 'No. You only enter your TikTok username. You must already be live on TikTok when you connect.'],
   [
     'Which games work?',
@@ -388,7 +388,7 @@ export function DownloadPage() {
             <div>
               <h2>Mac only: allow key presses</h2>
               <p>
-                macOS asks for Accessibility permission so the companion can press keys. Turn it on for Fluxion Companion in
+                macOS asks for Accessibility permission so the companion can press keys. Turn it on for Hyperion Companion in
                 System Settings, Privacy &amp; Security, Accessibility.
               </p>
             </div>
@@ -404,7 +404,7 @@ export function DownloadPage() {
           </p>
           <pre className="s-code">
             <code>
-              git clone {GITHUB_URL} && cd Fluxion{'\n'}npm ci{'\n'}npm run tauri build -w apps/companion
+              git clone {GITHUB_URL} && cd Hyperion{'\n'}npm ci{'\n'}npm run tauri build -w apps/companion
             </code>
           </pre>
         </div>

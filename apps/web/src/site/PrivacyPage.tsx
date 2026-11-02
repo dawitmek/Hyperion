@@ -3,16 +3,16 @@ import { Link } from '../router';
 import { PageHero } from './pages';
 import { GITHUB_URL, SiteLayout } from './SiteLayout';
 
-// What Fluxion stores, where it goes and how long it stays, written from what the code does. Keep it in step with
+// What Hyperion stores, where it goes and how long it stays, written from what the code does. Keep it in step with
 // the server: the database schema, the TTS engines, the companion, and anything new that leaves the server.
 
 const UPDATED = 'October 30, 2026';
 
 const GLANCE: [string, string][] = [
-  ['No ads, analytics or trackers', 'Fluxion doesn’t load anyone else’s scripts, and the site’s font is served by Fluxion itself.'],
+  ['No ads, analytics or trackers', 'Hyperion doesn’t load anyone else’s scripts, and the site’s font is served by Hyperion itself.'],
   ['Secrets are locked up', 'Passwords are hashed. Cloud voice keys and TikTok sessions are encrypted and never sent back to a browser.'],
-  ['Only what the stream needs', 'Fluxion keeps your settings and what happened on your streams. It never asks for your TikTok password.'],
-  ['You can run it yourself', 'Self-host Fluxion and every piece of data on this page stays on your own server.'],
+  ['Only what the stream needs', 'Hyperion keeps your settings and what happened on your streams. It never asks for your TikTok password.'],
+  ['You can run it yourself', 'Self-host Hyperion and every piece of data on this page stays on your own server.'],
 ];
 
 const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
@@ -22,12 +22,12 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     body: (
       <>
         <p>
-          Fluxion is free, open-source software. Whoever runs the Fluxion server you sign in to stores your data and is
-          responsible for it. If you <Link href="/self-hosting">host Fluxion yourself</Link>, that’s you, and nothing on this
+          Hyperion is free, open-source software. Whoever runs the Hyperion server you sign in to stores your data and is
+          responsible for it. If you <Link href="/self-hosting">host Hyperion yourself</Link>, that’s you, and nothing on this
           page reaches anyone else unless you turn on a service that sends it (listed under Where data goes).
         </p>
         <p>
-          This page describes what the Fluxion software does. Because the code is public, you can check every statement here
+          This page describes what the Hyperion software does. Because the code is public, you can check every statement here
           against it on <a href={GITHUB_URL}>GitHub</a>.
         </p>
       </>
@@ -55,7 +55,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
             </tr>
             <tr>
               <td>Your TikTok username</td>
-              <td>To read your LIVE chat. Fluxion only needs the username, never your TikTok password.</td>
+              <td>To read your LIVE chat. Hyperion only needs the username, never your TikTok password.</td>
               <td>Until you change or clear it</td>
             </tr>
             <tr>
@@ -111,15 +111,18 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     body: (
       <>
         <p>
-          Viewers don’t sign up for Fluxion. While you’re live, it receives your public LIVE chat from TikTok, the same events
+          Viewers don’t sign up for Hyperion. While you’re live, it receives your public LIVE chat from TikTok, the same events
           anyone watching can see. From those it keeps:
         </p>
         <ul className="s-checks">
           <li>
             Stream history: each comment (with its text), gift, like, follow, share, join, subscription and emote, with the
-            viewer’s TikTok username and the time, plus what Fluxion did in response (keys pressed, votes, turns, levels).
+            viewer’s TikTok username, display name and the time, plus what Hyperion did in response (keys pressed, votes, turns, levels).
           </li>
-          <li>Leaderboard totals per viewer: commands, gifts, XP and points. You can reset these from the dashboard.</li>
+          <li>
+            Leaderboard totals per viewer: commands, gifts, XP and points, with their display name and a link to their TikTok profile picture. You can
+            reset these from the dashboard. The pictures load directly from TikTok.
+          </li>
         </ul>
         <p>
           Viewer usernames and alert text appear on your overlay, so treat your overlay link like a password: anyone with it
@@ -133,11 +136,12 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'Where data goes',
     body: (
       <>
-        <p>Fluxion sends data off the server only to these services, and only when you use the feature that needs them:</p>
+        <p>Hyperion sends data off the server only to these services, and only when you use the feature that needs them:</p>
         <ul className="s-checks">
           <li>
             <strong>TikTok</strong>, to receive your LIVE chat. The connection goes through Euler Stream’s signing service,
-            which the open-source TikTok LIVE library Fluxion uses relies on to connect. It sees the username you stream from.
+            which the open-source TikTok LIVE library Hyperion uses relies on to connect. It sees the username you stream from.
+            The gift pictures in Analytics load directly from TikTok, so TikTok sees those requests from your browser.
           </li>
           <li>
             <strong>TikTok’s text-to-speech</strong>, when you use TikTok voices: the chat line being read aloud, sent with your
@@ -153,7 +157,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
           </li>
         </ul>
         <p>
-          The Piper and eSpeak voices run on the Fluxion server itself, so chat read with them goes nowhere else. Browser
+          The Piper and eSpeak voices run on the Hyperion server itself, so chat read with them goes nowhere else. Browser
           voices run on the PC showing your overlay; some browsers send text to their maker for online voices.
         </p>
       </>
@@ -176,7 +180,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
         </p>
         <p>
           If you sign in to TikTok in the companion, the sign-in happens on tiktok.com in a separate window. The companion
-          takes only TikTok’s session cookie and sends it to your Fluxion server; the window keeps TikTok’s cookies on your
+          takes only TikTok’s session cookie and sends it to your Hyperion server; the window keeps TikTok’s cookies on your
           PC, like a browser would.
         </p>
       </>
@@ -188,7 +192,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     body: (
       <ul className="s-checks">
         <li>
-          <code>fluxion_session</code>: one cookie that keeps you signed in. It can’t be read by scripts and lasts 30 days or
+          <code>hyperion_session</code>: one cookie that keeps you signed in. It can’t be read by scripts and lasts 30 days or
           until you log out.
         </li>
         <li>The dashboard remembers in your browser whether you collapsed the activity feed.</li>
@@ -201,7 +205,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'Server logs',
     body: (
       <p>
-        Like most web servers, the Fluxion server logs each request it handles, with the time, the address (IP) it came from
+        Like most web servers, the Hyperion server logs each request it handles, with the time, the address (IP) it came from
         and the page or API it asked for. Sign-up and login attempts are counted per address for a minute to slow down
         password guessing. How long logs are kept is up to whoever runs the server.
       </p>
@@ -229,14 +233,14 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
       <ul className="s-checks">
         <li>Change or clear your TikTok username, voice settings and API key in the dashboard at any time.</li>
         <li>
-          There’s no TikTok sign-out button in Fluxion yet. To end the session the server holds, log that device out in
+          There’s no TikTok sign-out button in Hyperion yet. To end the session the server holds, log that device out in
           TikTok’s own settings; the server’s copy then stops working. Whoever runs the server can also remove it.
         </li>
         <li>Remove a paired PC from the Companion page; it’s disconnected at once.</li>
         <li>Delete commands, actions, uploads, goals and profiles, and reset the leaderboard, from the dashboard.</li>
         <li>
           The dashboard can’t delete your whole account or your stream history yet. To have them removed, ask whoever runs
-          your Fluxion server; deleting an account removes everything listed on this page with it.
+          your Hyperion server; deleting an account removes everything listed on this page with it.
         </li>
       </ul>
     ),
@@ -246,7 +250,7 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'Changes and questions',
     body: (
       <p>
-        When Fluxion starts storing or sending something new, this page changes with it, and the date below moves. Questions
+        When Hyperion starts storing or sending something new, this page changes with it, and the date below moves. Questions
         about the software are welcome as an issue on <a href={`${GITHUB_URL}/issues`}>GitHub</a>; questions about your data on
         a particular server go to whoever runs it.
       </p>
@@ -258,7 +262,7 @@ export function PrivacyPage() {
   return (
     <SiteLayout>
       <PageHero title="Your privacy">
-        What Fluxion stores, where it goes, and how to remove it. Written from what the code actually does.
+        What Hyperion stores, where it goes, and how to remove it. Written from what the code actually does.
       </PageHero>
       <div className="s-wrap">
         <div className="s-privacy-glance">

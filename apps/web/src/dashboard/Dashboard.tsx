@@ -41,7 +41,7 @@ const SECTIONS: Section[][] = [
   ],
   [
     { path: '/dashboard/companion', label: 'Companion', blurb: 'The app on your gaming PC that presses the keys.', icon: 'companion', hue: 'orange', page: CompanionPage },
-    { path: '/dashboard/overlay', label: 'Stream overlay', blurb: 'The browser source that puts Fluxion on your stream.', icon: 'overlay', hue: 'sky', page: OverlayPage },
+    { path: '/dashboard/overlay', label: 'Stream overlay', blurb: 'The browser source that puts Hyperion on your stream.', icon: 'overlay', hue: 'sky', page: OverlayPage },
     { path: '/dashboard/settings', label: 'Settings', blurb: 'Your TikTok account, limits, appearance and login.', icon: 'settings', hue: 'muted', page: SettingsPage },
   ],
 ];
@@ -92,7 +92,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
       <div className="mobile-bar">
         <Link href="/dashboard" className="brand">
           <Logo size={28} />
-          Fluxion
+          Hyperion
         </Link>
         {status.live && <span className="on-air">On air</span>}
         <ModeToggle host={host} refreshHost={refreshHost} />
@@ -105,7 +105,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
         {/* The logo keeps you in the app; the public site is reached by its own address. */}
         <Link href="/dashboard" className="brand">
           <Logo />
-          Fluxion
+          Hyperion
         </Link>
         {SECTIONS.map((group, i) => (
           <div key={i} className="nav-group">
@@ -137,7 +137,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
         </div>
         <div className="topbar">
           <span className="crumbs">
-            <span>Fluxion</span>
+            <span>Hyperion</span>
             <span>{host.profileName} profile</span>
             <span>{section.label}</span>
           </span>
@@ -153,7 +153,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
         <ViewerContext.Provider value={setViewer}>
           {/* Keyed by profile so switching profiles reloads everything that belongs to one. */}
           <Page key={host.profileId} host={host} refreshHost={refreshHost} status={status} setStatus={setStatus} feed={feed} />
-          {viewer && <ViewerPanel viewer={viewer} onClose={closeViewer} />}
+          {viewer && <ViewerPanel key={viewer} viewer={viewer} live={status.live} onClose={closeViewer} />}
         </ViewerContext.Provider>
       </main>
     </div>

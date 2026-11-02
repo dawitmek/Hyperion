@@ -24,9 +24,11 @@ export async function sendProfileToCompanions(app: FastifyInstance, hostId: stri
 export async function sendCommandsToCompanions(app: FastifyInstance, hostId: string, profileId?: string) {
   const id = profileId ?? (await activeProfile(app.db, hostId)).id;
   const rows = await app.db
-    .select({ keyword: commands.keyword, key: commands.key, enabled: commands.enabled })
+    .select({ keyword: commands.keyword, key: commands.key, enabled: commands.enabled, macro: commands.macro, chain: commands.chain })
     .from(commands)
     .where(eq(commands.profileId, id))
     .orderBy(commands.position);
-  app.hub.sendToCompanions(hostId, { type: 'commands', commands: rows });
+  // A chain's steps are commands of their own, so it has nothing for a PC to approve.
+  const list = rows.filter((c) => !c.chain).map(({ chain: _chain, ...c }) => c);
+  app.hub.sendToCompanions(hostId, { type: 'commands', commands: list });
 }

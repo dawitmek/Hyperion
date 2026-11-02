@@ -1,9 +1,10 @@
 import type { WebSocket } from 'ws';
-import type { ServerToCompanion, ServerToOverlay } from '@fluxion/shared';
+import type { ServerToCompanion, ServerToOverlay } from '@hyperion/shared';
 
 // Tracks open sockets per host. In-memory: one server process owns its hosts' sockets.
 export class Hub {
   private companions = new Map<string, Map<string, WebSocket>>(); // hostId -> companionId -> socket
+  private macros = new Map<string, string[]>(); // companionId -> names of the macros on that PC, while connected
   // hostId -> socket -> its screen, and whether it's the dashboard watching rather than a real overlay
   private overlays = new Map<string, Map<WebSocket, { screenId: string; dashboard: boolean }>>();
 
@@ -13,8 +14,20 @@ export class Hub {
     sockets.get(companionId)?.close(4002, 'Replaced by a newer connection');
     sockets.set(companionId, socket);
     socket.on('close', () => {
-      if (sockets.get(companionId) === socket) sockets.delete(companionId);
+      if (sockets.get(companionId) === socket) {
+        sockets.delete(companionId);
+        this.macros.delete(companionId);
+      }
     });
+  }
+
+  setMacros(companionId: string, names: string[]) {
+    this.macros.set(companionId, names);
+  }
+
+  macrosOf(hostId: string) {
+    const ids = [...(this.companions.get(hostId)?.keys() ?? [])];
+    return [...new Set(ids.flatMap((id) => this.macros.get(id) ?? []))].sort();
   }
 
   addOverlay(hostId: string, screenId: string, socket: WebSocket, dashboard = false) {
@@ -51,7 +64,7 @@ export class Hub {
   sendToScreen(hostId: string, screenId: string, message: ServerToOverlay | null) {
     const sockets = [...(this.overlays.get(hostId) ?? [])].filter(([, o]) => o.screenId === screenId).map(([socket]) => socket);
     if (message) send(sockets, message);
-    else for (const socket of sockets) socket.close(4001, 'Screen deleted');
+    else for (const socket of sockets) socket.close(4001, 'Screen deleted or link replaced');
   }
 }
 

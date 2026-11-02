@@ -9,7 +9,7 @@ const mediaFile = aliasedTable(media, 'media_file');
 // The host's actions that apply with this profile, as the engine needs them.
 export async function loadActionRules(db: Db, hostId: string, profileId: string, actionId?: string): Promise<ActionRule[]> {
   const rows = await db
-    .select({ action: actions, keyword: commands.keyword, mediaKind: mediaFile.kind, defaultStyle: hosts.alertStyle })
+    .select({ action: actions, keyword: commands.keyword, mediaKind: mediaFile.kind, defaultStyle: hosts.alertStyle, secondStyle: hosts.alertStyle2 })
     .from(actions)
     .innerJoin(hosts, eq(hosts.id, actions.hostId))
     .leftJoin(commands, and(eq(commands.id, actions.keyCommandId), eq(commands.profileId, profileId)))
@@ -22,12 +22,13 @@ export async function loadActionRules(db: Db, hostId: string, profileId: string,
       ),
     )
     .orderBy(actions.position);
-  return rows.map(({ action: a, keyword, mediaKind, defaultStyle }) => ({
+  return rows.map(({ action: a, keyword, mediaKind, defaultStyle, secondStyle }) => ({
     id: a.id,
     trigger: a.trigger,
     giftName: a.giftName,
     minDiamonds: a.minDiamonds,
     likeStep: a.likeStep,
+    likeGrowth: a.likeGrowth,
     command: a.command,
     goalId: a.goalId,
     audience: a.audience,
@@ -41,9 +42,14 @@ export async function loadActionRules(db: Db, hostId: string, profileId: string,
     media: a.mediaId && mediaKind ? { id: a.mediaId, kind: mediaKind } : null,
     speak: a.speak,
     durationMs: a.durationMs,
+    effect: a.effect,
+    effectAmount: a.effectAmount,
+    effectColor: a.effectColor,
+    effectSpeed: a.effectSpeed,
+    alertFx: a.alertEffect ? { effect: a.alertEffect, emoji: a.alertEmoji, shape: a.alertShape, color: a.alertEffectColor, amount: a.alertEffectAmount, speed: a.alertEffectSpeed } : null,
     alertPos: a.alertX !== null && a.alertY !== null ? { x: a.alertX, y: a.alertY } : null,
     alertScale: a.alertScale,
-    alertStyle: a.alertStyle ?? defaultStyle, // its own look, or the host's default
+    alertStyle: a.alertStyle ?? (a.useAlertStyle2 ? secondStyle : null) ?? defaultStyle, // its own look, or the host's second or main one
     keyword: keyword ?? null,
     repeatWithCount: a.repeatWithCount,
     points: a.points,

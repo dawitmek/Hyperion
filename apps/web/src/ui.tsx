@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { formatKey, keyProblem, type Modifier } from '@fluxion/shared';
+import { formatKey, keyProblem, type Modifier } from '@hyperion/shared';
 import { ApiError } from './api';
 import { Icon, type IconName } from './icons';
 
@@ -11,6 +11,77 @@ export function useError() {
     return action().catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
   };
   return { error, guard, setError };
+}
+
+// A viewer's profile picture, or their initial when there's none or the link no longer works.
+export function ViewerAvatar({ name, src, className = '' }: { name: string; src?: string | null; className?: string }) {
+  const [broken, setBroken] = useState<string | null>(null);
+  return (
+    <span className={`viewer-picture ${className}`} aria-hidden="true">
+      {src && src !== broken ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(src)} /> : [...name][0]?.toUpperCase()}
+    </span>
+  );
+}
+
+// A button that asks first, in a small bubble beside it. Use this rather than the browser's confirm(). Escape, Cancel or
+// a click elsewhere backs out.
+export function ConfirmButton({
+  className,
+  label,
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  children,
+}: {
+  className: string;
+  label?: string; // for a button that's only an icon
+  title?: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLSpanElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    cancel.current?.focus();
+    const away = (e: PointerEvent) => anchor.current?.contains(e.target as Node) || setOpen(false);
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    window.addEventListener('pointerdown', away);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('pointerdown', away);
+      window.removeEventListener('keydown', key);
+    };
+  }, [open]);
+  return (
+    <span className="confirm-anchor" ref={anchor}>
+      <button ref={trigger} type="button" className={className} aria-label={label} title={title} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {children}
+      </button>
+      {open && (
+        <span className="confirm-bubble" role="alertdialog" aria-label={message}>
+          <span>{message}</span>
+          <span className="confirm-actions">
+            <button ref={cancel} type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => (setOpen(false), onConfirm())}>
+              {confirmLabel}
+            </button>
+          </span>
+        </span>
+      )}
+    </span>
+  );
 }
 
 // The theme's hues; each has an ink, a soft background and a fill (see theme.css).
@@ -230,6 +301,15 @@ export function Scrubber({
     clearTimeout(timer.current);
     timer.current = window.setTimeout(() => commit(latest.current), SETTLE_MS);
   };
+  // However a drag ends. Without this a release the track never heard about would leave it following the mouse.
+  const endDrag = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    setDragging(false);
+    if (d.moved) commit(latest.current);
+    else setEditing(String(shown));
+  };
   const type = () => {
     const n = Number(editing);
     setEditing(null);
@@ -277,19 +357,14 @@ export function Scrubber({
           onPointerMove={(e) => {
             const d = drag.current;
             if (!d) return;
+            if (e.buttons === 0) return endDrag(); // released somewhere that didn't tell us
             const dx = e.clientX - d.x;
             if (!d.moved && Math.abs(dx) < 4) return; // a click wobbles a little; that's not a drag
             if (!d.moved) (d.moved = true), setDragging(true);
             show(d.start + Math.round(dx / PX_PER_STEP) * step);
           }}
-          onPointerUp={() => {
-            const d = drag.current;
-            drag.current = null;
-            if (!d) return;
-            setDragging(false);
-            if (d.moved) commit(latest.current);
-            else setEditing(String(shown));
-          }}
+          onPointerUp={endDrag}
+          onLostPointerCapture={endDrag}
           onPointerCancel={() => {
             drag.current = null;
             setDragging(false);

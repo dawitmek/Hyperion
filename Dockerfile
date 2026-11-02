@@ -1,4 +1,4 @@
-# Fluxion server + dashboard + overlay in one image. The companion app is not part of it.
+# Hyperion server + dashboard + overlay in one image. The companion app is not part of it.
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
@@ -57,6 +57,7 @@ COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/server/package.json apps/server/
 COPY --from=build /app/apps/server/dist apps/server/dist
 COPY --from=build /app/apps/server/drizzle apps/server/drizzle
+COPY --from=build /app/apps/server/assets apps/server/assets
 COPY --from=build /app/apps/web/dist apps/web/dist
 USER node
 EXPOSE 3000

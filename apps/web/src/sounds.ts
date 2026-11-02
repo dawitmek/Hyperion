@@ -1,4 +1,4 @@
-import type { AlertSound } from '@fluxion/shared';
+import type { AlertSound } from '@hyperion/shared';
 
 // Alert sounds, synthesized with Web Audio so there are no audio files to host or license.
 type Note = { freq: number; start: number; length: number; type?: OscillatorType; gain?: number };

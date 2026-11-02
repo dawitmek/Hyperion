@@ -1,5 +1,6 @@
 import { bigserial, boolean, customType, index, integer, jsonb, pgTable, primaryKey, real, serial, text, timestamp, unique, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
-import type { ActionTrigger, ActivityKind, AlertPosition, AlertSound, AlertStyle, Audience, CloudProvider, GoalMetric, MediaKind, Mode, ScreenWidget, TtsEngine, TtsMode, UiMode, UiTheme, UiThemeStyle, VoiceEffect } from '@fluxion/shared';
+import type { ActionEffect, AlertEffect, AlertShape, ChainStep, GoalRaise, LiveLayout, WidgetStyle } from '@hyperion/shared';
+import type { ActionTrigger, ActivityKind, AlertPosition, AlertSound, AlertStyle, Audience, CloudProvider, GoalMetric, MediaKind, Mode, ScreenWidget, TtsEngine, TtsMode, UiMode, UiTheme, UiThemeStyle, VoiceEffect } from '@hyperion/shared';
 
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 
@@ -25,10 +26,15 @@ export const hosts = pgTable('hosts', {
   ttsMode: text('tts_mode').$type<TtsMode>().notNull().default('prefix'),
   ttsPrefix: text('tts_prefix').notNull().default('!tts'),
   ttsMaxLength: integer('tts_max_length').notNull().default(150),
+  ttsMaxWords: integer('tts_max_words').notNull().default(0), // 0: no limit
+  ttsUnlockGifts: jsonb('tts_unlock_gifts').$type<string[]>().notNull().default([]), // with any, only viewers who sent one are read
+  ttsUnlockMinutes: integer('tts_unlock_minutes').notNull().default(0), // per gift; 0: the rest of the stream
+  ttsTemplate: text('tts_template').notNull().default('{viewer} says {text}'),
   ttsCooldownMs: integer('tts_cooldown_ms').notNull().default(15000), // per viewer
+  ttsAutoMaxViewers: integer('tts_auto_max_viewers').notNull().default(25), // auto mode: all chat up to this many viewers
   ttsMinLevel: integer('tts_min_level').notNull().default(1), // only enforced with progression on
   ttsBlockedWords: text('tts_blocked_words').notNull().default(''), // comma-separated
-  ttsEngine: text('tts_engine').$type<TtsEngine>().notNull().default('tiktok'), // falls back to eSpeak until a TikTok session works
+  ttsEngine: text('tts_engine').$type<TtsEngine>().notNull().default('tiktok'), // falls back to Piper, then eSpeak, until a TikTok session works
   ttsVoice: text('tts_voice'), // browser engine: a browser voice name; null means the overlay's default
   ttsEspeakVoice: text('tts_espeak_voice').notNull().default('en-us'),
   ttsPiperVoice: text('tts_piper_voice'), // a model name; null means the server's first voice
@@ -43,9 +49,11 @@ export const hosts = pgTable('hosts', {
   ttsTiktokSession: text('tts_tiktok_session'),
   ttsTiktokVoice: text('tts_tiktok_voice'), // a TIKTOK_VOICES id; null means the first
   uiTheme: text('ui_theme').$type<UiTheme>().notNull().default('default'), // the dashboard's and companion's look
-  uiThemeStyle: text('ui_theme_style').$type<UiThemeStyle>().notNull().default('full'),
+  uiThemeStyle: text('ui_theme_style').$type<UiThemeStyle>().notNull().default('colors'),
   uiMode: text('ui_mode').$type<UiMode>().notNull().default('system'), // light or dark, or the system's
+  liveLayout: jsonb('live_layout').$type<LiveLayout>(), // the dashboard Live page's cards; null: DEFAULT_LIVE_LAYOUT
   alertStyle: jsonb('alert_style').$type<AlertStyle>(), // the look of alerts whose action has none; null: DEFAULT_ALERT_STYLE
+  alertStyle2: jsonb('alert_style_2').$type<AlertStyle>(), // a second look actions can share; null: same as alertStyle
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -79,7 +87,9 @@ export const commands = pgTable(
     hostId: uuid('host_id').notNull().references(() => hosts.id, { onDelete: 'cascade' }),
     profileId: uuid('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }),
     keyword: text('keyword').notNull(), // stored lowercase
-    key: text('key').notNull(),
+    key: text('key').notNull(), // empty for a macro or a chain
+    macro: text('macro'), // the name of a macro recorded on the companion
+    chain: jsonb('chain').$type<ChainStep[]>(), // other commands to run instead of a key
     holdMs: integer('hold_ms').notNull(),
     cooldownMs: integer('cooldown_ms').notNull(),
     enabled: boolean('enabled').notNull().default(true),
@@ -105,24 +115,36 @@ export const actions = pgTable(
     giftName: text('gift_name'), // gift: only this gift (lowercase); null is any gift
     minDiamonds: integer('min_diamonds'), // gift: only when the gift (times its streak) is worth at least this
     likeStep: integer('like_step'), // likes
+    likeGrowth: real('like_growth'), // likes: each target this many times the last; null: every likeStep
     command: text('command'), // command: lowercase, e.g. "!dance"
     audience: text('audience').$type<Audience>().notNull().default('everyone'),
     audienceViewer: text('audience_viewer'), // audience 'viewer' only
     cooldownMs: integer('cooldown_ms').notNull().default(0), // for everyone
     viewerCooldownMs: integer('viewer_cooldown_ms').notNull().default(0),
     random: boolean('random').notNull().default(false), // of the random actions an event matches, only one runs
-    // The alert. Nothing is shown when text, sound, sound file and media are all empty.
+    // The alert. Nothing is shown when text, sound, sound file, media and alert animation are all empty.
     text: text('text'),
     sound: text('sound').$type<AlertSound>(),
     soundMediaId: uuid('sound_media_id').references(() => media.id, { onDelete: 'set null' }),
     mediaId: uuid('media_id').references(() => media.id, { onDelete: 'set null' }),
     speak: boolean('speak').notNull().default(false), // read the text aloud
     durationMs: integer('duration_ms').notNull().default(5000),
+    effect: text('effect').$type<ActionEffect>(), // a full-screen animation; null: none
+    effectAmount: integer('effect_amount').notNull().default(3),
+    effectColor: text('effect_color'), // null: the animation's own colors
+    effectSpeed: integer('effect_speed').notNull().default(100), // percent of normal
+    alertEffect: text('alert_effect').$type<AlertEffect>(), // an animation around the alert; null: none
+    alertEmoji: text('alert_emoji').notNull().default('🎉'),
+    alertShape: text('alert_shape').$type<AlertShape>().notNull().default('star'),
+    alertEffectColor: text('alert_effect_color'), // null: the alert look's color
+    alertEffectAmount: integer('alert_effect_amount').notNull().default(3),
+    alertEffectSpeed: integer('alert_effect_speed').notNull().default(100), // percent of normal
     // Where the alert shows, placed by hand: its middle, in percent of the screen. Both null: the screen's alert position.
     alertX: real('alert_x'),
     alertY: real('alert_y'),
     alertScale: integer('alert_scale').notNull().default(100), // percent, on top of the screen's size
     alertStyle: jsonb('alert_style').$type<AlertStyle>(), // null: DEFAULT_ALERT_STYLE
+    useAlertStyle2: boolean('use_alert_style_2').notNull().default(false), // with no alertStyle: the host's second look
     keyCommandId: uuid('key_command_id').references(() => commands.id, { onDelete: 'set null' }),
     repeatWithCount: boolean('repeat_with_count').notNull().default(false), // gift streaks press the key once per gift
     points: integer('points').notNull().default(0), // given to the viewer; only with points on
@@ -144,6 +166,8 @@ export const viewerStats = pgTable(
     gifts: integer('gifts').notNull().default(0),
     xp: integer('xp').notNull().default(0),
     points: integer('points').notNull().default(0), // balance: earned minus spent, never below 0
+    avatarUrl: text('avatar_url'), // a link to their profile picture, from the last time they did something that counts
+    displayName: text('display_name'), // likewise; viewerId is what identifies them
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.hostId, t.streamer, t.viewerId] })],
@@ -178,6 +202,7 @@ export const streams = pgTable(
     tiktokUsername: text('tiktok_username'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp('ended_at', { withTimezone: true }), // null while live
+    peakViewers: integer('peak_viewers'), // the most watching at once, by TikTok's count; null if it never reported one
   },
   (t) => [index('streams_host_idx').on(t.hostId, t.startedAt)],
 );
@@ -210,7 +235,7 @@ export const media = pgTable(
   'media',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    hostId: uuid('host_id').notNull().references(() => hosts.id, { onDelete: 'cascade' }),
+    hostId: uuid('host_id').references(() => hosts.id, { onDelete: 'cascade' }), // null: built in, for every host
     name: text('name').notNull(),
     kind: text('kind').$type<MediaKind>().notNull(),
     mime: text('mime').notNull(), // from the file's contents, not what the browser claimed
@@ -219,6 +244,16 @@ export const media = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('media_host_idx').on(t.hostId)],
+);
+
+// Built-in files a host removed. They're shared, so only this host stops seeing them.
+export const hiddenMedia = pgTable(
+  'hidden_media',
+  {
+    hostId: uuid('host_id').notNull().references(() => hosts.id, { onDelete: 'cascade' }),
+    mediaId: uuid('media_id').notNull().references(() => media.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.hostId, t.mediaId] })],
 );
 
 // See OverlayScreen in the shared package. The main screen's token is the host's overlay_token.
@@ -233,12 +268,15 @@ export const overlayScreens = pgTable(
     position: serial('position').notNull(),
     alerts: boolean('alerts').notNull().default(true),
     feed: boolean('feed').notNull().default(true),
+    leaderboardSize: integer('leaderboard_size').notNull().default(5),
+    alertPos: jsonb('alert_pos').$type<{ x: number; y: number }>(), // null: alert_position
     leaderboard: boolean('leaderboard').notNull().default(true),
     mode: boolean('mode').notNull().default(true),
     audio: boolean('audio').notNull().default(true),
     alertPosition: text('alert_position').$type<AlertPosition>().notNull().default('top'),
     scale: integer('scale').notNull().default(100),
     widgets: jsonb('widgets').$type<ScreenWidget[]>().notNull().default([]),
+    linkStyles: jsonb('link_styles').$type<Record<string, WidgetStyle>>().notNull().default({}),
   },
   (t) => [index('overlay_screens_host_idx').on(t.hostId)],
 );
@@ -253,6 +291,7 @@ export const goals = pgTable(
     metric: text('metric').$type<GoalMetric>().notNull(),
     target: integer('target').notNull(),
     enabled: boolean('enabled').notNull().default(true),
+    raise: jsonb('raise').$type<GoalRaise>(),
     position: serial('position').notNull(),
   },
   (t) => [index('goals_host_idx').on(t.hostId)],

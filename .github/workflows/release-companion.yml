@@ -1,5 +1,6 @@
-# Builds the companion installers and attaches them to a draft GitHub release.
-# Start it by pushing a tag such as companion-v0.1.0, then publish the draft once the files look right.
+# Builds the companion installers and publishes them as a GitHub release.
+# Start it by pushing a tag such as companion-v0.1.0. The release stays a draft until every build has finished, so a
+# failed build never publishes a release that's missing an installer.
 # The Download page links to the newest published release.
 name: Release companion
 
@@ -42,7 +43,15 @@ jobs:
         with:
           projectPath: apps/companion
           tagName: ${{ github.ref_name }}
-          releaseName: Fluxion Companion ${{ github.ref_name }}
-          releaseBody: Download the installer for your system below, or use the Download page on the Fluxion site.
+          releaseName: Hyperion Companion ${{ github.ref_name }}
+          releaseBody: Download the installer for your system below, or use the Download page on the Hyperion site.
           releaseDraft: true
           args: ${{ matrix.args }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -61,10 +61,10 @@ export function blockedReason({ modifiers, key }: KeyCombo): string | null {
 // Why a key can't be used for a command, or null if it can.
 export function keyProblem(value: string): string | null {
   const combo = parseKey(value);
-  if (!combo) return 'Not a key combination Fluxion understands';
+  if (!combo) return 'Not a key combination Hyperion understands';
   const blocked = blockedReason(combo);
   if (blocked) return blocked;
-  if (!allowed.has(combo.key)) return `${combo.key} can't be pressed by Fluxion`;
+  if (!allowed.has(combo.key)) return `${combo.key} can't be pressed by Hyperion`;
   if (combo.modifiers.includes('Shift') && combo.key.startsWith('Shift')) return 'Shift is already the key';
   return null;
 }

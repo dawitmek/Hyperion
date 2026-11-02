@@ -1,4 +1,4 @@
-import type { CloudProvider } from '@fluxion/shared';
+import type { CloudProvider } from '@hyperion/shared';
 
 export interface CloudVoice {
   provider: CloudProvider;
@@ -74,7 +74,7 @@ export async function synthesizeCloud(
           'Ocp-Apim-Subscription-Key': cfg.key,
           'content-type': 'application/ssml+xml',
           'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
-          'user-agent': 'fluxion',
+          'user-agent': 'hyperion',
         },
         body: `<speak version="1.0" xml:lang="${escapeXml(languageOf(voice))}"><voice name="${escapeXml(voice)}">${escapeXml(text)}</voice></speak>`,
         signal,

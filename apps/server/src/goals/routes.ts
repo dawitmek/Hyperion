@@ -1,21 +1,36 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { GOAL_METRICS, MAX_WIDGETS, type Goal, type GoalMetric } from '@fluxion/shared';
+import { GOAL_METRICS, MAX_WIDGETS, type Goal, type GoalMetric, type GoalRaise } from '@hyperion/shared';
 import { goals, overlayScreens } from '../db/schema.js';
 import { toScreen } from '../screens/routes.js';
 import { requireHost } from '../auth/session.js';
 
-type Body = { name: string; metric: GoalMetric; target: number; enabled?: boolean };
+const raiseBy = (kind: GoalRaise['kind'], by: object) => ({
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'by'],
+  properties: { kind: { const: kind }, by },
+});
+
+type Body = { name: string; metric: GoalMetric; target: number; enabled?: boolean; raise?: GoalRaise | null };
 const fields = {
   name: { type: 'string', minLength: 1, maxLength: 40 },
   metric: { enum: GOAL_METRICS },
   target: { type: 'integer', minimum: 1, maximum: 100_000_000 },
   enabled: { type: 'boolean' },
+  raise: {
+    anyOf: [
+      { type: 'null' },
+      raiseBy('times', { type: 'number', exclusiveMinimum: 1, maximum: 100 }),
+      raiseBy('plus', { type: 'integer', minimum: 1, maximum: 100_000_000 }),
+      raiseBy('to', { type: 'integer', minimum: 1, maximum: 100_000_000 }),
+    ],
+  },
 } as const;
 const idParam = { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } as const;
 const MAX_GOALS = 10;
 
-const listed = { id: goals.id, name: goals.name, metric: goals.metric, target: goals.target, enabled: goals.enabled };
+const listed = { id: goals.id, name: goals.name, metric: goals.metric, target: goals.target, enabled: goals.enabled, raise: goals.raise };
 
 export async function goalRoutes(app: FastifyInstance) {
   const { db } = app;

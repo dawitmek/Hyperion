@@ -1,4 +1,4 @@
-import type { ServerToOverlay } from '@fluxion/shared';
+import type { ServerToOverlay } from '@hyperion/shared';
 import { playSound } from '../sounds';
 import { SpeechPlayer } from '../speech-player';
 

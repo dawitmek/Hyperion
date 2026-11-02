@@ -1,0 +1,1 @@
+ALTER TABLE "overlay_screens" ADD COLUMN "link_styles" jsonb DEFAULT '{}'::jsonb NOT NULL;

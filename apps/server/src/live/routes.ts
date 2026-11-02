@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { BADGES, type Badge, type RoomStats, type ViewerEvent } from '@fluxion/shared';
+import { BADGES, type Badge, type RoomStats, type ViewerEvent } from '@hyperion/shared';
 import { requireHost } from '../auth/session.js';
 import { LiveError, type Source } from './session-manager.js';
 

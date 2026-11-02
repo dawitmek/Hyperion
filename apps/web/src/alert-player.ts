@@ -1,4 +1,4 @@
-import type { AlertStyle, MediaKind, ServerToOverlay, Speech } from '@fluxion/shared';
+import type { AlertFx, AlertStyle, MediaKind, ServerToOverlay, Speech } from '@hyperion/shared';
 import { playSound } from './sounds';
 import { SpeechPlayer, type Report } from './speech-player';
 
@@ -10,6 +10,8 @@ export type ShownAlert = {
   pos: { x: number; y: number } | null; // placed by hand; null: the screen's alert position
   scale: number; // percent
   style: AlertStyle | null; // null: the default look
+  fx: AlertFx | null;
+  durationMs: number;
 };
 
 const ALERT_MS = 5000;
@@ -68,6 +70,10 @@ export class AlertPlayer {
     else this.speech.stop('the voice changed');
   }
 
+  skipSpeech() {
+    this.speech.skip();
+  }
+
   // Alerts from these actions (all alerts, with no list) go: waiting ones, the one showing, and their speech.
   dropAlerts(reason: string, actions?: string[]) {
     const from = (action: string | undefined) => !actions || (!!action && actions.includes(action));
@@ -115,7 +121,7 @@ export class AlertPlayer {
     if (!alert) return;
     this.showing = alert;
     const media = alert.media ? { url: `/media/${alert.media.id}`, kind: alert.media.kind } : null;
-    this.onShow({ id: this.nextId++, text: alert.text, media, pos: alert.pos ?? null, scale: alert.scale ?? 100, style: alert.style ?? null });
+    this.onShow({ id: this.nextId++, text: alert.text, media, pos: alert.pos ?? null, scale: alert.scale ?? 100, style: alert.style ?? null, fx: alert.fx ?? null, durationMs: alert.durationMs ?? ALERT_MS });
     if (this.audible) {
       if (alert.sound) playSound(this.context(), alert.sound);
       if (alert.soundFile) void this.playFile(alert.soundFile);

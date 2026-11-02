@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Icon } from '../icons';
 
-// Small, static pictures of real Fluxion screens, drawn in HTML so they stay sharp and match the app.
+// Small, static pictures of real Hyperion screens, drawn in HTML so they stay sharp and match the app.
 
 const AVATAR_COLOURS = ['#8d5ef5', '#e5469a', '#2b95ea', '#14a3a0', '#f07f2e', '#6366f1'];
 const VIEWERS = ['mira', 'jules', 'kai_x', 'nova', 'sam.r', 'ivy'];
@@ -37,7 +37,7 @@ export function Stage() {
   const pressed = (word: string) => 40 + script.slice(0, (tick % 12) + 1).filter((s) => COMMANDS[s]!.word === word).length * 3;
 
   return (
-    <div className="s-frame" aria-label="The Fluxion dashboard reacting to chat during a stream" role="img">
+    <div className="s-frame" aria-label="The Hyperion dashboard reacting to chat during a stream" role="img">
       <div className="s-frame-inner">
         <div className="s-frame-bar">
           <span className="dots" aria-hidden="true">
@@ -46,7 +46,7 @@ export function Stage() {
             <i />
           </span>
           <span className="crumbs">
-            <span>Fluxion</span>
+            <span>Hyperion</span>
             <span>GTA V profile</span>
             <span>Live</span>
           </span>

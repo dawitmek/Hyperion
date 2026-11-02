@@ -144,7 +144,7 @@ function Flow() {
             From a comment to a key press, <span className="s-gradient">in a blink</span>
           </h2>
           <p className="s-lead">
-            Fluxion reads your LIVE chat, decides what happens based on your mode and cooldowns, and tells the companion on your
+            Hyperion reads your LIVE chat, decides what happens based on your mode and cooldowns, and tells the companion on your
             PC which key to press. Your overlay shows who did it.
           </p>
           <Link href="/how-it-works" className="s-link" style={{ marginTop: 26 }}>
@@ -279,7 +279,7 @@ const TABS: { title: string; body: string; panel: ReactNode }[] = [
     body: 'A small app on your gaming PC that presses the keys. You choose which keys it may press and which game gets them.',
     panel: (
       <div className="s-panel-window">
-        <h4>Fluxion Companion</h4>
+        <h4>Hyperion Companion</h4>
         <div className="art-line">
           <span>
             <span className="tag green">Connected</span> Gaming PC
@@ -332,7 +332,7 @@ export function HomePage() {
           </h1>
           <div className="s-hero-row">
             <p>
-              Viewers type commands or send gifts, and Fluxion presses the keys on your PC. It works with the games you already
+              Viewers type commands or send gifts, and Hyperion presses the keys on your PC. It works with the games you already
               play, on Windows and macOS.
             </p>
             <div className="s-hero-ctas">

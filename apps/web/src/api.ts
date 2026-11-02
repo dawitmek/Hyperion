@@ -1,4 +1,4 @@
-// Thin JSON client for the Fluxion API. Same origin, so the session cookie rides along.
+// Thin JSON client for the Hyperion API. Same origin, so the session cookie rides along.
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -21,6 +21,11 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
 }
 
 import type {
+  ActionEffect,
+  AlertEffect,
+  AlertShape,
+  ChainStep,
+  LiveLayout,
   ActionTrigger,
   AlertPosition,
   AlertSound,
@@ -39,7 +44,7 @@ import type {
   UiTheme,
   UiThemeStyle,
   VoiceEffect,
-} from '@fluxion/shared';
+} from '@hyperion/shared';
 
 export type { ActionTrigger, AlertPosition, AlertSound, Audience, Goal, CloudProvider, LeaderboardEntry, MediaItem, Mode, Speech, TtsEngine, TtsMode, VoiceEffect };
 
@@ -75,7 +80,12 @@ export interface Host {
   ttsMode: TtsMode;
   ttsPrefix: string;
   ttsMaxLength: number;
+  ttsMaxWords: number;
+  ttsUnlockGifts: string[];
+  ttsUnlockMinutes: number;
+  ttsTemplate: string;
   ttsCooldownMs: number;
+  ttsAutoMaxViewers: number;
   ttsMinLevel: number;
   ttsBlockedWords: string;
   ttsVoice: string | null;
@@ -94,7 +104,9 @@ export interface Host {
   uiTheme: UiTheme;
   uiThemeStyle: UiThemeStyle;
   uiMode: UiMode;
+  liveLayout: LiveLayout | null; // the Live page's cards; null: DEFAULT_LIVE_LAYOUT
   alertStyle: AlertStyle | null; // the look of alerts whose action has none; null: DEFAULT_ALERT_STYLE
+  alertStyle2: AlertStyle | null; // a second look actions can share; null: same as alertStyle
   // Active profile
   profileId: string;
   profileName: string;
@@ -108,6 +120,8 @@ export interface Command {
   id: string;
   keyword: string;
   key: string;
+  macro: string | null;
+  chain: ChainStep[] | null;
   holdMs: number;
   cooldownMs: number;
   enabled: boolean;
@@ -124,6 +138,7 @@ export interface Action {
   giftName: string | null;
   minDiamonds: number | null;
   likeStep: number | null;
+  likeGrowth: number | null; // each target this many times the last; null: every likeStep
   command: string | null;
   goalId: string | null;
   audience: Audience;
@@ -137,10 +152,21 @@ export interface Action {
   mediaId: string | null;
   speak: boolean;
   durationMs: number;
+  effect: ActionEffect | null;
+  effectAmount: number;
+  effectColor: string | null; // null: the animation's own colors
+  effectSpeed: number; // percent of normal
+  alertEffect: AlertEffect | null;
+  alertEmoji: string;
+  alertShape: AlertShape;
+  alertEffectColor: string | null; // null: the alert look's color
+  alertEffectAmount: number;
+  alertEffectSpeed: number; // percent of normal
   alertX: number | null; // with alertY: where the alert's middle sits, in percent; null: the screen's alert position
   alertY: number | null;
   alertScale: number; // percent
   alertStyle: AlertStyle | null; // null: DEFAULT_ALERT_STYLE
+  useAlertStyle2: boolean; // with no alertStyle: the host's second look
   keyCommandId: string | null;
   repeatWithCount: boolean;
   points: number;

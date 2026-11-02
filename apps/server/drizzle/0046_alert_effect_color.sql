@@ -1,0 +1,1 @@
+ALTER TABLE "actions" ADD COLUMN "alert_effect_color" text;

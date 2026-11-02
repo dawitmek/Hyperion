@@ -66,7 +66,7 @@ export function CompanionPage({ status }: PageProps) {
         title="Paired devices"
         description={`${status.companionsOnline} online now. Revoking a device disconnects it; pair it again with a new code.`}
         actions={
-          <button className="btn btn-ghost" onClick={() => (setPairing(null), load())}>
+          <button className="btn btn-ghost" onClick={guard(load)}>
             Refresh
           </button>
         }

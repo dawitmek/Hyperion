@@ -1,4 +1,4 @@
-/* Fluxion design system, shared by the dashboard and the companion app.
+/* Hyperion design system, shared by the dashboard and the companion app.
    Light or dark follows data-mode="dark" on <html>, which the page sets from the account's choice (light, dark, or
    the system's). Meaning colours: red = live, green = ready,
    amber = a vote or something that needs a look. Indigo is the brand and the action colour. */

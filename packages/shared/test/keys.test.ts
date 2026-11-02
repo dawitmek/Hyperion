@@ -65,7 +65,7 @@ describe('levels', () => {
 });
 
 describe('GAME_TEMPLATES', () => {
-  it('only uses keys Fluxion can press, and keywords chat can type', () => {
+  it('only uses keys Hyperion can press, and keywords chat can type', () => {
     for (const game of GAME_TEMPLATES) {
       const keywords = game.commands.map((c) => c.keyword);
       expect(new Set(keywords).size, game.name).toBe(keywords.length);

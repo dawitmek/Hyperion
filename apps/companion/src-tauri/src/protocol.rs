@@ -8,6 +8,8 @@ pub struct CommandInfo {
     pub keyword: String,
     pub key: String,
     pub enabled: bool,
+    #[serde(default, rename = "macro")]
+    pub macro_name: Option<String>, // runs this macro instead of pressing a key
 }
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -18,6 +20,8 @@ pub struct KeyAction {
     pub id: String,
     pub key: String,
     pub hold_ms: u64,
+    #[serde(default, rename = "macro")]
+    pub macro_name: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -52,6 +56,8 @@ pub enum CompanionMessage<'a> {
         platform: &'a str,
     },
     Ack { id: &'a str, status: &'a str, #[serde(skip_serializing_if = "Option::is_none")] reason: Option<&'a str> },
+    // The names of the macros on this PC, so the dashboard can offer them. The macros themselves stay here.
+    Macros { names: Vec<String> },
 }
 
 #[cfg(test)]
@@ -72,6 +78,14 @@ mod tests {
         assert!(matches!(with_game, ServerMessage::Profile { ref name, game_process: Some(ref p) } if name == "GTA V" && p == "gta5.exe"));
         let without: ServerMessage = serde_json::from_str(r#"{"type":"profile","name":"Default","gameProcess":null}"#).unwrap();
         assert!(matches!(without, ServerMessage::Profile { game_process: None, .. }));
+    }
+
+    #[test]
+    fn parses_macro_actions_and_servers_without_them() {
+        let action: ServerMessage = serde_json::from_str(r#"{"type":"action","action":{"id":"1","key":"","holdMs":300,"macro":"spin"}}"#).unwrap();
+        assert!(matches!(action, ServerMessage::Action { ref action } if action.macro_name.as_deref() == Some("spin")));
+        let key: ServerMessage = serde_json::from_str(r#"{"type":"action","action":{"id":"1","key":"KeyA","holdMs":300}}"#).unwrap();
+        assert!(matches!(key, ServerMessage::Action { ref action } if action.macro_name.is_none()));
     }
 
     #[test]

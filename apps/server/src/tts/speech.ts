@@ -1,4 +1,4 @@
-import type { Speech, TtsEngine, VoiceEffect } from '@fluxion/shared';
+import type { Speech, TtsEngine, VoiceEffect } from '@hyperion/shared';
 import type { Secrets } from '../crypto.js';
 import type { hosts } from '../db/schema.js';
 import { synthesizeCloud, type CloudVoice } from './cloud.js';
@@ -36,8 +36,8 @@ export function voiceConfig(host: typeof hosts.$inferSelect, secrets: Secrets): 
   };
 }
 
-// Turns text into whatever the overlay needs to say it. Server-side engines that fail fall back to eSpeak,
-// which runs in the overlay and always works, so a line is never silently lost.
+// Turns text into whatever the overlay needs to say it. TikTok and cloud voices that fail fall back to Piper, and
+// Piper to eSpeak, which runs in the overlay and always works, so a line is never silently lost.
 export class SpeechService {
   constructor(
     private piper: Piper,
@@ -52,13 +52,17 @@ export class SpeechService {
   }
 
   async speak(cfg: VoiceConfig, text: string): Promise<Speech> {
-    const espeak: Speech = { kind: 'espeak', text, voice: cfg.espeakVoice, effect: cfg.effect };
     try {
       return await this.speakStrict(cfg, text);
     } catch (err) {
       this.onError(err);
-      return espeak;
     }
+    try {
+      if (cfg.engine !== 'piper') return await this.speakStrict({ ...cfg, engine: 'piper' }, text);
+    } catch (err) {
+      this.onError(err);
+    }
+    return { kind: 'espeak', text, voice: cfg.espeakVoice, effect: cfg.effect };
   }
 
   // Like speak(), but reports failures; the dashboard's preview uses it to show what went wrong.

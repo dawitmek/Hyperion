@@ -1,11 +1,12 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { POINTS_CHECK, QUEUE_JOIN, XP_PER_COMMAND, type Mode, type RoomStats, type ServerToOverlay, type Speech, type ViewerEvent } from '@fluxion/shared';
+import { POINTS_CHECK, QUEUE_JOIN, XP_PER_COMMAND, type Mode, type ModeState, type RoomStats, type ServerToOverlay, type Speech, type ViewerEvent } from '@hyperion/shared';
 import type { Secrets } from '../crypto.js';
 import type { Db } from '../db/client.js';
 import { commands, goals, hosts, streamEvents, streams } from '../db/schema.js';
 import { StreamStatsTracker } from './stream-stats.js';
+import { ViewerGauge } from './viewer-gauge.js';
 import { StreamRecorder } from './recorder.js';
-import { createActions, parseBlockedWords, type ActionContext, type ActionOutput } from '../actions/engine.js';
+import { cleanForSpeech, createActions, parseBlockedWords, type ActionContext, type ActionOutput } from '../actions/engine.js';
 import { loadActionRules } from '../actions/load.js';
 import { voiceConfig, type SpeechService, type VoiceConfig } from '../tts/speech.js';
 import { activeProfile } from '../profiles/active.js';
@@ -54,6 +55,7 @@ interface LiveSession {
   lastState: string;
   recorder: StreamRecorder;
   room: RoomStats; // latest from the platform; empty until it reports
+  viewerGauge: ViewerGauge;
   stats: StreamStatsTracker;
   lastStats: string; // what overlays last got, so unchanged stats aren't resent
   presses: Map<string, number>; // keyword -> times fired this stream, for the dashboard (a number per command)
@@ -135,11 +137,13 @@ export class SessionManager {
     const actionCtx: ActionContext = {
       config: actionConfig,
       topGifters: () => session.room.topGifters,
+      viewers: () => session.viewerGauge.current(Date.now()),
       now: Date.now,
       levelOf: ctx.levelOf,
       isCommand: (text) => {
         const keyword = text.trim().toLowerCase();
-        return keyword === QUEUE_JOIN || keyword === POINTS_CHECK || ctx.config.commands.some((c) => c.enabled && c.keyword === keyword);
+        // With chat's key presses off, a keyword is just a comment, so it can be read aloud.
+        return keyword === POINTS_CHECK || (session.mode !== 'gift' && (keyword === QUEUE_JOIN || ctx.config.commands.some((c) => c.enabled && c.keyword === keyword)));
       },
     };
     // Real streams are kept for analytics; a test-mode session is only kept until the next session starts.
@@ -172,14 +176,18 @@ export class SessionManager {
       lastState: '',
       recorder,
       room: { viewers: 0, topGifters: [] },
+      viewerGauge: new ViewerGauge(),
       stats: new StreamStatsTracker(goalRows),
       lastStats: '',
       presses: new Map(),
     };
     adapter.onEvent((event) => this.onEvent(hostId, session, event));
     adapter.onRoomStats((room) => {
-      session.room = room;
-      session.stats.room(room);
+      // A message without a count isn't a drop to zero: everything keeps the last real number.
+      session.room = { ...room, viewers: room.viewers || session.room.viewers };
+      session.viewerGauge.record(room.viewers, Date.now());
+      session.stats.room(session.room);
+      recorder.viewers(room.viewers);
     });
     adapter.onEnd(() => {
       if (this.sessions.get(hostId) === session) void this.stop(hostId, 'the TikTok LIVE ended or disconnected');
@@ -279,7 +287,7 @@ export class SessionManager {
     if (!session) return [];
     return [
       { type: 'live', state: 'started' },
-      { type: 'mode', state: session.engine.state(), serverNow: Date.now() },
+      { type: 'mode', state: this.shownState(hostId, session), serverNow: Date.now(), ...this.playerAvatar(hostId, session) },
       { type: 'leaderboard', entries: await this.stats.top(hostId), progression: session.progression },
       { type: 'stats', stats: session.stats.snapshot() },
     ];
@@ -308,16 +316,17 @@ export class SessionManager {
   }
 
   private onEvent(hostId: string, session: LiveSession, event: ViewerEvent) {
-    session.recorder.add(event.kind, event.viewerId, eventData(event), event.at);
+    this.stats.sawViewer(hostId, event.viewerId, { ...(event.avatar && { avatar: event.avatar }), ...(event.name && { name: event.name }) });
+    session.recorder.add(event.kind, event.viewerId, { ...eventData(event), ...this.named(hostId, event.viewerId) }, event.at);
     if (event.kind === 'gift') {
       const xp = Math.max(1, event.diamonds) * event.count;
       this.levelUp(hostId, session, event.viewerId, this.stats.record(hostId, event.viewerId, { gifts: event.count, xp }));
     }
     if (session.points) this.earn(hostId, session, session.points, event);
     // Widgets: chat lines, and gifts for the coin jar and fireworks.
-    if (event.kind === 'comment') this.hub.sendToOverlays(hostId, { type: 'chat', viewer: event.viewerId, text: event.text });
+    if (event.kind === 'comment') this.hub.sendToOverlays(hostId, { type: 'chat', viewer: this.stats.nameOf(hostId, event.viewerId), text: event.text, ...this.avatar(hostId, event.viewerId) });
     if (event.kind === 'gift') {
-      this.hub.sendToOverlays(hostId, { type: 'gift', viewer: event.viewerId, gift: event.giftName, count: event.count, diamonds: event.diamonds * event.count });
+      this.hub.sendToOverlays(hostId, { type: 'gift', viewer: this.stats.nameOf(hostId, event.viewerId), gift: event.giftName, count: event.count, diamonds: event.diamonds * event.count });
     }
     this.run(hostId, session, session.engine.handle(event));
     this.perform(hostId, session, session.actions.handle(event));
@@ -328,11 +337,12 @@ export class SessionManager {
     for (const output of outputs) {
       if (output.type === 'key') this.run(hostId, session, keyPresses(session.ctx, output.keyword, output.viewer, output.repeats));
       else if (output.type === 'points') this.stats.record(hostId, output.viewer, { points: output.amount });
+      else if (output.type === 'effect') this.hub.sendToOverlays(hostId, effectMessage(output));
       // speak() never throws, but a broken chain would silence every later alert, so guard anyway.
       else {
         session.waiting++;
         if (output.type === 'tts') {
-          this.debug.write('tts', hostId, 'chat line to read aloud', { viewer: output.viewer, text: output.text, mode: session.actionCtx.config.tts.mode, waiting: session.waiting });
+          this.debug.write('tts', hostId, 'chat line to read aloud', { viewer: output.viewer, text: output.text, mode: session.actionCtx.config.tts.mode, viewers: session.viewerGauge.current(Date.now()), waiting: session.waiting });
         } else if (output.speak) this.debug.write('alert', hostId, 'alert to read aloud', { text: output.text, waiting: session.waiting });
         session.outbox = session.outbox
           .then(() => this.deliver(hostId, session, output))
@@ -365,11 +375,12 @@ export class SessionManager {
     }
     const began = Date.now();
     if (output.type === 'alert') {
-      const speech = output.speak ? await this.speech.speak(session.voice, output.text) : null;
+      const spoken = output.speak ? cleanForSpeech(output.text) : '';
+      const speech = spoken ? await this.speech.speak(session.voice, spoken) : null;
       if (speech) this.debug.write(area, hostId, 'sent to overlays', { text: output.text, speech: speech.kind, madeInMs: Date.now() - began });
       this.hub.sendToOverlays(hostId, alertMessage(output, speech));
     } else {
-      const speech = await this.speech.speak(session.voice, `${output.viewer} says ${output.text}`);
+      const speech = await this.speech.speak(session.voice, output.spoken);
       this.debug.write(area, hostId, 'sent to overlays', { viewer: output.viewer, speech: speech.kind, madeInMs: Date.now() - began });
       this.hub.sendToOverlays(hostId, { type: 'tts', viewer: output.viewer, text: output.text, speech });
     }
@@ -391,11 +402,25 @@ export class SessionManager {
   }
 
   private fire(hostId: string, session: LiveSession, decision: Decision) {
-    this.hub.sendToCompanions(hostId, { type: 'action', action: decision.action });
+    const send = (action: Decision['action']) => {
+      if (action.key || action.macro) this.hub.sendToCompanions(hostId, { type: 'action', action });
+    };
+    send(decision.action);
+    for (const { action, delayMs } of decision.then ?? []) {
+      if (delayMs === 0) {
+        send(action);
+        continue;
+      }
+      const timer = setTimeout(() => {
+        session.delayed.delete(timer);
+        send(action);
+      }, delayMs);
+      session.delayed.add(timer);
+    }
     session.presses.set(decision.keyword, (session.presses.get(decision.keyword) ?? 0) + 1);
     // Actions credit nobody; a democracy vote names its tally ("3 votes") rather than a viewer.
     const via = decision.credit.length === 0 ? 'action' : decision.credit.includes(decision.viewer) ? 'chat' : 'vote';
-    session.recorder.add('command', via === 'vote' ? null : decision.viewer, { keyword: decision.keyword, via });
+    session.recorder.add('command', via === 'vote' ? null : decision.viewer, { keyword: decision.keyword, via, ...this.named(hostId, decision.viewer) });
     const levelUps = decision.credit.map((viewerId) => {
       const level = this.stats.record(hostId, viewerId, { commands: 1, xp: XP_PER_COMMAND, points: -decision.cost });
       return [viewerId, level] as const;
@@ -404,10 +429,11 @@ export class SessionManager {
     const level = session.progression && decision.credit[0] === decision.viewer ? this.stats.levelOf(hostId, decision.viewer) : undefined;
     this.hub.sendToOverlays(hostId, {
       type: 'command',
-      viewer: decision.viewer,
+      viewer: this.stats.nameOf(hostId, decision.viewer),
       keyword: decision.keyword,
       at: Date.now(),
       ...(level !== undefined && { level }),
+      ...this.avatar(hostId, decision.viewer),
     });
     for (const [viewerId, newLevel] of levelUps) this.levelUp(hostId, session, viewerId, newLevel);
   }
@@ -432,13 +458,38 @@ export class SessionManager {
       const last = session.lastChecked.get(viewer);
       if (last !== undefined && t - last < POINTS_CHECK_COOLDOWN_MS) return;
       session.lastChecked.set(viewer, t);
-      this.hub.sendToOverlays(hostId, { type: 'points', viewer, points: this.stats.pointsOf(hostId, viewer) });
+      this.hub.sendToOverlays(hostId, { type: 'points', viewer: this.stats.nameOf(hostId, viewer), points: this.stats.pointsOf(hostId, viewer), ...this.avatar(hostId, viewer) });
     }
+  }
+
+  // For overlay messages that name a viewer.
+  private avatar(hostId: string, viewer: string) {
+    const avatar = this.stats.avatarOf(hostId, viewer);
+    return avatar ? { avatar } : {};
+  }
+
+  // For recorded events that name a viewer, when their display name is known.
+  private named(hostId: string, viewer: string) {
+    const name = this.stats.nameOf(hostId, viewer);
+    return name !== viewer ? { name } : {};
+  }
+
+  // The mode as overlays show it: the queue by display name.
+  private shownState(hostId: string, session: LiveSession): ModeState {
+    const state = session.engine.state();
+    if (state.mode !== 'queue') return state;
+    return { ...state, viewer: state.viewer && this.stats.nameOf(hostId, state.viewer), queue: state.queue.map((viewer) => this.stats.nameOf(hostId, viewer)) };
+  }
+
+  // Whose turn it is in queue mode.
+  private playerAvatar(hostId: string, session: LiveSession) {
+    const state = session.engine.state();
+    return state.mode === 'queue' && state.viewer ? this.avatar(hostId, state.viewer) : {};
   }
 
   private levelUp(hostId: string, session: LiveSession, viewer: string, level: number | null) {
     if (level !== null) session.recorder.add('level', viewer, { level });
-    if (level !== null && session.progression) this.hub.sendToOverlays(hostId, { type: 'levelUp', viewer, level });
+    if (level !== null && session.progression) this.hub.sendToOverlays(hostId, { type: 'levelUp', viewer: this.stats.nameOf(hostId, viewer), level, ...this.avatar(hostId, viewer) });
   }
 
   // Sends the mode state to overlays only when it changed.
@@ -447,7 +498,7 @@ export class SessionManager {
     const json = JSON.stringify(state);
     if (json === session.lastState) return;
     session.lastState = json;
-    this.hub.sendToOverlays(hostId, { type: 'mode', state, serverNow: Date.now() });
+    this.hub.sendToOverlays(hostId, { type: 'mode', state: this.shownState(hostId, session), serverNow: Date.now(), ...this.playerAvatar(hostId, session) });
   }
 
   // The host's settings plus their active profile's commands, triggers and mode settings.
@@ -459,7 +510,7 @@ export class SessionManager {
       this.db.select().from(commands).where(eq(commands.profileId, profile.id)),
       loadActionRules(this.db, hostId, profile.id),
       this.db
-        .select({ id: goals.id, name: goals.name, metric: goals.metric, target: goals.target, enabled: goals.enabled })
+        .select({ id: goals.id, name: goals.name, metric: goals.metric, target: goals.target, enabled: goals.enabled, raise: goals.raise })
         .from(goals)
         .where(eq(goals.hostId, hostId))
         .orderBy(goals.position),
@@ -482,7 +533,12 @@ export class SessionManager {
         mode: host.ttsMode,
         prefix: host.ttsPrefix,
         maxLength: host.ttsMaxLength,
+        maxWords: host.ttsMaxWords,
+        unlockGifts: host.ttsUnlockGifts.map((g) => g.trim().toLowerCase()),
+        unlockMs: host.ttsUnlockMinutes * 60_000,
+        template: host.ttsTemplate,
         cooldownMs: host.ttsCooldownMs,
+        autoMaxViewers: host.ttsAutoMaxViewers,
         minLevel: host.ttsMinLevel,
         blockedWords: parseBlockedWords(host.ttsBlockedWords),
       },
@@ -501,6 +557,10 @@ export class SessionManager {
 }
 
 // The overlay message for an action's alert; optional parts are left out when unused.
+export function effectMessage(output: Extract<ActionOutput, { type: 'effect' }>): ServerToOverlay {
+  return { type: 'effect', effect: output.effect, amount: output.amount, speed: output.speed, ...(output.color && { color: output.color }), ...(output.screen && { screen: output.screen }) };
+}
+
 export function alertMessage(output: Extract<ActionOutput, { type: 'alert' }>, speech: Speech | null): ServerToOverlay {
   return {
     type: 'alert',
@@ -515,6 +575,7 @@ export function alertMessage(output: Extract<ActionOutput, { type: 'alert' }>, s
     ...(output.pos && { pos: output.pos }),
     ...(output.scale !== 100 && { scale: output.scale }),
     ...(output.style && { style: output.style }),
+    ...(output.fx && { fx: output.fx }),
   };
 }
 
@@ -524,7 +585,7 @@ function eventData(event: ViewerEvent): Record<string, unknown> {
     case 'comment':
       return { text: event.text };
     case 'gift':
-      return { gift: event.giftName, count: event.count, diamonds: event.diamonds };
+      return { gift: event.giftName, count: event.count, diamonds: event.diamonds, ...(event.image && { image: event.image }) };
     case 'like':
       return { count: event.count };
     case 'subscribe':

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Mode, ViewerEvent } from '@fluxion/shared';
+import type { Mode, ViewerEvent } from '@hyperion/shared';
 import { createEngine, keyPresses, type EngineConfig } from '../src/engine/index.js';
 import { IDLE_MS } from '../src/engine/queue.js';
 import type { EngineCommand } from '../src/engine/types.js';
@@ -216,6 +216,53 @@ describe('queue mode', () => {
     press(gift('d', 'Rose')); // gifting also joins
     press(gift('a', 'Rose')); // the current player isn't re-queued
     expect(engine.state()).toMatchObject({ viewer: 'a', queue: ['d', 'c', 'b'] });
+  });
+});
+
+describe('macros and chains', () => {
+  const run = { ...left, keyword: 'run', key: 'ShiftLeft', holdMs: 500 };
+  const hop = { ...jump, keyword: 'hop', key: 'Space', holdMs: 200 };
+  const leap = { ...left, keyword: 'leap', key: '', chain: [{ keyword: 'run', delayMs: 0 }, { keyword: 'hop', delayMs: 100 }] };
+
+  it('asks the companion for a macro by name', () => {
+    const macro = { ...left, keyword: 'dance', key: '', macro: 'dance move' };
+    const { engine } = setup('anarchy', { commands: [macro] });
+    expect(engine.handle(comment('a', 'dance'))[0]!.action).toMatchObject({ key: '', macro: 'dance move' });
+  });
+
+  it('runs a chain from one comment, each step at its time', () => {
+    const { engine } = setup('anarchy', { commands: [run, hop, leap] });
+    const [decision, ...others] = engine.handle(comment('a', 'leap'));
+    expect(others).toEqual([]);
+    expect(decision).toMatchObject({ keyword: 'leap', action: { key: 'ShiftLeft', holdMs: 500 }, then: [{ action: { key: 'Space', holdMs: 200 }, delayMs: 100 }] });
+  });
+
+  it('runs steps that start together together, and in time order', () => {
+    const together = { ...leap, chain: [{ keyword: 'hop', delayMs: 300 }, { keyword: 'run', delayMs: 100 }] };
+    const { engine } = setup('anarchy', { commands: [run, hop, together] });
+    const decision = engine.handle(comment('a', 'leap'))[0]!;
+    expect(decision.action.key).toBe('ShiftLeft');
+    expect(decision.then).toMatchObject([{ action: { key: 'Space' }, delayMs: 200 }]);
+  });
+
+  it('skips steps turned off or deleted, and never follows a chain inside a chain', () => {
+    const inner = { ...leap, keyword: 'inner' };
+    const outer = { ...leap, keyword: 'outer', chain: [{ keyword: 'inner', delayMs: 0 }, { keyword: 'gone', delayMs: 0 }, { keyword: 'run', delayMs: 0 }, { keyword: 'hop', delayMs: 0 }] };
+    const { engine } = setup('anarchy', { commands: [run, { ...hop, enabled: false }, inner, outer] });
+    const decision = engine.handle(comment('a', 'outer'))[0]!;
+    expect(decision.action.key).toBe('ShiftLeft');
+    expect(decision.then).toBeUndefined();
+  });
+
+  it('has nothing to send with no steps left', () => {
+    const { engine } = setup('anarchy', { commands: [{ ...leap, chain: [] }] });
+    expect(engine.handle(comment('a', 'leap'))[0]!.action).toMatchObject({ key: '' });
+    expect(engine.handle(comment('b', 'leap'))[0]!.action.macro).toBeUndefined();
+  });
+
+  it('spaces repeats of a chain by its whole length', () => {
+    const { ctx } = setup('anarchy', { commands: [run, hop, leap] });
+    expect(keyPresses(ctx, 'leap', 'alice', 2).map((d) => d.delayMs)).toEqual([undefined, 600]);
   });
 });
 

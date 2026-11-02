@@ -1,6 +1,5 @@
 // Line icons, 24-unit grid, drawn in currentColor: the dashboard's set (apps/web/src/icons.tsx), the ones used here.
 const paths = {
-  logo: <path d="M4 16c3-8 6-8 8 0s5 8 8 0" />,
   commands: (
     <>
       <rect x="2" y="6" width="20" height="12" rx="2" />

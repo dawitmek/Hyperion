@@ -1,10 +1,11 @@
 import { ControlEvent, TikTokLiveConnection, WebcastEvent } from 'tiktok-live-connector';
-import type { Badge, RoomStats, ViewerEvent } from '@fluxion/shared';
+import type { Badge, RoomStats, ViewerEvent } from '@hyperion/shared';
 import type { PlatformAdapter } from './types.js';
 
 // Live payloads (connector 2.5, verified Oct 2026) use `content` and `user.displayId`; the README still
 // shows `comment` and `user.uniqueId`. Read both so a docs-driven change can't break real streams.
-type RawUser = { uniqueId?: string; displayId?: string; userId?: string; id?: string };
+type RawImage = { urlList?: string[]; mUrls?: string[]; url?: string[] };
+type RawUser = { uniqueId?: string; displayId?: string; userId?: string; id?: string; nickname?: string; avatarThumb?: RawImage; avatarLarge?: RawImage };
 type RawIdentity = { isFollowerOfAnchor?: boolean; isSubscriberOfAnchor?: boolean; isModeratorOfAnchor?: boolean };
 type RawPayload = {
   user?: RawUser;
@@ -16,8 +17,8 @@ type RawPayload = {
   giftId?: number | string;
   repeatCount?: number;
   repeatEnd?: boolean | number;
-  giftDetails?: { giftName?: string; giftType?: number; diamondCount?: number };
-  gift?: { name?: string; type?: number; diamondCount?: number }; // connector 2.5's shape; giftDetails is the legacy one
+  giftDetails?: { giftName?: string; giftType?: number; diamondCount?: number; giftImage?: RawImage };
+  gift?: { name?: string; type?: number; diamondCount?: number; image?: RawImage; icon?: RawImage }; // connector 2.5's shape; giftDetails is the legacy one
   likeCount?: number;
   count?: number;
 };
@@ -38,6 +39,7 @@ const MAPPED = [
 type MappedEvent = (typeof MAPPED)[number];
 
 const viewerIdOf = (user: RawUser | undefined) => user?.uniqueId || user?.displayId || user?.userId || user?.id;
+const httpsUrl = (image: RawImage | undefined) => (image?.urlList ?? image?.mUrls ?? image?.url)?.find((url) => url.startsWith('https://'));
 
 // Only chat, gift and emote messages carry the viewer's relationship to the host.
 function badgesOf(identity: RawIdentity | undefined): Badge[] | undefined {
@@ -51,8 +53,11 @@ function badgesOf(identity: RawIdentity | undefined): Badge[] | undefined {
 
 export function toViewerEvent(type: MappedEvent, data: RawPayload, at = Date.now()): ViewerEvent | null {
   const event = mapEvent(type, data, at);
-  const badges = event && badgesOf(data.userIdentity);
-  return event && badges ? { ...event, badges } : event;
+  if (!event) return null;
+  const badges = badgesOf(data.userIdentity);
+  const avatar = httpsUrl(data.user?.avatarThumb) ?? httpsUrl(data.user?.avatarLarge);
+  const name = data.user?.nickname?.trim();
+  return { ...event, ...(badges && { badges }), ...(avatar && { avatar }), ...(name && name !== event.viewerId && { name }) };
 }
 
 function mapEvent(type: MappedEvent, data: RawPayload, at: number): ViewerEvent | null {
@@ -68,6 +73,7 @@ function mapEvent(type: MappedEvent, data: RawPayload, at: number): ViewerEvent 
       const giftType = data.giftDetails?.giftType ?? data.gift?.type;
       // Streakable gifts (type 1) arrive once per tick; only the final event carries the total.
       if (giftType === 1 && !data.repeatEnd) return null;
+      const image = httpsUrl(data.gift?.image) ?? httpsUrl(data.gift?.icon) ?? httpsUrl(data.giftDetails?.giftImage);
       return {
         kind: 'gift',
         viewerId,
@@ -76,6 +82,7 @@ function mapEvent(type: MappedEvent, data: RawPayload, at: number): ViewerEvent 
         count: data.repeatCount || 1,
         diamonds: data.giftDetails?.diamondCount ?? data.gift?.diamondCount ?? 0,
         at,
+        ...(image && { image }),
       };
     }
     case WebcastEvent.LIKE:
@@ -99,7 +106,7 @@ type RawRoomUser = { viewerCount?: number; total?: string | number; ranks?: { us
 
 export function toRoomStats(data: RawRoomUser): RoomStats {
   return {
-    viewers: Number(data.viewerCount ?? data.total) || 0,
+    viewers: Number(data.viewerCount) || Number(data.total) || 0, // an absent count arrives as 0, not undefined
     topGifters: (data.ranks ?? []).map((r) => viewerIdOf(r.user)).filter((id): id is string => !!id),
   };
 }

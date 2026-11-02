@@ -6,7 +6,7 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import { PROTOCOL_VERSION } from '@fluxion/shared';
+import { PROTOCOL_VERSION } from '@hyperion/shared';
 import type { Config } from './config.js';
 import { Secrets } from './crypto.js';
 import { createDb, type Db } from './db/client.js';

@@ -1,0 +1,1 @@
+ALTER TABLE "hosts" ADD COLUMN "tts_auto_max_viewers" integer DEFAULT 25 NOT NULL;

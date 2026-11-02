@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { StreamDetail } from '@fluxion/shared';
+import type { StreamDetail } from '@hyperion/shared';
 import { api } from '../api';
 import { Icon } from '../icons';
 import { BarList, ColumnChart, type Column } from './charts';
@@ -61,7 +61,7 @@ export function ActivityChart({ detail }: { detail: StreamDetail }) {
         : undefined,
     });
   }
-  return <ColumnChart columns={columns} series={[{ name: 'Chat messages', slot: 1 }]} caption="Chat messages over the stream" />;
+  return <ColumnChart line columns={columns} series={[{ name: 'Chat messages', slot: 1 }]} height={190} caption="Chat messages over the stream" />;
 }
 
 // How often each command fired, and how often chat asked for it but it didn't (and why).

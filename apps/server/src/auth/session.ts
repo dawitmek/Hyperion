@@ -4,7 +4,7 @@ import { authSessions } from '../db/schema.js';
 import { newToken, sha256 } from '../crypto.js';
 import type { Db } from '../db/client.js';
 
-export const SESSION_COOKIE = 'fluxion_session';
+export const SESSION_COOKIE = 'hyperion_session';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 declare module 'fastify' {

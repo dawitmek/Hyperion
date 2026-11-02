@@ -1,30 +1,54 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import type { GoalMetric, ScreenWidget, StreamStats } from '@fluxion/shared';
+import { DEFAULT_MESSAGE, type GoalMetric, type ScreenEffect, type ScreenWidget, type StreamStats, type WidgetStyle } from '@hyperion/shared';
+import { ALERT_FONT_STACKS } from './alert-style';
 import { Icon, type IconName } from './icons';
+import { ViewerAvatar } from './ui';
 
 // Overlay widgets. Each reads the stream's totals (StreamStats) or listens for chat and gifts.
 
 export type GiftEvent = { viewer: string; gift: string; count: number; diamonds: number };
-export type ChatLine = { id: number; viewer: string; text: string };
+export type ChatLine = { id: number; viewer: string; text: string; avatar?: string };
+export type EffectEvent = { effect: ScreenEffect; amount: number; speed: number; color?: string };
+export type BurstEvent = { box: DOMRect; emoji: string; amount: number; speed: number };
+export type LevelUpEvent = { viewer: string; level: number; avatar?: string };
 
-// Gifts reach the coin jar and fireworks as events rather than state, so a burst of gifts is a burst of animation.
+// Gifts reach the coin jar and gift animations as events rather than state, so a burst of gifts is a burst of animation.
+// Level-ups come the same way, so the widget works on a browser source of its own too.
 export class GiftBus extends EventTarget {
   emit(gift: GiftEvent) {
     this.dispatchEvent(new CustomEvent<GiftEvent>('gift', { detail: gift }));
   }
+
+  emitEffect(effect: EffectEvent) {
+    this.dispatchEvent(new CustomEvent<EffectEvent>('effect', { detail: effect }));
+  }
+
+  // Scatters an alert's emoji from the middle of `box`, its place in the viewport.
+  emitBurst(burst: BurstEvent) {
+    this.dispatchEvent(new CustomEvent<BurstEvent>('burst', { detail: burst }));
+  }
+
+  emitLevelUp(levelUp: LevelUpEvent) {
+    this.dispatchEvent(new CustomEvent<LevelUpEvent>('levelUp', { detail: levelUp }));
+  }
 }
 
-function useGifts(bus: GiftBus, onGift: (gift: GiftEvent) => void) {
-  const handler = useRef(onGift);
-  handler.current = onGift;
+function useBus<T>(bus: GiftBus, name: string, on: (detail: T) => void) {
+  const handler = useRef(on);
+  handler.current = on;
   useEffect(() => {
-    const listener = (e: Event) => handler.current((e as CustomEvent<GiftEvent>).detail);
-    bus.addEventListener('gift', listener);
-    return () => bus.removeEventListener('gift', listener);
-  }, [bus]);
+    const listener = (e: Event) => handler.current((e as CustomEvent<T>).detail);
+    bus.addEventListener(name, listener);
+    return () => bus.removeEventListener(name, listener);
+  }, [bus, name]);
 }
+export const useGifts = (bus: GiftBus, onGift: (gift: GiftEvent) => void) => useBus(bus, 'gift', onGift);
+export const useBursts = (bus: GiftBus, onBurst: (burst: BurstEvent) => void) => useBus(bus, 'burst', onBurst);
+export const useEffects = (bus: GiftBus, onEffect: (effect: EffectEvent) => void) => useBus(bus, 'effect', onEffect);
 
 const number = (n: number) => n.toLocaleString();
+const MAX_LEVEL_UPS = 3;
+const LEVEL_UP_MS = 8000;
 const METRIC_UNITS = { likes: 'likes', follows: 'follows', shares: 'shares', diamonds: 'coins', subscriptions: 'subs' } as const;
 // Each widget has one accent (a tone- class in overlay.css), the same as its icon on the dashboard.
 type Tone = 'amber' | 'orange' | 'sky' | 'indigo' | 'teal' | 'violet' | 'pink' | 'green';
@@ -38,8 +62,36 @@ const METRIC_LOOK: Record<GoalMetric, { icon: IconName; tone: Tone }> = {
 
 export const DEFAULT_FIREWORK_DIAMONDS = 100;
 export const DEFAULT_JAR_DIAMONDS = 1000;
+// What a gift animation widget plays, and from which gifts.
+export const giftAnimation = (w: ScreenWidget) => ({ min: w.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS, effect: w.effect ?? ('fireworks' as const), speed: w.effectSpeed ?? 100 });
 
-export function Widget({ widget, stats, chat, bus }: { widget: ScreenWidget; stats: StreamStats | null; chat: ChatLine[]; bus: GiftBus }) {
+type WidgetProps = { widget: ScreenWidget; stats: StreamStats | null; chat: ChatLine[]; bus: GiftBus };
+
+// A widget's own colors, as variables overlay.css puts on its panel.
+const widgetLook = (s: WidgetStyle) =>
+  ({
+    '--w-bg': `color-mix(in srgb, ${s.background} ${s.opacity}%, transparent)`,
+    '--w-ink': s.textColor,
+    '--w-shadow': s.opacity < 40 ? '0 1px 4px rgba(0, 0, 0, 0.8)' : 'none', // with little behind it, the text needs its own edge
+    '--w-accent': s.accent,
+    '--w-accent-soft': `color-mix(in srgb, ${s.accent} 18%, transparent)`,
+    '--w-border': `${s.borderWidth}px solid ${s.borderColor}`,
+    '--w-radius': `${s.radius}px`,
+    '--w-font': ALERT_FONT_STACKS[s.font][1],
+    '--w-size': s.size / 100,
+  }) as CSSProperties;
+
+export function Widget(props: WidgetProps) {
+  // Always the same wrapper: a widget that gains a look keeps what it's showing.
+  const { style } = props.widget;
+  return (
+    <div className={`widget-box ${style ? 'widget-look' : ''}`} style={style && widgetLook(style)}>
+      <WidgetBody {...props} />
+    </div>
+  );
+}
+
+function WidgetBody({ widget, stats, chat, bus }: WidgetProps) {
   switch (widget.type) {
     case 'goals': {
       if (!stats) return null;
@@ -48,17 +100,17 @@ export function Widget({ widget, stats, chat, bus }: { widget: ScreenWidget; sta
     }
     case 'top_gift':
       return stats?.topGift ? (
-        <Highlight title="Top gift" icon="trophy" tone="amber" viewer={stats.topGift.viewer} detail={`${stats.topGift.gift}, ${number(stats.topGift.diamonds)} coins`} />
+        <Highlight title="Top gift" icon="trophy" tone="amber" viewer={stats.topGift.viewer} avatar={stats.avatars[stats.topGift.viewer]} detail={`${stats.topGift.gift}, ${number(stats.topGift.diamonds)} coins`} image={stats.topGift.image} />
       ) : null;
     case 'top_streak':
       return stats?.topStreak ? (
-        <Highlight title="Longest streak" icon="flame" tone="orange" viewer={stats.topStreak.viewer} detail={stats.topStreak.gift} count={stats.topStreak.count} />
+        <Highlight title="Longest streak" icon="flame" tone="orange" viewer={stats.topStreak.viewer} avatar={stats.avatars[stats.topStreak.viewer]} detail={stats.topStreak.gift} count={stats.topStreak.count} image={stats.topStreak.image} />
       ) : null;
     case 'last_follower':
-      return stats?.lastFollower ? <Highlight title="Latest follower" icon="follower" tone="sky" viewer={stats.lastFollower} /> : null;
+      return stats?.lastFollower ? <Highlight title="Latest follower" icon="follower" tone="sky" viewer={stats.lastFollower} avatar={stats.avatars[stats.lastFollower]} /> : null;
     case 'last_gifter':
       return stats?.lastGifter ? (
-        <Highlight title="Latest gift" icon="gift" tone="amber" viewer={stats.lastGifter.viewer} detail={`${stats.lastGifter.gift} ×${number(stats.lastGifter.count)}`} />
+        <Highlight title="Latest gift" icon="gift" tone="amber" viewer={stats.lastGifter.viewer} avatar={stats.avatars[stats.lastGifter.viewer]} detail={`${stats.lastGifter.gift} ×${number(stats.lastGifter.count)}`} image={stats.lastGifter.image} />
       ) : null;
     case 'stats':
       return stats ? <Stats stats={stats} /> : null;
@@ -68,7 +120,51 @@ export function Widget({ widget, stats, chat, bus }: { widget: ScreenWidget; sta
       return <CoinJar diamonds={stats?.diamonds ?? 0} target={widget.minDiamonds ?? DEFAULT_JAR_DIAMONDS} bus={bus} />;
     case 'firework':
       return null; // drawn over the whole screen by <Fireworks>
+    case 'level_ups':
+      return <LevelUps bus={bus} />;
+    case 'message':
+      return <div className="overlay-panel w-message tone-indigo">{widget.text ?? DEFAULT_MESSAGE}</div>;
   }
+}
+
+export function LevelUpLine({ viewer, level, avatar }: LevelUpEvent) {
+  return (
+    <div className="overlay-item overlay-levelup">
+      <Icon name="star" size={18} strokeWidth={2.5} />
+      <ViewerAvatar className="small" name={viewer} src={avatar} />
+      <span className="overlay-viewer">{viewer}</span> reached <span className="overlay-keyword">level {level}</span>
+    </div>
+  );
+}
+
+function LevelUps({ bus }: { bus: GiftBus }) {
+  const [items, setItems] = useState<(LevelUpEvent & { id: number })[]>([]);
+  useEffect(() => {
+    let nextId = 0;
+    const timers = new Set<number>();
+    const listener = (e: Event) => {
+      const item = { ...(e as CustomEvent<LevelUpEvent>).detail, id: nextId++ };
+      setItems((current) => [item, ...current].slice(0, MAX_LEVEL_UPS));
+      const timer = window.setTimeout(() => {
+        timers.delete(timer);
+        setItems((current) => current.filter((i) => i.id !== item.id));
+      }, LEVEL_UP_MS);
+      timers.add(timer);
+    };
+    bus.addEventListener('levelUp', listener);
+    return () => {
+      bus.removeEventListener('levelUp', listener);
+      timers.forEach(clearTimeout);
+    };
+  }, [bus]);
+  if (items.length === 0) return null;
+  return (
+    <div className="overlay">
+      {items.map((item) => (
+        <LevelUpLine key={item.id} viewer={item.viewer} level={item.level} avatar={item.avatar} />
+      ))}
+    </div>
+  );
 }
 
 // A panel's title: an icon on a tinted badge, then the name, and anything else (a countdown) at the far end.
@@ -111,23 +207,24 @@ function Goals({ goals }: { goals: StreamStats['goals'] }) {
   );
 }
 
-// A viewer's initial in a ring of the panel's color.
-function Avatar({ name }: { name: string }) {
-  return <span className="w-avatar">{[...name][0]?.toUpperCase()}</span>;
-}
-
 // One viewer worth showing: the top gifter, the latest follower and so on. Pops when the viewer changes.
 // A streak shows its count beside a flame.
-function Highlight({ title, icon, tone, viewer, detail, count }: { title: string; icon: IconName; tone: Tone; viewer: string; detail?: string; count?: number }) {
+function GiftPicture({ src }: { src?: string }) {
+  const [failed, setFailed] = useState(false);
+  return src && !failed ? <img className="w-gift-image" src={src} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} /> : null;
+}
+
+function Highlight({ title, icon, tone, viewer, avatar, detail, count, image }: { title: string; icon: IconName; tone: Tone; viewer: string; avatar?: string; detail?: string; count?: number; image?: string }) {
   return (
     <div className={`overlay-panel w-highlight tone-${tone}`}>
       <Title icon={icon}>{title}</Title>
       <div key={`${viewer}:${detail}:${count}`} className="w-highlight-body">
-        <Avatar name={viewer} />
+        <ViewerAvatar className="w-avatar" name={viewer} src={avatar} />
         <span className="w-highlight-text">
           <span className="w-highlight-name">{viewer}</span>
           {detail && <span className="overlay-muted">{detail}</span>}
         </span>
+        <GiftPicture key={image} src={image} />
         {count !== undefined && (
           <span className="w-streak">
             <Flame />
@@ -188,6 +285,7 @@ function Chat({ lines }: { lines: ChatLine[] }) {
       <Title icon="chat">Chat</Title>
       {lines.map((l) => (
         <div key={l.id} className="w-chat-line">
+          <ViewerAvatar className="small" name={l.viewer} src={l.avatar} />
           <span className="overlay-viewer" style={{ color: nameColor(l.viewer) }}>
             {l.viewer}
           </span>
@@ -225,92 +323,6 @@ function CoinJar({ diamonds, target, bus }: { diamonds: number; target: number; 
   );
 }
 
-// Fireworks over the whole screen for gifts worth at least `min` diamonds; bigger gifts launch more.
-type Particle = { x: number; y: number; vx: number; vy: number; life: number; color: string };
-const COLORS = ['#ff4d8d', '#a855f7', '#ffd166', '#60a5fa', '#ffffff'];
-const MAX_PARTICLES = 900;
-const GLOW = 16; // the glow sprite's radius, in pixels
-
-// A glowing dot per color, drawn once. Stamping it is far cheaper than shadowBlur, which blurs every spark on every frame.
-const glows = new Map<string, HTMLCanvasElement>();
-function glow(color: string) {
-  let sprite = glows.get(color);
-  if (!sprite) {
-    sprite = document.createElement('canvas');
-    sprite.width = sprite.height = GLOW * 2;
-    const g = sprite.getContext('2d')!;
-    const gradient = g.createRadialGradient(GLOW, GLOW, 0, GLOW, GLOW, GLOW);
-    gradient.addColorStop(0, '#fff');
-    gradient.addColorStop(0.2, color);
-    gradient.addColorStop(1, 'transparent');
-    g.fillStyle = gradient;
-    g.fillRect(0, 0, GLOW * 2, GLOW * 2);
-    glows.set(color, sprite);
-  }
-  return sprite;
-}
-export function Fireworks({ min, bus }: { min: number; bus: GiftBus }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const particles = useRef<Particle[]>([]);
-  const frame = useRef<number | null>(null);
-
-  const draw = () => {
-    const c = canvas.current;
-    const g = c?.getContext('2d');
-    if (!c || !g) return;
-    if (c.width !== c.clientWidth || c.height !== c.clientHeight) (c.width = c.clientWidth), (c.height = c.clientHeight);
-    // Fade what's there rather than clearing it, which leaves trails; the canvas stays transparent underneath.
-    g.globalCompositeOperation = 'destination-out';
-    g.globalAlpha = 1;
-    g.fillStyle = 'rgba(0, 0, 0, 0.22)';
-    g.fillRect(0, 0, c.width, c.height);
-    g.globalCompositeOperation = 'lighter';
-    particles.current = particles.current.filter((p) => p.life > 0);
-    for (const p of particles.current) {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vy += 0.05;
-      p.vx *= 0.985;
-      p.vy *= 0.985;
-      p.life -= 0.011;
-      g.globalAlpha = Math.max(0, p.life);
-      const size = GLOW * (0.4 + 0.6 * p.life);
-      g.drawImage(glow(p.color), p.x - size, p.y - size, size * 2, size * 2);
-    }
-    if (particles.current.length > 0) frame.current = requestAnimationFrame(draw);
-    else {
-      g.clearRect(0, 0, c.width, c.height);
-      frame.current = null;
-    }
-  };
-
-  const burst = (x: number, y: number) => {
-    // A hidden tab doesn't draw, so sparks would pile up and all draw at once on return.
-    if (document.hidden || particles.current.length >= MAX_PARTICLES) return;
-    const color = COLORS[Math.floor(Math.random() * COLORS.length)]!;
-    for (let i = 0; i < 90; i++) {
-      const angle = (i / 90) * Math.PI * 2 + Math.random() * 0.1;
-      const speed = 2.5 + Math.random() * 4.5;
-      particles.current.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1, color: Math.random() < 0.2 ? '#fff' : color });
-    }
-    frame.current ??= requestAnimationFrame(draw);
-  };
-
-  useGifts(bus, (gift) => {
-    if (gift.diamonds < min) return;
-    const bursts = Math.min(6, 1 + Math.floor(Math.log2(gift.diamonds / min)));
-    for (let i = 0; i < bursts; i++) {
-      // The canvas fills the screen on stream, or a small box in the dashboard's preview.
-      setTimeout(() => {
-        const c = canvas.current;
-        if (c) burst(c.clientWidth * (0.2 + Math.random() * 0.6), c.clientHeight * (0.15 + Math.random() * 0.35));
-      }, i * 350);
-    }
-  });
-  useEffect(() => () => void (frame.current !== null && cancelAnimationFrame(frame.current)), []);
-  return <canvas ref={canvas} className="w-fireworks" aria-hidden="true" />;
-}
-
 // Preview: sample numbers and gifts, so a host can see their widgets before going live. Goals are the host's own
 // (the preview opens from the dashboard, so the session cookie is there), filling up and starting over.
 const SAMPLE_VIEWERS = ['nightowl', 'pixelpanda', 'mapleleaf', 'riverstone', 'kitekid'];
@@ -338,8 +350,8 @@ export function usePreview(enabled: boolean, bus: GiftBus) {
       .catch(() => {});
     let tick = 0;
     let current: StreamStats = {
-      likes: 0, follows: 0, shares: 0, diamonds: 0, gifts: 0, subscriptions: 0, viewers: 128,
-      topGift: null, topStreak: null, lastFollower: null, lastGifter: null, goals: [],
+      likes: 0, follows: 0, shares: 0, diamonds: 0, gifts: 0, subscriptions: 0, viewers: 128, peakViewers: 128, interactors: 0,
+      topGift: null, topStreak: null, lastFollower: null, lastGifter: null, avatars: {}, goals: [],
     };
     const step = () => {
       const viewer = SAMPLE_VIEWERS[tick % SAMPLE_VIEWERS.length]!;
@@ -364,6 +376,7 @@ export function usePreview(enabled: boolean, bus: GiftBus) {
       setStats(current);
       setChat((lines) => [...lines, { id: tick, viewer, text: SAMPLE_CHAT[tick % SAMPLE_CHAT.length]! }].slice(-6));
       bus.emit({ viewer, gift, count, diamonds: diamonds * count });
+      bus.emitLevelUp({ viewer, level: 2 + (tick % 20) });
       tick++;
     };
     const first = setTimeout(step, 300); // after the goals have likely arrived

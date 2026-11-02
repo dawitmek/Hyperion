@@ -1039,31 +1039,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fluxion-companion"
-version = "0.2.0"
-dependencies = [
- "base64 0.21.7",
- "core-foundation",
- "core-graphics",
- "futures-util",
- "libc",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "png",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "tokio",
- "tokio-tungstenite",
- "windows",
-]
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1670,6 +1645,31 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "hyperion-companion"
+version = "0.3.0"
+dependencies = [
+ "base64 0.21.7",
+ "core-foundation",
+ "core-graphics",
+ "futures-util",
+ "libc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "png",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "tokio",
+ "tokio-tungstenite",
+ "windows",
 ]
 
 [[package]]

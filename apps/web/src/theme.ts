@@ -1,11 +1,11 @@
-import type { UiMode, UiTheme, UiThemeStyle } from '@fluxion/shared';
+import type { UiMode, UiTheme, UiThemeStyle } from '@hyperion/shared';
 
-// The account's look on the dashboard and login pages (see @fluxion/theme's themes.css): its theme, and light or
+// The account's look on the dashboard and login pages (see @hyperion/theme's themes.css): its theme, and light or
 // dark mode. It's also remembered in this browser, so the login page and the first paint of the dashboard already
 // have it before the account loads (index.html applies it before anything shows). Other pages, the public site and
 // the overlays, keep their own look and follow the system's light or dark.
 
-const KEY = 'fluxion-theme';
+const KEY = 'hyperion-theme';
 type Choice = { theme: UiTheme; style: UiThemeStyle; mode: UiMode };
 
 const systemDark = matchMedia('(prefers-color-scheme: dark)');
