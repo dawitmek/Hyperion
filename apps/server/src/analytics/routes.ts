@@ -6,6 +6,8 @@ import { streamerKey } from '../leaderboard/stats.js';
 import { streamActivity, streamDetail, streamSummaries, viewerActivity, viewerProfile } from './queries.js';
 
 const VIEWER_KINDS = ['comment', 'gift', 'like', 'follow', 'share', 'join', 'subscribe', 'emote'];
+const HISTORY_KINDS = [...VIEWER_KINDS, 'command'];
+const kindList = (kinds: string[]) => ({ type: 'string', pattern: `^(${kinds.join('|')})(,(${kinds.join('|')}))*$` });
 const UUID = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 // A live stream's report reads every event it has, and each open Live page asks for it every 10 s. It's built at
 // most once in this long and shared, so three tabs cost what one does.
@@ -52,11 +54,13 @@ export async function analyticsRoutes(app: FastifyInstance) {
   app.get<{ Params: { viewer: string }; Querystring: { account?: string } }>(
     '/viewers/:viewer',
     { schema: { params: viewerParams, querystring: { type: 'object', additionalProperties: false, properties: { account } } } },
-    async (req) =>
-      viewerProfile(db, req.hostId, req.params.viewer, req.query.account ? streamerKey(req.query.account) : await app.stats.streamerOf(req.hostId), req.query.account),
+    async (req) => {
+      await app.live.flushRecording(req.hostId);
+      return viewerProfile(db, req.hostId, req.params.viewer, req.query.account ? streamerKey(req.query.account) : await app.stats.streamerOf(req.hostId), req.query.account);
+    },
   );
 
-  app.get<{ Params: { viewer: string }; Querystring: { account?: string; before?: number; limit?: number } }>(
+  app.get<{ Params: { viewer: string }; Querystring: { account?: string; stream?: string; search?: string; kinds?: string; before?: number; limit?: number } }>(
     '/viewers/:viewer/activity',
     {
       schema: {
@@ -64,17 +68,28 @@ export async function analyticsRoutes(app: FastifyInstance) {
         querystring: {
           type: 'object',
           additionalProperties: false,
-          properties: { account, before: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 200 } },
+          properties: {
+            account,
+            stream: { type: 'string', pattern: UUID },
+            search: { type: 'string', maxLength: 100 },
+            kinds: kindList(HISTORY_KINDS),
+            before: { type: 'integer', minimum: 0 },
+            limit: { type: 'integer', minimum: 1, maximum: 200 },
+          },
         },
       },
     },
-    async (req) =>
-      viewerActivity(db, req.hostId, req.params.viewer, {
+    async (req) => {
+      await app.live.flushRecording(req.hostId); // so a viewer's panel shows what they just did
+      return viewerActivity(db, req.hostId, req.params.viewer, {
         account: req.query.account,
+        stream: req.query.stream,
+        search: req.query.search?.trim() || undefined,
         before: req.query.before,
-        kinds: [...VIEWER_KINDS, 'command'],
+        kinds: req.query.kinds?.split(',') ?? HISTORY_KINDS,
         limit: req.query.limit ?? 50,
-      }),
+      });
+    },
   );
 
   app.get<{ Params: { id: string } }>(
@@ -100,7 +115,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
             stream: streamParam,
             before: { type: 'integer', minimum: 0 },
             after: { type: 'integer', minimum: 0 },
-            kinds: { type: 'string', pattern: `^(${VIEWER_KINDS.join('|')})(,(${VIEWER_KINDS.join('|')}))*$` },
+            kinds: kindList(VIEWER_KINDS),
             viewer: { type: 'string', maxLength: 64 },
             limit: { type: 'integer', minimum: 1, maximum: 200 },
           },

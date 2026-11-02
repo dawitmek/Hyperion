@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import "@fluxion/theme/theme.css";
+import "@hyperion/theme/theme.css";
 import "./App.css";
 import { Icon, SectionHead } from "./icons";
 
@@ -28,6 +28,11 @@ interface Snapshot {
   permissionProblem: string | null;
   panicHotkey: string;
   commands: CommandView[];
+  macros: MacroView[];
+  macrosSupported: boolean;
+  recording: string | null;
+  recordingStarted: boolean;
+  stopRecordingHotkey: string;
   pendingApprovals: number;
   theme: string | null; // the account's dashboard theme, which this window follows
   themeStyle: string | null;
@@ -42,6 +47,12 @@ interface CommandView {
   combo: boolean;
   approved: boolean;
   problem: string | null;
+}
+
+interface MacroView {
+  name: string;
+  lengthMs: number;
+  steps: number;
 }
 
 interface GameWindow {
@@ -75,7 +86,7 @@ export default function App() {
       .then(() => setError(null))
       .catch((e) => setError(String(e)));
 
-  // The dashboard's look (see @fluxion/theme), as the server last sent it: theme, style, and light or dark.
+  // The dashboard's look (see @hyperion/theme), as the server last sent it: theme, style, and light or dark.
   useEffect(() => {
     const root = document.documentElement;
     if (state?.theme && state.theme !== "default") root.dataset.theme = state.theme;
@@ -95,10 +106,8 @@ export default function App() {
   return (
     <main className="companion">
       <header className="top">
-        <span className="logo-mark" aria-hidden="true">
-          <Icon name="logo" strokeWidth={2.4} />
-        </span>
-        <h1>Fluxion Companion</h1>
+        <img className="logo-mark" src="/logo.png" alt="" />
+        <h1>Hyperion Companion</h1>
         {state.paired && <ConnectionTag connection={state.connection} />}
       </header>
       {!state.platformSupported && (
@@ -108,7 +117,7 @@ export default function App() {
         <div className="notice warning">
           <p>
             {state.permissionProblem}. Click below, then in System Settings → Privacy &amp; Security → Accessibility turn on
-            Fluxion Companion.
+            Hyperion Companion.
           </p>
           <div className="row" style={{ marginTop: 10 }}>
             <button className="btn btn-sm" onClick={() => run("request_permission")}>
@@ -258,7 +267,7 @@ function PairForm({ run, defaultServer }: { run: Run; defaultServer: string | nu
         <p className="muted">Once paired, chat's commands on your stream press keys in your game, on this PC only.</p>
       </div>
       <ol className="pair-steps">
-        <li>Open Companion on the Fluxion dashboard.</li>
+        <li>Open Companion on the Hyperion dashboard.</li>
         <li>Create a pairing code. The server address is shown with it.</li>
         <li>Enter both here.</li>
       </ol>
@@ -377,6 +386,7 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
       <AllowedKeys state={state} run={run} />
 
       <Commands state={state} run={run} />
+      <Macros state={state} run={run} />
 
       <TiktokVoices serverUrl={state.serverUrl} />
 
@@ -441,7 +451,7 @@ function TiktokVoices({ serverUrl }: { serverUrl: string | null }) {
   return (
     <section className="card stack" aria-labelledby="tiktok-title">
       <SectionHead id="tiktok-title" icon="voice" hue="pink" title="TikTok voices">
-        Read chat aloud in TikTok's own voices. Sign in to TikTok here and Fluxion uses your account to make the speech.
+        Read chat aloud in TikTok's own voices. Sign in to TikTok here and Hyperion uses your account to make the speech.
       </SectionHead>
       {message && (
         <div className={`notice ${message.ok ? "info" : "error"}`} role="status">
@@ -678,6 +688,74 @@ function Commands({ state, run }: { state: Snapshot; run: Run }) {
           Off on the dashboard: {off.map((c) => c.keyword).join(", ")}
         </p>
       )}
+    </section>
+  );
+}
+
+// Keyboard and mouse input recorded here and kept on this PC. The dashboard can only ask for one by name.
+function Macros({ state, run }: { state: Snapshot; run: Run }) {
+  const [name, setName] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const replaces = state.macros.some((m) => m.name === name.trim());
+  return (
+    <section className="card stack" aria-labelledby="macros-title">
+      <SectionHead id="macros-title" icon="commands" hue="indigo" title="Macros">
+        Record keys, clicks and mouse movement in your game, up to a minute, then run them from a command on the dashboard.
+        They stay on this PC, and stop if the game loses focus or you pause.
+      </SectionHead>
+      {!state.macrosSupported ? (
+        <p className="notice warning">Recording and playing macros only works on Windows so far.</p>
+      ) : state.recording ? (
+        <div className="notice recording" role="status">
+          <p>
+            <strong>{state.recording}: </strong>
+            {state.recordingStarted ? `Recording. Press ${state.stopRecordingHotkey} when you're done.` : "Starting in 3 seconds. Click into your game now."}
+          </p>
+          <button className="btn btn-sm" onClick={() => run("cancel_recording")}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <form
+          className="row macro-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            run("start_recording", { name }).then(() => setName(""));
+          }}
+        >
+          <input className="input" value={name} maxLength={64} required placeholder="Macro name, like spin" aria-label="Macro name" onChange={(e) => setName(e.target.value)} />
+          <button className="btn btn-primary" disabled={!state.targetProcess} title={state.targetProcess ? undefined : "Pick your game first: only input in the game is recorded"}>
+            {replaces ? "Record over it" : "Record"}
+          </button>
+        </form>
+      )}
+      {state.macros.length > 0 && (
+        <ul className="macro-list">
+          {state.macros.map((m) => (
+            <li key={m.name}>
+              <strong className="command-word">{m.name}</strong>
+              <span className="muted small">
+                {(m.lengthMs / 1000).toFixed(1)} s, {m.steps.toLocaleString()} steps
+              </span>
+              <span className="macro-buttons">
+                <button className="btn btn-sm" title="Plays in 3 seconds, so you can click into your game" onClick={() => run("try_macro", { name: m.name })}>
+                  Try
+                </button>
+                {deleting === m.name ? (
+                  <button className="btn btn-sm btn-danger" onClick={() => run("delete_macro", { name: m.name }).then(() => setDeleting(null))}>
+                    Delete it
+                  </button>
+                ) : (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setDeleting(m.name)}>
+                    Delete
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {state.macrosSupported && <p className="muted small">Some online games treat recorded input as cheating. Check the game's rules first.</p>}
     </section>
   );
 }

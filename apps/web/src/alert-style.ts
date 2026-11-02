@@ -1,15 +1,33 @@
 import type { CSSProperties } from 'react';
-import { DEFAULT_ALERT_STYLE, type AlertFont, type AlertStyle } from '@fluxion/shared';
+import { DEFAULT_ALERT_STYLE, type AlertAnimation, type AlertFont, type AlertStyle } from '@hyperion/shared';
 
-// Fonts an alert can use: Geist and Oxanium come with Fluxion; the others are on Windows and macOS, with fallbacks.
+// Fonts for alerts and widgets. Most come with Hyperion (fonts.css); Impact, Georgia, Courier and Comic Sans are on
+// Windows and macOS, with fallbacks. Browsers fetch a bundled font only once something uses it.
 export const ALERT_FONT_STACKS: Record<AlertFont, [string, string]> = {
   geist: ['Geist', "'Geist Variable', system-ui, sans-serif"],
   oxanium: ['Oxanium', "'Oxanium Variable', system-ui, sans-serif"],
+  'dm-sans': ['DM Sans', "'DM Sans Variable', system-ui, sans-serif"],
+  jakarta: ['Plus Jakarta Sans', "'Plus Jakarta Sans Variable', system-ui, sans-serif"],
+  fredoka: ['Fredoka', "'Fredoka Variable', system-ui, sans-serif"],
+  bebas: ['Bebas Neue', "'Bebas Neue', Impact, sans-serif"],
+  anton: ['Anton', "Anton, Impact, sans-serif"],
   impact: ['Impact', "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif"],
+  orbitron: ['Orbitron', "'Orbitron Variable', system-ui, sans-serif"],
+  righteous: ['Righteous', "Righteous, system-ui, sans-serif"],
+  'press-start': ['Press Start 2P', "'Press Start 2P', monospace"],
+  bangers: ['Bangers', "Bangers, Impact, cursive"],
+  'permanent-marker': ['Permanent Marker', "'Permanent Marker', cursive"],
+  pacifico: ['Pacifico', "Pacifico, cursive"],
+  lobster: ['Lobster', "Lobster, cursive"],
+  caveat: ['Caveat', "'Caveat Variable', cursive"],
+  comic: ['Comic Sans', "'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', cursive"],
   georgia: ['Georgia', "Georgia, 'Times New Roman', serif"],
   courier: ['Courier', "'Courier New', Courier, monospace"],
-  comic: ['Comic Sans', "'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', cursive"],
 };
+
+// How long each entrance takes at normal speed, in seconds.
+const ANIMATION_SECONDS: Record<AlertAnimation, number> = { pop: 0.4, 'slide-up': 0.5, 'slide-down': 0.5, fade: 0.6, bounce: 0.8, zoom: 0.45 };
+export const animationSeconds = (s: AlertStyle) => ANIMATION_SECONDS[s.animation] / ((s.speed ?? 100) / 100);
 
 const fade = (color: string, percent: number) => `color-mix(in srgb, ${color} ${percent}%, transparent)`;
 const NONE = '0 0 #0000';
@@ -37,6 +55,8 @@ export function alertLook(style: AlertStyle | null): { className: string; style:
       '--a-glow': s.glow ? `0 18px 50px -12px ${fade(s.glowColor, s.glow)}, 0 0 60px -12px ${fade(s.glowColor, s.glow * 0.8)}` : NONE,
       '--a-text-shadow': s.textShadow ? '0 2px 6px rgba(0, 0, 0, 0.35)' : 'none',
       '--a-case': s.uppercase ? 'uppercase' : 'none',
+      '--a-speed': (s.speed ?? 100) / 100,
+      '--a-duration': `${animationSeconds(s)}s`,
     } as CSSProperties,
   };
 }

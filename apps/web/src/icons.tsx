@@ -45,10 +45,12 @@ const paths = {
   ),
   play: <path d="M7 4v16l13-8z" />,
   pause: <path d="M8 5v14M16 5v14" />,
+  skip: <path d="M5 5v14l11-7zM19 5v14" />,
   download: <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />,
   shield: <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3z" />,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  search: <path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm9 2-4-4" />,
   plus: <path d="M12 5v14M5 12h14" />,
   sun: (
     <>
@@ -65,7 +67,6 @@ const paths = {
       <path d="M3 12h18M12 4v16" />
     </>
   ),
-  logo: <path d="M4 16c3-8 6-8 8 0s5 8 8 0" />,
   // Overlay widgets, screen parts and goal metrics.
   target: (
     <>
@@ -141,8 +142,6 @@ export function Icon({ name, size = 16, strokeWidth = 2 }: { name: IconName; siz
 
 export function Logo({ size = 32 }: { size?: number }) {
   return (
-    <span className="logo-mark" style={{ width: size, height: size }} aria-hidden="true">
-      <Icon name="logo" size={size / 2} strokeWidth={2.4} />
-    </span>
+    <img className="logo-mark" src="/logo.png" width={size} height={size} alt="" />
   );
 }

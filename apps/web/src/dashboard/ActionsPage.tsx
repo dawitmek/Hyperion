@@ -1,66 +1,151 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { ACTION_TRIGGERS, ALERT_SOUNDS, AUDIENCES, DEFAULT_ALERT_STYLE, MAX_KEY_REPEATS, MAX_MEDIA_TOTAL_BYTES, type AlertStyle, type ServerToOverlay } from '@fluxion/shared';
+import { ACTION_TRIGGERS, ALERT_SOUNDS, BUILT_IN_MEDIA, AUDIENCES, DEFAULT_ALERT_STYLE, MAX_KEY_REPEATS, MAX_MEDIA_TOTAL_BYTES, type AlertFx, type AlertStyle, type ServerToOverlay } from '@hyperion/shared';
 import { api, uploadMedia, type Action, type ActionTrigger, type Audience, type Command, type Goal, type Host, type MediaItem, type Screen } from '../api';
 import { playSound } from '../sounds';
-import { Card, ErrorNotice, HueIcon, Scrubber, Seg, useError, type Hue } from '../ui';
+import { Card, ErrorNotice, HueIcon, Scrubber, useError, type Hue } from '../ui';
 import { Icon, type IconName } from '../icons';
-import { alertPlace } from '../Overlay';
+import { alertPlace, useClearOfWidgets } from '../Overlay';
+import { coinCount, findGift, GiftPicker, useGifts } from './GiftPicker';
 import { alertLook } from '../alert-style';
+import { EFFECT_LABELS, ScreenEffects } from '../effects';
+import { ALERT_EFFECT_LABELS, AlertContent, alertFxClass, alertFxStyle } from '../alert-fx';
+import { AlertEffectFields, EffectFields } from './EffectFields';
 import { AlertLookEditor } from './AlertLookEditor';
 import { GiftBus, usePreview } from '../overlay-widgets';
 import { CANVAS, FadedWidgets } from './OverlayPage';
+import { dragAlert } from './alert-drag';
 import { playAlertPreview, previewAudio } from './audio';
 import { Link } from '../router';
 import type { PageProps } from './Dashboard';
 
-// The host's default pop-up look, for the previews of actions that don't have their own.
-const DefaultLook = createContext<AlertStyle>(DEFAULT_ALERT_STYLE);
+// The host's two pop-up looks, for the previews of actions that don't have their own.
+const HostLooks = createContext({ main: DEFAULT_ALERT_STYLE, second: DEFAULT_ALERT_STYLE });
+const useLook = (draft: Pick<Action, 'alertStyle' | 'useAlertStyle2'>) => {
+  const { main, second } = useContext(HostLooks);
+  return draft.alertStyle ?? (draft.useAlertStyle2 ? second : main);
+};
 
 export function ActionsPage({ host, refreshHost }: PageProps) {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const loadMedia = useCallback(() => api<MediaItem[]>('GET', '/media').then(setMedia), []);
   useEffect(() => void loadMedia(), [loadMedia]);
+  const [actions, setActions] = useState<Action[]>([]);
+  const main = host.alertStyle ?? DEFAULT_ALERT_STYLE;
   return (
-    <DefaultLook.Provider value={host.alertStyle ?? DEFAULT_ALERT_STYLE}>
+    <HostLooks.Provider value={{ main, second: host.alertStyle2 ?? main }}>
       <div className="stack">
-        <DefaultLookCard host={host} refreshHost={refreshHost} />
-        <ActionsCard host={host} media={media} />
+        <DefaultLookCard host={host} refreshHost={refreshHost} actions={actions} media={media} />
+        <ActionsCard host={host} media={media} actions={actions} setActions={setActions} />
         <MediaCard media={media} reload={loadMedia} />
       </div>
-    </DefaultLook.Provider>
+    </HostLooks.Provider>
+  );
+}
+
+const usedBy = (count: number) => `Used by ${count} action${count === 1 ? '' : 's'}`;
+
+// Picks one of the host's looks. Each is its own button, showing that look, with a number and color to tell them apart.
+function LookSlots<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { id: T; mark: string; hue: Hue; label: string; note: string; style: AlertStyle }[];
+  onChange: (id: T) => void;
+}) {
+  return (
+    <div className="look-slots" role="radiogroup" aria-label={label}>
+      {options.map((o) => {
+        const look = alertLook(o.style);
+        return (
+          <button key={o.id} type="button" role="radio" aria-checked={value === o.id} className={`look-slot ${o.hue}`} onClick={() => onChange(o.id)}>
+            <span className="look-slot-mark" aria-hidden="true">
+              {o.mark}
+            </span>
+            <span className="look-preset-stage">
+              <span className={`overlay-alert ${look.className}`} style={look.style}>
+                Aa
+              </span>
+            </span>
+            <span className="look-slot-text">
+              <strong>{o.label}</strong>
+              <span className="muted small">{o.note}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 // How every alert looks unless its action has a look of its own. Edited here and saved together, so dragging
 // through colors doesn't reload a live stream at every step.
-function DefaultLookCard({ host, refreshHost }: Pick<PageProps, 'host' | 'refreshHost'>) {
-  const saved = host.alertStyle ?? DEFAULT_ALERT_STYLE;
-  const [draft, setDraft] = useState<AlertStyle>(saved);
+function DefaultLookCard({ host, refreshHost, actions, media }: Pick<PageProps, 'host' | 'refreshHost'> & { actions: Action[]; media: MediaItem[] }) {
+  const looks = useContext(HostLooks);
+  const [slot, setSlot] = useState<'main' | 'second'>('main');
+  const [edits, setEdits] = useState<{ main?: AlertStyle; second?: AlertStyle }>({}); // kept while switching between the two
+  const saved = looks[slot];
+  const draft = edits[slot] ?? saved;
+  const setDraft = (style: AlertStyle | undefined) => setEdits((e) => ({ ...e, [slot]: style }));
+  const [previewed, setPreviewed] = useState(''); // an action's id; '' is the sample
   const [replays, setReplays] = useState(0);
   const { error, guard } = useError();
   const changed = JSON.stringify(draft) !== JSON.stringify(saved);
-  const save = guard(() => api('PATCH', '/settings', { alertStyle: draft }).then(refreshHost));
+  const save = guard(() => api('PATCH', '/settings', { [slot === 'main' ? 'alertStyle' : 'alertStyle2']: draft }).then(refreshHost).then(() => setDraft(undefined)));
+  const previewable = actions.filter((a) => a.text || a.mediaId);
+  const action = previewable.find((a) => a.id === previewed) ?? { ...newDraft(), text: '{viewer} followed!' };
   return (
     <Card
       title="Pop-up style"
-      description="How your alerts look on stream: colors, font, shape and animation. Every action uses this style unless you give it its own."
+      description="How your alerts look on stream: colors, font, shape and animation. Every action uses your main style unless you pick your second style or give it its own."
     >
       <ErrorNotice error={error} />
-      <div className="default-look">
-        <div className="alert-preview" aria-label="Pop-up preview">
-          <div key={replays} className={`overlay-alert ${alertLook(draft).className}`} style={alertLook(draft).style}>
-            nightowl followed!
+      <div className="stack">
+        <LookSlots
+          label="Style to edit"
+          value={slot}
+          options={[
+            { id: 'main', mark: '1', hue: 'indigo', label: 'Main style', note: usedBy(actions.filter((a) => !a.alertStyle && !a.useAlertStyle2).length), style: edits.main ?? looks.main },
+            { id: 'second', mark: '2', hue: 'pink', label: 'Second style', note: usedBy(actions.filter((a) => !a.alertStyle && a.useAlertStyle2).length), style: edits.second ?? looks.second },
+          ]}
+          onChange={setSlot}
+        />
+        <div className="default-look">
+          <div className="look-preview stack">
+            {previewable.length > 0 && (
+              <label className="field">
+                Preview with
+                <select className="input" value={previewed} onChange={(e) => (setPreviewed(e.target.value), setReplays((n) => n + 1))}>
+                  <option value="">A sample follow</option>
+                  {previewable.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <AlertPreview key={replays} draft={{ ...action, alertStyle: draft }} media={media} />
           </div>
-          <span className="alert-preview-note">Preview, with a sample name</span>
+          <div className="stack">
+            {slot === 'second' && (
+              <button type="button" className="btn" onClick={() => setDraft({ ...looks.main })}>
+                Copy my main style
+              </button>
+            )}
+            <AlertLookEditor value={draft} onChange={setDraft} onReplay={() => setReplays((n) => n + 1)} />
+          </div>
         </div>
-        <AlertLookEditor value={draft} onChange={setDraft} onReplay={() => setReplays((n) => n + 1)} />
       </div>
       <div className="row" style={{ marginTop: 16 }}>
         <button className="btn btn-primary" disabled={!changed} onClick={() => void save()}>
-          {changed ? 'Save pop-up style' : 'Saved'}
+          {changed ? `Save ${slot} style` : 'Saved'}
         </button>
         {changed && (
-          <button className="btn btn-ghost" onClick={() => setDraft(saved)}>
+          <button className="btn btn-ghost" onClick={() => setDraft(undefined)}>
             Undo changes
           </button>
         )}
@@ -75,6 +160,7 @@ const TRIGGERS: Record<ActionTrigger, { label: string; placeholders: string; ico
   share: { label: 'Shares the stream', placeholders: '{viewer}', icon: 'share', hue: 'green' },
   gift: { label: 'Sends a gift', placeholders: '{viewer}, {gift}, {count}, {coins}', icon: 'gift', hue: 'amber' },
   likes: { label: 'Likes reach a number', placeholders: '{viewer}, {total}, {count}', icon: 'heart', hue: 'pink' },
+  viewer_likes: { label: 'One viewer likes a number of times', placeholders: '{viewer}, {total}, {count}', icon: 'heart', hue: 'pink' },
   join: { label: 'Joins the stream', placeholders: '{viewer}', icon: 'crowd', hue: 'teal' },
   subscribe: { label: 'Subscribes', placeholders: '{viewer}, {months}', icon: 'star', hue: 'violet' },
   emote: { label: 'Sends a subscriber sticker', placeholders: '{viewer}', icon: 'sparkle', hue: 'orange' },
@@ -92,6 +178,36 @@ const AUDIENCE_LABELS: Record<Audience, string> = {
   viewer: 'One viewer',
 };
 
+// What a new action says, until the host writes their own.
+const TRIGGER_TEXT: Record<ActionTrigger, string> = {
+  follow: '{viewer} followed!',
+  share: '{viewer} shared the stream!',
+  gift: '{viewer} sent {count}× {gift}!',
+  likes: '{total} likes! Thanks {viewer}',
+  viewer_likes: '{viewer} sent {total} likes!',
+  join: '{viewer} joined!',
+  subscribe: '{viewer} subscribed for {months} months!',
+  emote: '{viewer} sent a sticker!',
+  command: '{viewer} used a command!',
+  first_activity: 'Welcome, {viewer}!',
+  goal: '{goal} reached!',
+};
+
+const ACTION_TABS = [
+  ['when', 'When', 'bell'],
+  ['alert', 'Alert', 'chat'],
+  ['look', 'Look', 'sparkle'],
+  ['also', 'Keys and points', 'commands'],
+] as const satisfies readonly (readonly [string, string, IconName])[];
+const EDITOR_LAYOUT_KEY = 'hyperion-action-editor';
+function storedEditorLayout() {
+  try {
+    return localStorage.getItem(EDITOR_LAYOUT_KEY) !== 'stacked';
+  } catch {
+    return true;
+  }
+}
+
 type Draft = Omit<Action, 'id'>;
 const newDraft = (): Draft => ({
   profileId: null,
@@ -101,6 +217,7 @@ const newDraft = (): Draft => ({
   giftName: null,
   minDiamonds: null,
   likeStep: 1000,
+  likeGrowth: null,
   command: null,
   goalId: null,
   audience: 'everyone',
@@ -108,24 +225,34 @@ const newDraft = (): Draft => ({
   cooldownMs: 0,
   viewerCooldownMs: 0,
   random: false,
-  text: '{viewer} followed!',
+  text: TRIGGER_TEXT.follow,
   sound: 'chime',
   soundMediaId: null,
   mediaId: null,
   speak: false,
   durationMs: 5000,
+  effect: null,
+  effectAmount: 3,
+  effectColor: null,
+  effectSpeed: 100,
+  alertEffect: null,
+  alertEmoji: '🎉',
+  alertShape: 'star',
+  alertEffectColor: null,
+  alertEffectAmount: 3,
+  alertEffectSpeed: 100,
   alertX: null,
   alertY: null,
   alertScale: 100,
   alertStyle: null,
+  useAlertStyle2: false,
   keyCommandId: null,
   repeatWithCount: false,
   points: 0,
   screenId: null,
 });
 
-function ActionsCard({ host, media }: { host: Host; media: MediaItem[] }) {
-  const [actions, setActions] = useState<Action[]>([]);
+function ActionsCard({ host, media, actions, setActions }: { host: Host; media: MediaItem[]; actions: Action[]; setActions: (actions: Action[]) => void }) {
   const [commands, setCommands] = useState<Command[]>([]);
   const [screens, setScreens] = useState<Screen[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -135,8 +262,8 @@ function ActionsCard({ host, media }: { host: Host; media: MediaItem[] }) {
   // Test runs on the overlay. With none open it plays here instead, so it's still heard; either way it says where it went.
   const test = (id: string) =>
     guard(async () => {
-      const result = await api<{ alert: Extract<ServerToOverlay, { type: 'alert' }>; overlays: number }>('POST', `/actions/${id}/test`);
-      if (result.overlays === 0) playAlertPreview(result.alert);
+      const result = await api<{ alert: Extract<ServerToOverlay, { type: 'alert' }> | null; overlays: number }>('POST', `/actions/${id}/test`);
+      if (result.overlays === 0 && result.alert) playAlertPreview(result.alert);
       setTested({ id, overlays: result.overlays });
     })();
   const load = useCallback(
@@ -227,13 +354,52 @@ function ActionsCard({ host, media }: { host: Host; media: MediaItem[] }) {
   );
 }
 
+// One gift or any.
+function GiftField({ value, onChange }: { value: string | null; onChange: (gift: string | null) => void }) {
+  const gifts = useGifts();
+  const picked = findGift(gifts, value);
+  return (
+    <div className="field gift-field">
+      Gift
+      <span className="hint">An alert for one gift replaces the any-gift alert for it.</span>
+      <div className="gift-picked">
+        {picked?.image && <img src={picked.image} alt="" referrerPolicy="no-referrer" />}
+        <span>
+          <strong>{value ?? 'Any gift'}</strong>
+          {picked && picked.coins > 0 && <span className="muted small">{coinCount(picked.coins)}</span>}
+        </span>
+        <span className="spacer" />
+        {value && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange(null)}>
+            Use any gift
+          </button>
+        )}
+      </div>
+      <GiftPicker gifts={gifts} picked={value ? [value] : []} onPick={onChange} />
+    </div>
+  );
+}
+
+const LIKE_GROWTH = [1.5, 2, 3, 5, 10];
+// The next few targets after the first, for the hint.
+function likeTargets({ likeStep, likeGrowth }: Pick<Action, 'likeStep' | 'likeGrowth'>) {
+  const targets = [likeStep ?? 0];
+  for (let i = 0; i < 2; i++) targets.push(Math.ceil(targets.at(-1)! * likeGrowth!));
+  return targets.slice(1).map((t) => t.toLocaleString());
+}
+
+const likeWhen = (a: Action, what: string) =>
+  a.likeGrowth ? `At ${a.likeStep?.toLocaleString()} ${what}, then ×${a.likeGrowth} each time` : `Every ${a.likeStep?.toLocaleString()} ${what}`;
+
 function describeWhen(a: Action, goals: Goal[]): string {
   const who = a.audience === 'viewer' ? `only ${a.audienceViewer}` : a.audience === 'everyone' ? '' : `${AUDIENCE_LABELS[a.audience].toLowerCase()} only`;
   const what =
     a.trigger === 'gift'
       ? `Sends ${a.giftName ?? 'any gift'}${a.minDiamonds ? ` worth ${a.minDiamonds}+ coins` : ''}`
       : a.trigger === 'likes'
-        ? `Every ${a.likeStep?.toLocaleString()} likes`
+        ? likeWhen(a, 'likes')
+        : a.trigger === 'viewer_likes'
+          ? likeWhen(a, 'likes from one viewer')
         : a.trigger === 'command'
           ? `Types ${a.command}`
           : a.trigger === 'goal'
@@ -251,6 +417,8 @@ function describeDoes(a: Action, commands: Command[], media: MediaItem[], host: 
   if (a.soundMediaId) does.push([`Sound: ${media.find((m) => m.id === a.soundMediaId)?.name ?? 'file'}`, 'violet']);
   if (a.mediaId) does.push([media.find((m) => m.id === a.mediaId)?.kind === 'video' ? 'Video' : 'Picture', 'sky']);
   if (a.speak && a.text) does.push(['Read aloud', 'teal']);
+  if (a.alertEffect) does.push([`Alert animation: ${ALERT_EFFECT_LABELS[a.alertEffect]}`, 'orange']);
+  if (a.effect) does.push([`Screen animation: ${a.effect === 'random' ? 'random' : EFFECT_LABELS[a.effect]}`, 'orange']);
   const command = commands.find((c) => c.id === a.keyCommandId);
   if (command) does.push([`Presses ${command.keyword}`, 'amber']);
   if (a.points > 0 && host.points) does.push([`+${a.points.toLocaleString()} points`, 'green']);
@@ -280,7 +448,18 @@ function ActionEditor({
 }) {
   const [draft, setDraft] = useState<Draft>(initial);
   const [replays, setReplays] = useState(0); // a new count shows the preview's entrance again
-  const defaultLook = useContext(DefaultLook);
+  const [sideBySide, setSideBySide] = useState(storedEditorLayout);
+  const [tab, setTab] = useState<(typeof ACTION_TABS)[number][0]>('when');
+  const switchLayout = () => {
+    setSideBySide(!sideBySide);
+    try {
+      localStorage.setItem(EDITOR_LAYOUT_KEY, sideBySide ? 'stacked' : 'tabs');
+    } catch {} // only means it isn't remembered
+  };
+  // Default text follows the trigger; text the host wrote stays.
+  const pickTrigger = (trigger: ActionTrigger) => setDraft((d) => ({ ...d, trigger, text: d.text === TRIGGER_TEXT[d.trigger] ? TRIGGER_TEXT[trigger] : d.text }));
+  const look = useLook(draft);
+  const { main, second } = useContext(HostLooks);
   const { error, guard } = useError();
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
   const text = (value: string) => value.trim() || null;
@@ -292,30 +471,23 @@ function ActionEditor({
     const name = draft.name.trim() || TRIGGERS[draft.trigger].label;
     guard(() => onSave({ ...draft, name }))();
   };
+  const actionLook = useLook(draft);
   const soundValue = draft.soundMediaId ? `file:${draft.soundMediaId}` : (draft.sound ?? '');
   const setSound = (value: string) =>
     set(value.startsWith('file:') ? { sound: null, soundMediaId: value.slice(5) } : { sound: (value || null) as Draft['sound'], soundMediaId: null });
 
-  return (
-    <form className="action-editor stack" onSubmit={submit} aria-label={title}>
-      <div className="action-editor-head">
-        <HueIcon name={TRIGGERS[draft.trigger].icon} hue={TRIGGERS[draft.trigger].hue} />
-        <div className="action-editor-title">
-          <h3>{draft.name.trim() || TRIGGERS[draft.trigger].label}</h3>
-          <span className="muted small">{title}</span>
-        </div>
-      </div>
-      <ErrorNotice error={error} />
-      <label className="field">
-        Name
-        <input className="input" value={draft.name} maxLength={60} placeholder={TRIGGERS[draft.trigger].label} onChange={(e) => set({ name: e.target.value })} />
-      </label>
 
+  const preview = (
+        <div className="look-preview">
+          <AlertPreview key={replays} draft={draft} media={media} />
+        </div>
+  );
+  const when = (
       <Section title="When a viewer" icon={TRIGGERS[draft.trigger].icon} hue={TRIGGERS[draft.trigger].hue}>
         <div className="form-grid">
           <label className="field">
             Does this
-            <select className="input" value={draft.trigger} onChange={(e) => set({ trigger: e.target.value as ActionTrigger })}>
+            <select className="input" value={draft.trigger} onChange={(e) => pickTrigger(e.target.value as ActionTrigger)}>
               {ACTION_TRIGGERS.map((t) => (
                 <option key={t} value={t}>
                   {TRIGGERS[t].label}
@@ -325,11 +497,7 @@ function ActionEditor({
           </label>
           {draft.trigger === 'gift' && (
             <>
-              <label className="field">
-                Gift
-                <span className="hint">As TikTok names it, like Rose. Empty for any gift.</span>
-                <input className="input" value={draft.giftName ?? ''} maxLength={64} placeholder="Any gift" onChange={(e) => set({ giftName: text(e.target.value) })} />
-              </label>
+              <GiftField value={draft.giftName} onChange={(giftName) => set({ giftName })} />
               <label className="field">
                 Worth at least
                 <span className="hint">In coins, counting the whole streak. Empty for any amount.</span>
@@ -344,12 +512,26 @@ function ActionEditor({
               </label>
             </>
           )}
-          {draft.trigger === 'likes' && (
-            <label className="field">
-              Every this many likes
-              <span className="hint">Counted across the whole stream.</span>
-              <input className="input" type="number" min={1} required value={draft.likeStep ?? ''} onChange={(e) => set({ likeStep: Number(e.target.value) || null })} />
-            </label>
+          {(draft.trigger === 'likes' || draft.trigger === 'viewer_likes') && (
+            <>
+              <label className="field">
+                Run it
+                <span className="hint">{draft.likeGrowth ? `${(draft.likeStep ?? 0).toLocaleString()}, then ${likeTargets(draft).join(', ')} and so on.` : 'At the same gap each time.'}</span>
+                <select className="input" value={draft.likeGrowth ?? ''} onChange={(e) => set({ likeGrowth: Number(e.target.value) || null })}>
+                  <option value="">Every same number of likes</option>
+                  {LIKE_GROWTH.map((g) => (
+                    <option key={g} value={g}>
+                      Multiply the target by {g} each time
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                {draft.likeGrowth ? 'First target, in likes' : 'Every this many likes'}
+                <span className="hint">{draft.trigger === 'likes' ? 'Counted across the whole stream.' : "Each viewer's own likes, counted from zero each stream."}</span>
+                <input className="input" type="number" min={1} required value={draft.likeStep ?? ''} onChange={(e) => set({ likeStep: Number(e.target.value) || null })} />
+              </label>
+            </>
           )}
           {draft.trigger === 'goal' && (
             <label className="field">
@@ -379,6 +561,12 @@ function ActionEditor({
               />
             </label>
           )}
+        </div>
+      </Section>
+  );
+  const limits = (
+      <>
+        <div className="form-grid">
           <label className="field">
             Who
             <span className="hint">TikTok says who follows, subscribes or moderates when they chat or gift.</span>
@@ -422,30 +610,16 @@ function ActionEditor({
             <small>When something matches several random actions, only one of them runs. Use it for a set of sounds or reactions.</small>
           </span>
         </label>
-      </Section>
-
+      </>
+  );
+  const alert = (
       <Section title="Show on stream" icon="bell" hue="pink">
         <label className="field">
           Alert text
           <span className="hint">Placeholders: {TRIGGERS[draft.trigger].placeholders}. Empty shows no text.</span>
           <input className="input" maxLength={200} value={draft.text ?? ''} onChange={(e) => set({ text: e.target.value || null })} />
         </label>
-        <AlertPreview key={replays} draft={draft} media={media} />
-        <div className="field">
-          Pop-up style
-          <Seg<'default' | 'own'>
-            label="Pop-up style"
-            value={draft.alertStyle ? 'own' : 'default'}
-            options={[
-              ['default', 'Your pop-up style'],
-              ['own', 'A style just for this action'],
-            ]}
-            // Its own style starts as a copy of the default, so nothing jumps until something is changed.
-            onChange={(choice) => set({ alertStyle: choice === 'own' ? { ...defaultLook } : null })}
-          />
-          {!draft.alertStyle && <span className="hint">Change it at the top of this page, under Pop-up style. Every action using it changes too.</span>}
-        </div>
-        {draft.alertStyle && <AlertLookEditor value={draft.alertStyle} onChange={(alertStyle) => set({ alertStyle })} onReplay={() => setReplays((n) => n + 1)} />}
+{!sideBySide && preview}
         <div className="form-grid">
           <label className="field">
             Sound
@@ -488,6 +662,37 @@ function ActionEditor({
             Show for, in seconds
             <input className="input" type="number" min={1} max={60} value={draft.durationMs / 1000} onChange={(e) => set({ durationMs: Math.round(Number(e.target.value) * 1000) })} />
           </label>
+        </div>
+        <label className="switch">
+          <input type="checkbox" checked={draft.speak} disabled={!draft.text} onChange={(e) => set({ speak: e.target.checked })} />
+          <span>
+            Read the text aloud
+            <small>With your voice settings.</small>
+          </span>
+        </label>
+        <AlertEffectFields value={draft} hasMedia={!!draft.mediaId} look={actionLook} onChange={set} />
+        <EffectFields value={draft} onChange={set} />
+      </Section>
+  );
+  const appearance = (
+      <Section title="Look and place" icon="sparkle" hue="violet">
+        <div className="field">
+          Pop-up style
+          <LookSlots
+            label="Pop-up style"
+            value={draft.alertStyle ? 'own' : draft.useAlertStyle2 ? 'second' : 'main'}
+            options={[
+              { id: 'main', mark: '1', hue: 'indigo', label: 'Main style', note: 'Shared', style: main },
+              { id: 'second', mark: '2', hue: 'pink', label: 'Second style', note: 'Shared', style: second },
+              { id: 'own', mark: '★', hue: 'teal', label: 'Just this action', note: 'Its own look', style: draft.alertStyle ?? look },
+            ]}
+            // Its own style starts as a copy of the current one, so nothing jumps until something is changed.
+            onChange={(choice) => set({ alertStyle: choice === 'own' ? { ...look } : null, useAlertStyle2: choice === 'second' })}
+          />
+          {!draft.alertStyle && <span className="hint">Change it at the top of this page, under Pop-up style. Every action using it changes too.</span>}
+        </div>
+        {draft.alertStyle && <AlertLookEditor value={draft.alertStyle} onChange={(alertStyle) => set({ alertStyle })} onReplay={() => setReplays((n) => n + 1)} />}
+        <div className="form-grid">
           <AlertPlaceField draft={draft} screens={screens} media={media} onChange={set} />
           {screens.length > 1 && (
             <label className="field">
@@ -504,15 +709,9 @@ function ActionEditor({
             </label>
           )}
         </div>
-        <label className="switch">
-          <input type="checkbox" checked={draft.speak} disabled={!draft.text} onChange={(e) => set({ speak: e.target.checked })} />
-          <span>
-            Read the text aloud
-            <small>With your voice settings.</small>
-          </span>
-        </label>
       </Section>
-
+  );
+  const also = (
       <Section title="Do" icon="commands" hue="indigo">
         <div className="form-grid">
           <label className="field">
@@ -552,6 +751,76 @@ function ActionEditor({
           </label>
         )}
       </Section>
+  );
+
+  return (
+    <form className="action-editor stack" onSubmit={submit} aria-label={title}>
+      <div className="action-editor-head">
+        <HueIcon name={TRIGGERS[draft.trigger].icon} hue={TRIGGERS[draft.trigger].hue} />
+        <div className="action-editor-title">
+          <h3>{draft.name.trim() || TRIGGERS[draft.trigger].label}</h3>
+          <span className="muted small">{title}</span>
+        </div>
+        <span className="spacer" />
+        <button type="button" className="link-button small" onClick={switchLayout}>
+          {sideBySide ? 'Use the stacked layout' : 'Use the side-by-side layout'}
+        </button>
+      </div>
+      <ErrorNotice error={error} />
+      <label className="field">
+        Name
+        <input className="input" value={draft.name} maxLength={60} placeholder={TRIGGERS[draft.trigger].label} onChange={(e) => set({ name: e.target.value })} />
+      </label>
+
+      {sideBySide ? (
+        <div className="action-split">
+          <div className="stack">
+            <div className="action-tabs" role="tablist" aria-label="Action settings">
+              {ACTION_TABS.map(([id, label, icon]) => (
+                <button key={id} type="button" role="tab" aria-selected={tab === id} className="action-tab" onClick={() => setTab(id)}>
+                  <Icon name={icon} size={16} />
+                  {label}
+                </button>
+              ))}
+            </div>
+            {tab === 'when' && (
+              <>
+                {when}
+                <details className="action-more">
+                  <summary>Who and how often</summary>
+                  <div className="stack">{limits}</div>
+                </details>
+              </>
+            )}
+            {tab === 'alert' && alert}
+            {tab === 'look' && appearance}
+            {tab === 'also' && also}
+          </div>
+          <aside className="action-side stack" aria-label="This action at a glance">
+            {preview}
+            <div className="action-summary">
+              <strong>{describeWhen({ ...draft, id: '' }, goals)}</strong>
+              <div className="row">
+                {describeDoes({ ...draft, id: '' }, commands, media, host).map(([what, hue]) => (
+                  <span key={what} className={`tag ${hue}`}>
+                    {what}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </aside>
+        </div>
+      ) : (
+        <>
+          {when}
+          <Section title="Who and how often" icon="crowd" hue="teal">
+            {limits}
+          </Section>
+          {alert}
+          {appearance}
+          {also}
+        </>
+      )}
 
       <div className="action-editor-foot">
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
@@ -578,23 +847,44 @@ function Section({ title, icon, hue, children }: { title: string; icon: IconName
 
 // The alert as it looks on stream, with sample names in its placeholders, over a stand-in for the stream. Its place
 // and size are set with Place and size. Compact is the small one on each row of the list.
+const PREVIEW_HOLD_MS = 600_000; // stays up to be looked at, until Play again
+
 function AlertPreview({ draft, media, compact }: { draft: Draft; media: MediaItem[]; compact?: boolean }) {
   const file = media.find((m) => m.id === draft.mediaId);
   const text = draft.text ? sampleText(draft.text) : '';
-  const defaultLook = useContext(DefaultLook);
-  const look = alertLook(draft.alertStyle ?? defaultLook);
+  const lookStyle = useLook(draft);
+  const look = alertLook(lookStyle);
+  const fx: AlertFx | null = draft.alertEffect && !compact ? { effect: draft.alertEffect, emoji: draft.alertEmoji, shape: draft.alertShape, color: draft.alertEffectColor, amount: draft.alertEffectAmount, speed: draft.alertEffectSpeed } : null;
+  const box = useRef<HTMLDivElement>(null);
+  const [bus] = useState(() => new GiftBus());
+  const [plays, setPlays] = useState(0);
+  // Changing the animation plays it again: the alert remounts, and a burst fires from its middle.
+  const take = `${fx?.effect}${fx?.emoji}${fx?.shape}${fx?.color}${fx?.amount}${fx?.speed}${plays}`;
+  useEffect(() => {
+    if (fx?.effect === 'emoji_burst' && box.current) bus.emitBurst({ box: box.current.getBoundingClientRect(), emoji: fx.emoji, amount: fx.amount, speed: fx.speed });
+  }, [take]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className={`alert-preview ${compact ? 'compact' : ''}`} aria-label={compact ? `${draft.name} alert preview` : 'Alert preview'}>
-      {text || file ? (
-        <div className={`overlay-alert ${look.className} ${text ? '' : 'media-only'}`} style={look.style}>
-          {file?.kind === 'image' && <img className="overlay-alert-media" src={`/media/${file.id}`} alt="" />}
-          {file?.kind === 'video' && <video className="overlay-alert-media" src={`/media/${file.id}`} muted autoPlay loop playsInline />}
-          {text}
+      {!compact && fx && <ScreenEffects bus={bus} />}
+      {text || file || fx ? (
+        <div key={take} ref={box} className={`overlay-alert ${look.className} ${text ? '' : 'media-only'} ${alertFxClass(fx)}`} style={{ ...look.style, ...alertFxStyle(fx, PREVIEW_HOLD_MS, lookStyle) }}>
+          <AlertContent
+            fx={fx}
+            text={text}
+            media={
+              file && (file.kind === 'image' ? <img className="overlay-alert-media" src={`/media/${file.id}`} alt="" /> : <video className="overlay-alert-media" src={`/media/${file.id}`} muted autoPlay loop playsInline />)
+            }
+          />
         </div>
       ) : (
         <span className="alert-preview-empty">{compact ? 'No pop-up' : 'No text or picture, so nothing shows. A sound or voice still plays.'}</span>
       )}
-      {!compact && <span className="alert-preview-note">Preview, with sample names</span>}
+      {!compact && fx && (
+        <button type="button" className="btn btn-sm effect-replay" onClick={() => setPlays((n) => n + 1)}>
+          Play again
+        </button>
+      )}
+      {!compact && !fx && <span className="alert-preview-note">Preview, with sample names</span>}
     </div>
   );
 }
@@ -622,7 +912,8 @@ const megabytes = (bytes: number) =>
 function MediaCard({ media, reload }: { media: MediaItem[]; reload: () => Promise<unknown> }) {
   const [uploading, setUploading] = useState(false);
   const { error, guard } = useError();
-  const used = media.reduce((sum, m) => sum + m.size, 0);
+  const used = media.reduce((sum, m) => sum + (m.builtIn ? 0 : m.size), 0);
+  const removed = BUILT_IN_MEDIA.length - media.filter((m) => m.builtIn).length;
   const upload = (e: ChangeEvent<HTMLInputElement>) => {
     const files = [...(e.target.files ?? [])];
     e.target.value = '';
@@ -635,7 +926,7 @@ function MediaCard({ media, reload }: { media: MediaItem[]; reload: () => Promis
   return (
     <Card
       title="Uploads"
-      description={`Pictures (PNG, JPEG, GIF, WebP), videos (MP4, WebM) and sounds (MP3, OGG, WAV, M4A) for your actions. Up to 10 MB each, ${megabytes(MAX_MEDIA_TOTAL_BYTES)} in all.`}
+      description={`Built-in pictures are free to use and don't count toward your space. Your own pictures (PNG, JPEG, GIF, WebP), videos (MP4, WebM) and sounds (MP3, OGG, WAV, M4A) for your actions. Up to 10 MB each, ${megabytes(MAX_MEDIA_TOTAL_BYTES)} in all.`}
       actions={
         <label className={`btn btn-primary ${uploading ? 'disabled' : ''}`}>
           {uploading ? 'Uploading…' : 'Upload files'}
@@ -651,7 +942,7 @@ function MediaCard({ media, reload }: { media: MediaItem[]; reload: () => Promis
         {megabytes(used)} of {megabytes(MAX_MEDIA_TOTAL_BYTES)} used.
       </p>
       {media.length === 0 ? (
-        <p className="empty">Nothing uploaded yet.</p>
+        <p className="empty">No files yet.</p>
       ) : (
         <ul className="media-grid">
           {media.map((m) => (
@@ -663,16 +954,19 @@ function MediaCard({ media, reload }: { media: MediaItem[]; reload: () => Promis
               </div>
               <div className="media-meta">
                 <strong title={m.name}>{m.name}</strong>
-                <span className="muted small">
-                  {m.kind}, {megabytes(m.size)}
-                </span>
+                <span className="muted small">{m.builtIn ? `Built in, ${m.kind}` : `${m.kind}, ${megabytes(m.size)}`}</span>
               </div>
               <button className="btn btn-ghost btn-sm btn-delete" onClick={guard(() => api('DELETE', `/media/${m.id}`).then(reload))}>
-                Delete
+                {m.builtIn ? 'Remove' : 'Delete'}
               </button>
             </li>
           ))}
         </ul>
+      )}
+      {removed > 0 && (
+        <button className="link-button small" onClick={guard(() => api('DELETE', '/media/hidden').then(reload))}>
+          Bring back {removed} built-in picture{removed === 1 ? '' : 's'}
+        </button>
       )}
     </Card>
   );
@@ -685,7 +979,7 @@ const SAMPLE_VALUES: Record<string, string> = {
 };
 const sampleText = (text: string) => text.replace(/\{(\w+)\}/g, (all, key: string) => SAMPLE_VALUES[key] ?? all);
 // Where the screen's top, middle and bottom alert positions put an alert's middle, roughly, for the little map.
-const DEFAULT_PLACE = { top: 30, middle: 50, bottom: 82 } as const;
+const DEFAULT_PLACE = { top: 12, middle: 50, bottom: 88 } as const;
 
 type Place = Pick<Draft, 'alertX' | 'alertY' | 'alertScale'>;
 
@@ -693,7 +987,7 @@ function AlertPlaceField({ draft, screens, media, onChange }: { draft: Draft; sc
   const [open, setOpen] = useState(false);
   const screen = screens.find((s) => s.id === draft.screenId) ?? screens.find((s) => s.main);
   const placed = draft.alertX !== null && draft.alertY !== null;
-  const dot = placed ? { x: draft.alertX!, y: draft.alertY! } : { x: 50, y: DEFAULT_PLACE[screen?.alertPosition ?? 'top'] };
+  const dot = placed ? { x: draft.alertX!, y: draft.alertY! } : screen?.alertPos ?? { x: 50, y: DEFAULT_PLACE[screen?.alertPosition ?? 'top'] };
   return (
     <div className="field">
       Place and size
@@ -717,8 +1011,8 @@ function AlertPlaceDialog({ draft, screen, media, onDone, onClose }: { draft: Dr
   const [bus] = useState(() => new GiftBus());
   const { stats, chat } = usePreview(true, bus);
   const file = media.find((m) => m.id === draft.mediaId);
-  const defaultLook = useContext(DefaultLook);
-  const look = alertLook(draft.alertStyle ?? defaultLook);
+  const look = alertLook(useLook(draft));
+  const alertBox = useRef<HTMLDivElement>(null);
 
   useEffect(() => dialog.current?.showModal(), []);
   useLayoutEffect(() => {
@@ -729,30 +1023,10 @@ function AlertPlaceDialog({ draft, screen, media, onDone, onClose }: { draft: Dr
     return () => resize.disconnect();
   }, []);
 
-  // Dragging moves the alert's middle, keeping all of it on the screen.
-  const startDrag = (e: ReactPointerEvent<HTMLElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    const box = stage.current!.getBoundingClientRect();
-    const alert = e.currentTarget.getBoundingClientRect();
-    const grab = { x: e.clientX - (alert.left + alert.width / 2), y: e.clientY - (alert.top + alert.height / 2) };
-    const half = { x: (alert.width / 2 / box.width) * 100, y: (alert.height / 2 / box.height) * 100 };
-    const clamp = (n: number, h: number) => Math.round(Math.min(Math.max(n, Math.min(h, 50)), Math.max(100 - h, 50)) * 10) / 10;
-    const move = (m: PointerEvent) =>
-      setPlace((p) => ({
-        ...p,
-        alertX: clamp(((m.clientX - grab.x - box.left) / box.width) * 100, half.x),
-        alertY: clamp(((m.clientY - grab.y - box.top) / box.height) * 100, half.y),
-      }));
-    const stop = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', stop);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', stop);
-  };
+  const startDrag = (e: ReactPointerEvent<HTMLElement>) => dragAlert(e, stage.current!, ({ x, y }) => setPlace((p) => ({ ...p, alertX: x, alertY: y })));
 
   const placed = place.alertX !== null && place.alertY !== null;
+  const clear = useClearOfWidgets(alertBox, placed || screen.alertPos ? null : screen.alertPosition, screen.scale / 100, place.alertScale / 100, [fit]);
   const text = draft.text ? sampleText(draft.text) : '';
   return (
     <dialog ref={dialog} className="pos-dialog" onClose={onClose} aria-labelledby="alert-place-title">
@@ -772,8 +1046,9 @@ function AlertPlaceDialog({ draft, screen, media, onDone, onClose }: { draft: Dr
           <div className={`overlay-screen alerts-${screen.alertPosition}`} style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
             <FadedWidgets widgets={screen.widgets} feed={{ stats, chat, bus }} />
             <div
+              ref={alertBox}
               className={`overlay-alert alert-drag ${look.className} ${text ? '' : 'media-only'}`}
-              style={{ ...look.style, ...alertPlace({ pos: placed ? { x: place.alertX!, y: place.alertY! } : null, scale: place.alertScale }) }}
+              style={{ ...look.style, ...alertPlace({ pos: placed ? { x: place.alertX!, y: place.alertY! } : screen.alertPos, scale: place.alertScale }), ...clear }}
               onPointerDown={startDrag}
             >
               {file?.kind === 'image' && <img className="overlay-alert-media" src={`/media/${file.id}`} alt="" draggable={false} />}
@@ -788,7 +1063,7 @@ function AlertPlaceDialog({ draft, screen, media, onDone, onClose }: { draft: Dr
           Size, in percent
           <Scrubber value={place.alertScale} min={50} max={200} buttonStep={10} unit="%" label="Alert size" onSave={(alertScale) => setPlace((p) => ({ ...p, alertScale }))} />
         </div>
-        <span className="muted small">{placed ? `Middle at ${Math.round(place.alertX!)}% across, ${Math.round(place.alertY!)}% down` : `The screen's ${screen.alertPosition} position`}</span>
+        <span className="muted small">{placed ? `Middle at ${Math.round(place.alertX!)}% across, ${Math.round(place.alertY!)}% down` : screen.alertPos ? "The screen's custom position" : `The screen's ${screen.alertPosition} position`}</span>
         <span className="spacer" />
         {placed && (
           <button className="btn btn-ghost" onClick={() => setPlace((p) => ({ ...p, alertX: null, alertY: null }))}>

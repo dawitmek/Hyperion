@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { TIKTOK_VOICES } from '@fluxion/shared';
+import { TIKTOK_VOICES } from '@hyperion/shared';
 import { api, type Host, type TtsEngine, type TtsMode } from '../api';
+import { Icon } from '../icons';
 import { Link } from '../router';
-import { ErrorNotice, Scrubber, Seg, useError } from '../ui';
+import { ErrorNotice, NumberCell, Scrubber, Seg, useError } from '../ui';
 import type { PageProps } from './Dashboard';
 import { ENGINES, useVoices } from './VoicePage';
 
@@ -49,6 +50,12 @@ export function VoiceControls({ host, refreshHost }: PageProps) {
     }
   };
   const choice = voiceChoice();
+  const modeHints: Record<TtsMode, string> = {
+    off: 'Only alerts marked "Read aloud" are spoken.',
+    auto: `All chat up to ${host.ttsAutoMaxViewers} viewers, then only ${host.ttsPrefix}.`,
+    prefix: `Only comments starting with ${host.ttsPrefix}.`,
+    all: 'Every comment. Busy chat gets skipped.',
+  };
 
   return (
     <section className="card stack voice-controls" aria-labelledby="live-voice">
@@ -66,12 +73,20 @@ export function VoiceControls({ host, refreshHost }: PageProps) {
           value={host.ttsMode}
           options={[
             ['off', 'Off'],
+            ['auto', 'Auto'],
             ['prefix', host.ttsPrefix],
-            ['all', 'All chat'],
+            ['all', 'All'],
           ]}
           onChange={(ttsMode) => save({ ttsMode })}
         />
+        <span className="hint">{modeHints[host.ttsMode]}</span>
       </div>
+      {host.ttsMode === 'auto' && (
+        <label className="field">
+          All chat up to
+          <NumberCell value={host.ttsAutoMaxViewers} min={0} max={100000} label="All chat up to this many viewers" onSave={(ttsAutoMaxViewers) => save({ ttsAutoMaxViewers })} />
+        </label>
+      )}
       <label className="field">
         Engine
         <select className="input" value={host.ttsEngine} onChange={(e) => save({ ttsEngine: e.target.value as TtsEngine })}>
@@ -104,6 +119,10 @@ export function VoiceControls({ host, refreshHost }: PageProps) {
         Volume
         <Scrubber value={host.ttsVolume} min={0} max={100} buttonStep={5} unit="%" label="Voice volume" onSave={(ttsVolume) => save({ ttsVolume })} />
       </div>
+      <button className="btn" onClick={guard(() => api('POST', '/tts/skip'))}>
+        <Icon name="skip" size={16} />
+        Skip this message
+      </button>
     </section>
   );
 }

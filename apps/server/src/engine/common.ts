@@ -1,4 +1,4 @@
-import type { ViewerEvent } from '@fluxion/shared';
+import type { KeyAction, ViewerEvent } from '@hyperion/shared';
 import type { Decision, EngineCommand, EngineContext } from './types.js';
 
 // The enabled command a comment names, if any, and if the viewer's level and points allow it.
@@ -18,9 +18,34 @@ export function matchComment(ctx: EngineContext, event: Extract<ViewerEvent, { k
   return command;
 }
 
+const toAction = (ctx: EngineContext, command: EngineCommand): KeyAction => ({
+  id: ctx.newId(),
+  key: command.key,
+  holdMs: command.holdMs,
+  ...(command.macro && { macro: command.macro }),
+});
+
+// What a command runs, with each start time: a chain's steps, skipping any since deleted or turned off.
+function presses(ctx: EngineContext, command: EngineCommand) {
+  if (!command.chain) return [{ command, delayMs: 0 }];
+  return command.chain.flatMap(({ keyword, delayMs }) => {
+    const step = ctx.config.commands.find((c) => c.enabled && !c.chain && c.keyword === keyword);
+    return step ? [{ command: step, delayMs }] : [];
+  });
+}
+
+// How long a command takes, so repeats of it don't overlap. A macro's length is only known to the companion.
+export function spanOf(ctx: EngineContext, command: EngineCommand) {
+  return Math.max(0, ...presses(ctx, command).map((p) => p.delayMs + p.command.holdMs));
+}
+
 export function decide(ctx: EngineContext, command: EngineCommand, viewer: string, credit: string[], delayMs?: number): Decision {
+  const steps = presses(ctx, command).sort((a, b) => a.delayMs - b.delayMs);
+  const [first, ...rest] = steps;
   return {
-    action: { id: ctx.newId(), key: command.key, holdMs: command.holdMs },
+    // A chain with no steps left has nothing to send.
+    action: first ? { ...toAction(ctx, first.command) } : { id: ctx.newId(), key: '', holdMs: command.holdMs },
+    ...(rest.length > 0 && { then: rest.map((s) => ({ action: toAction(ctx, s.command), delayMs: s.delayMs - first!.delayMs })) }),
     keyword: command.keyword,
     viewer,
     credit,

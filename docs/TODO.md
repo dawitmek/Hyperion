@@ -1,6 +1,6 @@
 # To do
 
-Everything still to do on Fluxion, in one place. Add new work here rather than as `TODO` comments in the code, and
+Everything still to do on Hyperion, in one place. Add new work here rather than as `TODO` comments in the code, and
 tick an item off in the same commit that finishes it.
 
 ## Features
@@ -37,9 +37,10 @@ Still to design:
 - [ ] StreamElements voices. On hold: the free endpoint now needs each host's StreamElements JWT, which gives full
       account access
 - [ ] All-in-one local mode: the server bundled as an optional Tauri sidecar, dashboard and overlay on `localhost`,
-      likely SQLite, so streamers can run Fluxion with no hosted server
+      likely SQLite, so streamers can run Hyperion with no hosted server
+- [ ] Macros on macOS: recording and playing mouse input only exist for Windows (`apps/companion/src-tauri/src/input.rs`)
 
 ## Verification
 
-- [ ] GTA V story mode runs live through Fluxion
+- [ ] GTA V story mode runs live through Hyperion
 - [ ] Look and feel reviewed in a browser and the companion, on Windows and macOS, light and dark, phone to desktop

@@ -32,11 +32,17 @@ export async function ttsRoutes(app: FastifyInstance) {
     }
   });
 
+  // Cuts off the line the overlay is saying; the next one in line starts.
+  app.post('/skip', async (req) => {
+    app.hub.sendToOverlays(req.hostId, { type: 'skipSpeech' });
+    return { ok: true };
+  });
+
   // Speaks a sample with the host's saved settings and reports errors instead of falling back,
   // so a wrong cloud key shows up on the dashboard.
   // The body is optional ({ text }), so no JSON schema: an empty POST is fine.
   app.post<{ Body: { text?: unknown } | undefined }>('/preview', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const text = typeof req.body?.text === 'string' && req.body.text.trim() ? req.body.text.slice(0, 200) : 'viewer says hello from Fluxion';
+    const text = typeof req.body?.text === 'string' && req.body.text.trim() ? req.body.text.slice(0, 200) : 'viewer says hello from Hyperion';
     const [host] = await app.db.select().from(hosts).where(eq(hosts.id, req.hostId));
     try {
       return await app.speech.speakStrict(voiceConfig(host!, app.secrets), text);

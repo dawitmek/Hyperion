@@ -1,5 +1,5 @@
 // Ready-made profiles for popular games: each game's default keyboard controls as chat commands.
-// Fluxion presses keys only (no mouse), so these are games that play well from the keyboard.
+// Hyperion presses keys only (no mouse), so these are games that play well from the keyboard.
 // Movement on WASD is typed as the key itself (w, a, s, d). Hold times are longer for moving and driving, short for
 // one-off presses.
 

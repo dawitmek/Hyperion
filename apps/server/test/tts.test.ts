@@ -130,15 +130,27 @@ describe('cloud TTS', () => {
 });
 
 describe('speech service', () => {
-  it('falls back to in-overlay eSpeak when a server engine fails, and reports why', async () => {
+  it('falls back to Piper when a TikTok or cloud voice fails, and reports why', async () => {
     const errors: unknown[] = [];
     const failing = (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
     const service = new SpeechService(fakePiper(), (e) => errors.push(e), failing);
-    const cloud = voice({ engine: 'cloud', espeakVoice: 'de', cloud: { provider: 'google', key: 'k', region: null, voice: null } });
-    expect(await service.speak({ ...cloud, effect: 'echo' }, 'hallo')).toEqual({ kind: 'espeak', text: 'hallo', voice: 'de', effect: 'echo' });
+    const cloud = voice({ engine: 'cloud', effect: 'echo', cloud: { provider: 'google', key: 'k', region: null, voice: null } });
+    expect(await service.speak(cloud, 'hallo')).toMatchObject({ kind: 'audio', mime: 'audio/wav', effect: 'echo' });
     expect(String(errors[0])).toContain('Google TTS failed (500)');
     await expect(service.speakStrict(cloud, 'hallo')).rejects.toThrow('500');
-    expect(await service.speak(voice({ engine: 'piper' }), 'FAIL')).toMatchObject({ kind: 'espeak' });
+    expect(await service.speak(voice({ engine: 'tiktok' }), 'hi')).toMatchObject({ kind: 'audio' }); // not signed in
+  });
+
+  it('falls back to in-overlay eSpeak when Piper fails too, or is not installed', async () => {
+    const errors: unknown[] = [];
+    const service = new SpeechService(fakePiper(), (e) => errors.push(e));
+    expect(await service.speak(voice({ engine: 'piper', espeakVoice: 'de', effect: 'echo' }), 'FAIL')).toEqual({ kind: 'espeak', text: 'FAIL', voice: 'de', effect: 'echo' });
+    expect(errors).toHaveLength(1);
+    expect(await service.speak(voice({ engine: 'tiktok' }), 'FAIL')).toMatchObject({ kind: 'espeak' });
+    expect(errors).toHaveLength(3); // TikTok's failure, then Piper's
+
+    const noPiper = new SpeechService(new Piper(undefined, undefined));
+    expect(await noPiper.speak(voice({ engine: 'tiktok', espeakVoice: 'de' }), 'hi')).toMatchObject({ kind: 'espeak', voice: 'de' });
   });
 
   it('returns Piper audio, browser voices and eSpeak as asked', async () => {

@@ -1,0 +1,1 @@
+ALTER TABLE "actions" ADD COLUMN "alert_shape" text DEFAULT 'star' NOT NULL;

@@ -1,0 +1,1 @@
+ALTER TABLE "viewer_stats" ADD COLUMN "display_name" text;

@@ -1,4 +1,4 @@
-import type { Speech, VoiceEffect } from '@fluxion/shared';
+import type { Speech, VoiceEffect } from '@hyperion/shared';
 import { espeakWav } from './espeak';
 import { applyEffect, utteranceEffect } from './voice-effects';
 
@@ -42,6 +42,11 @@ export class SpeechPlayer {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
   }
 
+  // Cuts off the line playing; the next one starts.
+  skip() {
+    this.stop('the host skipped it', (l) => l === this.speaking);
+  }
+
   // 0 to 1. Audio and eSpeak change at once, mid-line too; a browser voice from its next line.
   setVolume(volume: number) {
     this.volume = volume;
@@ -70,7 +75,7 @@ export class SpeechPlayer {
     try {
       await this.play(next.speech);
     } catch (err) {
-      console.warn('Fluxion: could not speak', err);
+      console.warn('Hyperion: could not speak', err);
       this.report('could not speak', { error: String(err) });
     } finally {
       this.speaking = null;

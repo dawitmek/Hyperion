@@ -29,7 +29,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
       </div>
       <Link href="/" className="brand">
         <Logo />
-        Fluxion
+        Hyperion
       </Link>
       <form className="card stack auth-card" onSubmit={submit}>
         <div>
@@ -55,7 +55,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
         </label>
         <button className="btn btn-primary btn-lg">{login ? 'Log in' : 'Create account'}</button>
         <p className="muted" style={{ textAlign: 'center' }}>
-          {login ? 'New to Fluxion? ' : 'Already have an account? '}
+          {login ? 'New to Hyperion? ' : 'Already have an account? '}
           <Link href={login ? '/signup' : '/login'}>{login ? 'Create an account' : 'Log in'}</Link>
         </p>
       </form>

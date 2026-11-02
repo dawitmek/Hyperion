@@ -1,4 +1,4 @@
-import type { VoiceEffect } from '@fluxion/shared';
+import type { VoiceEffect } from '@hyperion/shared';
 
 // Wires `source` through the effect and returns the node to connect to the speakers.
 // Pitch effects change playbackRate, so they also change speed, like a sped-up tape.

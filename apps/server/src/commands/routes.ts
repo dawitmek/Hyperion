@@ -1,16 +1,27 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { keyProblem, MAX_LEVEL, POINTS_CHECK, QUEUE_JOIN } from '@fluxion/shared';
+import { keyProblem, MAX_CHAIN_DELAY_MS, MAX_CHAIN_STEPS, MAX_LEVEL, POINTS_CHECK, QUEUE_JOIN, type ChainStep } from '@hyperion/shared';
 import { commands } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { isUniqueViolation } from '../db/client.js';
 import { activeProfile, sendCommandsToCompanions } from '../profiles/active.js';
 
-type CommandBody = { keyword: string; key: string; holdMs: number; cooldownMs: number; enabled?: boolean; minLevel?: number; cost?: number };
+type CommandBody = { keyword: string; key: string; macro?: string | null; chain?: ChainStep[] | null; holdMs: number; cooldownMs: number; enabled?: boolean; minLevel?: number; cost?: number };
 
 const fields = {
   keyword: { type: 'string', pattern: '^\\S{1,32}$' },
-  key: { type: 'string', maxLength: 64 }, // a key or combination; keyProblem() checks it
+  key: { type: 'string', maxLength: 64 }, // a key or combination; keyProblem() checks it. Empty with a macro or chain
+  macro: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
+  chain: {
+    type: ['array', 'null'],
+    maxItems: MAX_CHAIN_STEPS,
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['keyword', 'delayMs'],
+      properties: { keyword: { type: 'string', minLength: 1, maxLength: 32 }, delayMs: { type: 'integer', minimum: 0, maximum: MAX_CHAIN_DELAY_MS } },
+    },
+  },
   holdMs: { type: 'integer', minimum: 10, maximum: 5000 },
   cooldownMs: { type: 'integer', minimum: 0, maximum: 600000 },
   enabled: { type: 'boolean' },
@@ -25,11 +36,34 @@ const reservedKeyword = (keyword: string | undefined) =>
       ? `"${POINTS_CHECK}" is reserved for checking points`
       : null;
 
+// A command does exactly one thing: a key, a macro or a chain.
+const kindProblem = ({ key, macro, chain }: Pick<CommandBody, 'key' | 'macro' | 'chain'>) => {
+  const kinds = [key !== '', !!macro, !!chain].filter(Boolean).length;
+  if (kinds !== 1) return 'A command presses a key, runs a macro or runs a chain, one of them';
+  return key ? keyProblem(key) : null;
+};
+
 const idParam = { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } as const;
 
 export async function commandRoutes(app: FastifyInstance) {
   const { db } = app;
   app.addHook('onRequest', requireHost);
+
+  // Steps must be plain commands of the active profile: a chain can't run a chain, so none can loop.
+  const chainProblem = async (hostId: string, keyword: string, chain: ChainStep[] | null | undefined) => {
+    if (!chain) return null;
+    const rows = await db.select().from(commands).where(eq(commands.profileId, (await activeProfile(db, hostId)).id));
+    for (const step of chain) {
+      if (step.keyword.toLowerCase() === keyword.toLowerCase()) return "A chain can't run itself";
+      const command = rows.find((c) => c.keyword === step.keyword.toLowerCase());
+      if (!command) return `There's no command called ${step.keyword}`;
+      if (command.chain) return `${step.keyword} is a chain, and chains can't run other chains`;
+    }
+    return null;
+  };
+
+  // The macros recorded on the host's PCs that are connected now.
+  app.get('/macros', async (req) => app.hub.macrosOf(req.hostId));
 
   // Commands of the active profile; switching profiles switches the list.
   app.get('/', async (req) => {
@@ -50,7 +84,7 @@ export async function commandRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const problem = keyProblem(req.body.key);
+      const problem = kindProblem(req.body) ?? (await chainProblem(req.hostId, req.body.keyword, req.body.chain));
       if (problem) return reply.code(400).send({ error: problem });
       const reserved = reservedKeyword(req.body.keyword);
       if (reserved) return reply.code(400).send({ error: reserved });
@@ -80,8 +114,10 @@ export async function commandRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const { key, keyword } = req.body;
-      const problem = key === undefined ? null : keyProblem(key);
+      const { keyword } = req.body;
+      const [current] = await db.select().from(commands).where(and(eq(commands.id, req.params.id), eq(commands.hostId, req.hostId)));
+      if (!current) return reply.code(404).send({ error: 'Command not found' });
+      const problem = kindProblem({ ...current, ...req.body }) ?? (await chainProblem(req.hostId, keyword ?? current.keyword, req.body.chain));
       if (problem) return reply.code(400).send({ error: problem });
       const reserved = reservedKeyword(keyword);
       if (reserved) return reply.code(400).send({ error: reserved });

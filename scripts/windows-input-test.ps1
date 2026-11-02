@@ -1,5 +1,5 @@
 <#
-Sends viewer comments through Fluxion's test mode while a target window (Notepad by default) has focus,
+Sends viewer comments through Hyperion's test mode while a target window (Notepad by default) has focus,
 so the companion presses real keys into it. Optionally reads back what was typed.
 
 Example:

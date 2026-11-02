@@ -14,7 +14,7 @@ export function ActivityWindow() {
   const closeViewer = useCallback(() => setViewer(null), []);
 
   useEffect(() => {
-    document.title = 'Full activity - Fluxion';
+    document.title = 'Full activity - Hyperion';
     api<Host>('GET', '/auth/me')
       .then((host) => {
         rememberTheme({ theme: host.uiTheme, style: host.uiThemeStyle, mode: host.uiMode });
@@ -35,7 +35,7 @@ export function ActivityWindow() {
     <main className="activity-window">
       <ViewerContext.Provider value={setViewer}>
         <ActivityFeed status={status} window />
-        {viewer && <ViewerPanel viewer={viewer} onClose={closeViewer} />}
+        {viewer && <ViewerPanel key={viewer} viewer={viewer} live={status.live} onClose={closeViewer} />}
       </ViewerContext.Provider>
     </main>
   );

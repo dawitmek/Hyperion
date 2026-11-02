@@ -1,7 +1,7 @@
 [package]
-name = "fluxion-companion"
-version = "0.2.0"
-description = "Fluxion companion: presses whitelisted keys in the host's game"
+name = "hyperion-companion"
+version = "0.3.0"
+description = "Hyperion companion: presses whitelisted keys in the host's game"
 edition = "2024"
 license = "GPL-3.0-or-later"
 

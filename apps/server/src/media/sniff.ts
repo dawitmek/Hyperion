@@ -1,4 +1,4 @@
-import type { MediaKind } from '@fluxion/shared';
+import type { MediaKind } from '@hyperion/shared';
 
 // What a file is, judged by its first bytes. Only formats every browser (and OBS) plays are accepted;
 // SVG and HTML never are, since they can run scripts.

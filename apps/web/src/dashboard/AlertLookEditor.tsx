@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { ALERT_ANIMATIONS, ALERT_FONTS, ALERT_PRESETS, ALERT_STYLE_LIMITS, type AlertAnimation, type AlertStyle } from '@fluxion/shared';
-import { alertLook, ALERT_FONT_STACKS } from '../alert-style';
+import { ALERT_ANIMATIONS, ALERT_PRESETS, ALERT_STYLE_LIMITS, type AlertAnimation, type AlertStyle } from '@hyperion/shared';
+import { alertLook, animationSeconds } from '../alert-style';
+import { FontPicker } from './FontPicker';
 import { Icon } from '../icons';
 import { Scrubber, Seg } from '../ui';
 
@@ -20,6 +21,11 @@ const WEIGHTS: [number, string][] = [
   [800, 'Extra bold'],
   [900, 'Black'],
 ];
+const SPEEDS: [string, string][] = [
+  ['50', 'Slow'],
+  ['100', 'Normal'],
+  ['200', 'Fast'],
+];
 
 const same = (a: AlertStyle, b: AlertStyle) => (Object.keys(b) as (keyof AlertStyle)[]).every((k) => a[k] === b[k]);
 
@@ -31,6 +37,7 @@ export function AlertLookEditor({ value, onChange, onReplay }: { value: AlertSty
   const [more, setMore] = useState(false);
   const set = (patch: Partial<AlertStyle>) => onChange({ ...value, ...patch });
   const range = (key: keyof typeof ALERT_STYLE_LIMITS) => ({ min: ALERT_STYLE_LIMITS[key][0], max: ALERT_STYLE_LIMITS[key][1] });
+  const setSpeed = (speed: number) => (set({ speed }), onReplay());
 
   return (
     <div className="alert-look stack">
@@ -88,7 +95,7 @@ export function AlertLookEditor({ value, onChange, onReplay }: { value: AlertSty
 
       <button type="button" className="look-more" aria-expanded={more} onClick={() => setMore(!more)}>
         <Icon name="settings" size={15} />
-        {more ? 'Hide font, size, shape and animation' : 'Font, size, shape and animation'}
+        {more ? 'Hide font, size, shape and animation' : 'Font, size, shape, animation and speed'}
         <Icon name="chevron" size={15} />
       </button>
 
@@ -104,7 +111,8 @@ export function AlertLookEditor({ value, onChange, onReplay }: { value: AlertSty
                 ['solid', 'One color'],
                 ['none', 'None'],
               ]}
-              onChange={(background) => set({ background })}
+              // No background means only the text: a border, glow or shine would still draw the box.
+              onChange={(background) => set({ background, ...(background === 'none' && { borderWidth: 0, glow: 0, shine: false }) })}
             />
             {value.background === 'gradient' && (
               <div className="field">
@@ -122,16 +130,7 @@ export function AlertLookEditor({ value, onChange, onReplay }: { value: AlertSty
 
           <fieldset className="look-group">
             <legend>Text</legend>
-            <label className="field">
-              Font
-              <select className="input" value={value.font} onChange={(e) => set({ font: e.target.value as AlertStyle['font'] })}>
-                {ALERT_FONTS.map((f) => (
-                  <option key={f} value={f} style={{ fontFamily: ALERT_FONT_STACKS[f][1] }}>
-                    {ALERT_FONT_STACKS[f][0]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <FontPicker value={value.font} onChange={(font) => set({ font })} />
             <div className="look-row">
               <div className="field">
                 Size
@@ -186,6 +185,12 @@ export function AlertLookEditor({ value, onChange, onReplay }: { value: AlertSty
                 </button>
               </span>
             </label>
+            <div className="field">
+              Speed
+              <Seg label="Animation speed" value={String(value.speed ?? 100)} options={SPEEDS} onChange={(speed) => setSpeed(Number(speed))} />
+              <Scrubber value={value.speed ?? 100} {...range('speed')} buttonStep={25} unit="%" label="Animation speed, in percent" onSave={setSpeed} />
+              <span className="hint">Arrives in {Number(animationSeconds(value).toFixed(2))} s. Normal speed is 100%.</span>
+            </div>
             <Toggle label="Shine as it arrives" checked={value.shine} onChange={(shine) => (set({ shine }), onReplay())} />
           </fieldset>
         </div>
@@ -196,7 +201,7 @@ export function AlertLookEditor({ value, onChange, onReplay }: { value: AlertSty
 
 // A large color swatch to click, with its name and hex. A preset's transparency (#rrggbbaa) is kept when only the
 // color is changed.
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+export function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="look-color">
       <span className="look-color-swatch" style={{ background: value }}>

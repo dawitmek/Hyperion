@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { GAME_TEMPLATES } from '@fluxion/shared';
+import { GAME_TEMPLATES } from '@hyperion/shared';
 import { api, type Profile } from '../api';
 import { Card, ErrorNotice, TextCell, useError } from '../ui';
 import type { PageProps } from './Dashboard';

@@ -1,6 +1,6 @@
-import type { Mode } from '@fluxion/shared';
+import type { Mode } from '@hyperion/shared';
 import { createAnarchy } from './anarchy.js';
-import { decide } from './common.js';
+import { decide, spanOf } from './common.js';
 import { createDemocracy } from './democracy.js';
 import { createQueue } from './queue.js';
 import type { Decision, Engine, EngineContext } from './types.js';
@@ -26,7 +26,7 @@ export function keyPresses(ctx: EngineContext, keyword: string, viewer: string, 
   if (!command) return [];
   // Spaced out so repeats are separate presses rather than one long hold.
   return Array.from({ length: repeats }, (_, i) =>
-    ({ ...decide(ctx, command, viewer, [], i === 0 ? undefined : i * (command.holdMs + REPEAT_GAP_MS)), cost: 0 }),
+    ({ ...decide(ctx, command, viewer, [], i === 0 ? undefined : i * (spanOf(ctx, command) + REPEAT_GAP_MS)), cost: 0 }),
   );
 }
 

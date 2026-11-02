@@ -49,6 +49,12 @@ pub const ALL_KEYS: &[&str] = &[
     "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Enter", "ShiftLeft", "ShiftRight",
 ];
 
+/// The listed key for a Windows scan code. Anything else, like Esc, the Win key or the F-keys, is no key of ours.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn key_for_scan(code: u16, extended: bool) -> Option<&'static str> {
+    ALL_KEYS.iter().find(|k| scan_code(k).is_some_and(|s| s.code == code && s.extended == extended)).copied()
+}
+
 /// Ctrl, Alt and Shift, held around a combination's key. Never Win/Cmd.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Modifier {
@@ -100,6 +106,12 @@ impl Combo {
     }
 
     /// Why this combination must not be pressed, if it mustn't. Mirrors BLOCKED_COMBOS in the shared package.
+    /// Whether `key` can go down while this is held: only with Shift alone, and never adding up to a blocked
+    /// combination. Ctrl and Alt stay exclusive, so overlapping presses can't become Ctrl+W.
+    pub fn allows_overlap(&self, key: &str) -> bool {
+        self.modifiers == [Modifier::Shift] && key != self.key && (Combo { modifiers: self.modifiers.clone(), key: key.to_string() }).blocked().is_none()
+    }
+
     pub fn blocked(&self) -> Option<&'static str> {
         use Modifier::{Alt, Control};
         const ARROWS: &[&str] = &["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
@@ -187,6 +199,26 @@ mod tests {
             let code = m.scan_code();
             assert!(ALL_KEYS.iter().all(|k| scan_code(k).unwrap().code != code.code || *k == "ShiftLeft"));
         }
+    }
+
+    #[test]
+    fn only_shift_lets_other_keys_overlap() {
+        let run = Combo::parse("Shift+KeyW").unwrap();
+        assert!(run.allows_overlap("Space"));
+        assert!(!run.allows_overlap("KeyW"));
+        assert!(!run.allows_overlap("ShiftLeft"));
+        assert!(!Combo::parse("Control+KeyA").unwrap().allows_overlap("KeyW"));
+        assert!(!Combo::parse("Control+Shift+KeyA").unwrap().allows_overlap("Space"));
+        assert!(!Combo::parse("Alt+KeyA").unwrap().allows_overlap("Space"));
+    }
+
+    #[test]
+    fn finds_keys_by_scan_code() {
+        assert_eq!(key_for_scan(0x11, false), Some("KeyW"));
+        assert_eq!(key_for_scan(0x48, true), Some("ArrowUp"));
+        assert_eq!(key_for_scan(0x48, false), None); // the numpad's 8
+        assert_eq!(key_for_scan(0x01, false), None); // Esc
+        assert_eq!(key_for_scan(0x3B, false), None); // F1
     }
 
     #[test]

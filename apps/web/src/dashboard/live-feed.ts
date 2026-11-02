@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { LeaderboardEntry, ModeState, ServerToOverlay } from '@fluxion/shared';
+import type { LeaderboardEntry, ModeState, ServerToOverlay, StreamStats } from '@hyperion/shared';
 
 export type ActivityKind = 'Key' | 'Alert' | 'Level' | 'Voice';
 export interface Activity {
@@ -16,13 +16,14 @@ export interface LiveFeed {
   lastPress: string | null; // keyword pressed in the last moment, for a brief highlight
   mode: { state: ModeState; clockOffset: number } | null;
   leaderboard: LeaderboardEntry[] | null; // null until the server sends one
+  stats: StreamStats | null; // this stream's totals; null when not live
 }
 
 const MAX_ACTIVITY = 100; // the Live page's card shows the newest few, its expanded view all of them
 
 // The dashboard listens on the overlay's read-only socket, so it sees exactly what the stream sees.
 export function useLiveFeed(overlayToken: string): LiveFeed {
-  const [feed, setFeed] = useState<LiveFeed>({ activity: [], pressed: {}, perSecond: 0, lastPress: null, mode: null, leaderboard: null });
+  const [feed, setFeed] = useState<LiveFeed>({ activity: [], pressed: {}, perSecond: 0, lastPress: null, mode: null, leaderboard: null, stats: null });
 
   useEffect(() => {
     let socket: WebSocket;
@@ -67,13 +68,16 @@ export function useLiveFeed(overlayToken: string): LiveFeed {
           case 'leaderboard':
             setFeed((f) => ({ ...f, leaderboard: message.entries }));
             break;
+          case 'stats':
+            setFeed((f) => ({ ...f, stats: message.stats }));
+            break;
           case 'presses':
             setFeed((f) => ({ ...f, pressed: message.counts }));
             break;
           case 'live':
             // A stream starting counts from zero; on connect, `presses` follows with where it's at.
             if (message.state === 'started') setFeed((f) => ({ ...f, pressed: {} }));
-            if (message.state === 'stopped') setFeed((f) => ({ ...f, mode: null }));
+            if (message.state === 'stopped') setFeed((f) => ({ ...f, mode: null, stats: null }));
             break;
         }
       };

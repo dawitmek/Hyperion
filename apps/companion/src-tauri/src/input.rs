@@ -41,13 +41,140 @@ mod imp {
     };
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
-        KEYEVENTF_SCANCODE, SendInput, VIRTUAL_KEY,
+        KEYEVENTF_SCANCODE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
+        MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEINPUT, INPUT_MOUSE, SendInput, VIRTUAL_KEY,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         DestroyIcon, EnumWindows, GetForegroundWindow, GetIconInfo, GetWindowTextLengthW, GetWindowTextW,
         GetWindowThreadProcessId, HICON, ICONINFO, IsWindowVisible,
     };
     use windows::core::{BOOL, PCWSTR, PWSTR};
+
+    use crate::macros::{Button, Input};
+    use std::sync::Mutex;
+    use windows::Win32::Foundation::{LRESULT, POINT, WPARAM};
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, DispatchMessageW, GetCursorPos, GetMessageW, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED,
+        LLKHF_UP, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PostThreadMessageW, SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx,
+        WH_KEYBOARD_LL, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT,
+        WM_RBUTTONDOWN, WM_RBUTTONUP,
+    };
+
+    fn send_mouse(dx: i32, dy: i32, data: u32, flags: MOUSE_EVENT_FLAGS) -> Result<(), String> {
+        let input = INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 { mi: MOUSEINPUT { dx, dy, mouseData: data, dwFlags: flags, time: 0, dwExtraInfo: 0 } },
+        };
+        let sent = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
+        if sent == 1 { Ok(()) } else { Err("SendInput was blocked".into()) }
+    }
+
+    pub fn send_pointer(input: &Input) -> Result<(), String> {
+        match input {
+            Input::Move { dx, dy } => send_mouse(*dx, *dy, 0, MOUSEEVENTF_MOVE),
+            Input::Wheel { delta } => send_mouse(0, 0, *delta as u32, MOUSEEVENTF_WHEEL),
+            Input::Button { button, up } => send_mouse(0, 0, 0, match (button, up) {
+                (Button::Left, false) => MOUSEEVENTF_LEFTDOWN,
+                (Button::Left, true) => MOUSEEVENTF_LEFTUP,
+                (Button::Right, false) => MOUSEEVENTF_RIGHTDOWN,
+                (Button::Right, true) => MOUSEEVENTF_RIGHTUP,
+                (Button::Middle, false) => MOUSEEVENTF_MIDDLEDOWN,
+                (Button::Middle, true) => MOUSEEVENTF_MIDDLEUP,
+            }),
+            Input::Key { .. } => Ok(()),
+        }
+    }
+
+    // Windows' hooks are plain functions with no room for state, so where input goes lives here.
+    static SINK: Mutex<Option<Box<dyn FnMut(Input) + Send>>> = Mutex::new(None);
+
+    fn deliver(input: Input) {
+        if let Some(sink) = SINK.lock().unwrap().as_mut() {
+            sink(input);
+        }
+    }
+
+    unsafe extern "system" fn on_key(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code == HC_ACTION as i32 {
+            let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+            // Injected input is ours or another tool's, not the player's.
+            if event.flags.0 & LLKHF_INJECTED.0 == 0
+                && let Some(key) = crate::keys::key_for_scan(event.scanCode as u16, event.flags.0 & LLKHF_EXTENDED.0 != 0)
+            {
+                deliver(Input::Key { key: key.to_string(), up: event.flags.0 & LLKHF_UP.0 != 0 });
+            }
+        }
+        unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    }
+
+    unsafe extern "system" fn on_mouse(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code == HC_ACTION as i32 {
+            let event = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
+            if event.flags & LLMHF_INJECTED == 0 {
+                let button = |button, up| Some(Input::Button { button, up });
+                let input = match wparam.0 as u32 {
+                    WM_LBUTTONDOWN => button(Button::Left, false),
+                    WM_LBUTTONUP => button(Button::Left, true),
+                    WM_RBUTTONDOWN => button(Button::Right, false),
+                    WM_RBUTTONUP => button(Button::Right, true),
+                    WM_MBUTTONDOWN => button(Button::Middle, false),
+                    WM_MBUTTONUP => button(Button::Middle, true),
+                    WM_MOUSEWHEEL => Some(Input::Wheel { delta: (event.mouseData >> 16) as i16 as i32 }),
+                    WM_MOUSEMOVE => {
+                        // The cursor hasn't moved yet, so this is the movement even in a game that keeps re-centering it.
+                        let mut now = POINT::default();
+                        unsafe { GetCursorPos(&mut now) }.ok().map(|_| Input::Move { dx: event.pt.x - now.x, dy: event.pt.y - now.y })
+                    }
+                    _ => None,
+                };
+                if let Some(input) = input {
+                    deliver(input);
+                }
+            }
+        }
+        unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    }
+
+    pub struct RecordHook {
+        thread_id: u32,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl Drop for RecordHook {
+        fn drop(&mut self) {
+            let _ = unsafe { PostThreadMessageW(self.thread_id, WM_QUIT, WPARAM(0), LPARAM(0)) };
+            if let Some(thread) = self.thread.take() {
+                let _ = thread.join();
+            }
+            *SINK.lock().unwrap() = None;
+        }
+    }
+
+    pub fn start_recording(sink: Box<dyn FnMut(Input) + Send>) -> Result<RecordHook, String> {
+        *SINK.lock().unwrap() = Some(sink);
+        let (started, ready) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || unsafe {
+            let set = |id, hook| SetWindowsHookExW(id, hook, None, 0).map_err(|e| e.to_string());
+            let hooks: Result<[HHOOK; 2], String> = set(WH_KEYBOARD_LL, Some(on_key)).and_then(|k| set(WH_MOUSE_LL, Some(on_mouse)).map(|m| [k, m]));
+            let hooks = match hooks {
+                Ok(hooks) => hooks,
+                Err(reason) => return drop(started.send(Err(reason))),
+            };
+            let _ = started.send(Ok(GetCurrentThreadId()));
+            // Low-level hooks are called through this thread's message loop.
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+            for hook in hooks {
+                let _ = UnhookWindowsHookEx(hook);
+            }
+        });
+        let thread_id = ready.recv().map_err(|e| e.to_string())??;
+        Ok(RecordHook { thread_id, thread: Some(thread) })
+    }
 
     // Windows tracks modifier state from the modifier key events themselves, so `_held` isn't needed here.
     pub fn send_key(scan: &ScanCode, up: bool, _held: &[Modifier]) -> Result<(), String> {
@@ -235,7 +362,7 @@ mod imp {
         if unsafe { AXIsProcessTrusted() } {
             None
         } else {
-            Some("Fluxion Companion needs Accessibility permission to press keys")
+            Some("Hyperion Companion needs Accessibility permission to press keys")
         }
     }
 
@@ -340,6 +467,38 @@ mod imp {
 }
 
 // Only macOS asks the user for permission before input works.
+// Recording and playing mouse input is Windows-only so far.
+#[cfg(not(windows))]
+mod pointer {
+    use crate::macros::Input;
+
+    pub struct RecordHook;
+
+    pub fn send_pointer(_input: &Input) -> Result<(), String> {
+        Err("macros need Windows for now".into())
+    }
+
+    pub fn start_recording(_sink: Box<dyn FnMut(Input) + Send>) -> Result<RecordHook, String> {
+        Err("Recording macros needs Windows for now".into())
+    }
+}
+#[cfg(not(windows))]
+pub use pointer::{RecordHook, start_recording};
+#[cfg(not(windows))]
+use pointer::send_pointer;
+#[cfg(windows)]
+pub use imp::{RecordHook, start_recording};
+#[cfg(windows)]
+use imp::send_pointer;
+
+/// Performs one step of a macro.
+pub fn send(input: &crate::macros::Input) -> Result<(), String> {
+    match input {
+        crate::macros::Input::Key { key, up } => send_key(&crate::keys::scan_code(key).ok_or("key not supported")?, *up, &[]),
+        _ => send_pointer(input),
+    }
+}
+
 #[cfg(not(target_os = "macos"))]
 mod permission {
     pub fn permission_problem() -> Option<&'static str> {

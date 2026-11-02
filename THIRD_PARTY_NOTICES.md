@@ -1,6 +1,6 @@
 # Third-party notices
 
-Fluxion uses these components for text-to-speech and its interface. Each keeps its own license.
+Hyperion uses these components for text-to-speech and its interface. Each keeps its own license.
 
 | Component | Used for | License |
 | --- | --- | --- |
@@ -12,6 +12,8 @@ Fluxion uses these components for text-to-speech and its interface. Each keeps i
 | Piper voice `en_US-kristin-medium`, trained on [LibriVox](https://librivox.org) recordings | Piper voice | Public domain |
 | Piper voice `en_GB-northern_english_male-medium`, trained on [OpenSLR 83](http://www.openslr.org/83/) | Piper voice | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | [Geist](https://github.com/vercel/geist-font) font, via [`@fontsource-variable/geist`](https://fontsource.org/fonts/geist) | Typeface of the dashboard and companion app, bundled with them | [SIL Open Font License 1.1](https://openfontlicense.org) |
+| Fredoka, Orbitron, Caveat, Bebas Neue, Anton, Righteous, Press Start 2P, Bangers, Pacifico and Lobster fonts, via [Fontsource](https://fontsource.org) | Fonts for alerts and widgets, bundled with the dashboard and overlay | [SIL Open Font License 1.1](https://openfontlicense.org) |
+| Permanent Marker font, via [`@fontsource/permanent-marker`](https://fontsource.org/fonts/permanent-marker) | Font for alerts and widgets, bundled with the dashboard and overlay | [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
 
 Only voices whose training data allows commercial use are bundled. If you add more Piper voices (drop the
 `.onnx` and `.onnx.json` files into `PIPER_VOICES_DIR`), check each voice's `MODEL_CARD`: several popular

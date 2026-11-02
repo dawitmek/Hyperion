@@ -190,6 +190,146 @@
       "when": 1793379308760,
       "tag": "0026_ui_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793427970169,
+      "tag": "0027_tts_auto_max_viewers",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793428316343,
+      "tag": "0028_second_alert_style",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793429074942,
+      "tag": "0029_viewer_avatar",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793430830225,
+      "tag": "0030_viewer_display_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793498698144,
+      "tag": "0031_stream_peak_viewers",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793499523951,
+      "tag": "0032_live_layout",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793509915009,
+      "tag": "0033_goal_raise_leaderboard_size",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793544735003,
+      "tag": "0034_screen_alert_pos",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793545125060,
+      "tag": "0035_screen_link_styles",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793546289739,
+      "tag": "0036_built_in_media",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793557527864,
+      "tag": "0037_like_growth_theme_colors",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793559026379,
+      "tag": "0038_tts_limits_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793571359713,
+      "tag": "0039_tts_unlock_gifts",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793571360293,
+      "tag": "0040_drop_tts_min_coins",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793577093735,
+      "tag": "0041_command_macros_chains",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1793586885107,
+      "tag": "0042_action_effects",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793589536452,
+      "tag": "0043_action_effect_speed",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793591201598,
+      "tag": "0044_alert_effects",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1793594712022,
+      "tag": "0045_alert_shape",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793596303460,
+      "tag": "0046_alert_effect_color",
+      "breakpoints": true
     }
   ]
 }

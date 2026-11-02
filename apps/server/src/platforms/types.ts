@@ -1,4 +1,4 @@
-import type { RoomStats, ViewerEvent } from '@fluxion/shared';
+import type { RoomStats, ViewerEvent } from '@hyperion/shared';
 
 // One live connection to a streaming platform. Only adapters know platform details.
 export interface PlatformAdapter {

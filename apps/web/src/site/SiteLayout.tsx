@@ -105,7 +105,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
         <div className="s-wrap">
           <Link href="/" className="s-brand">
             <Logo size={30} />
-            Fluxion
+            Hyperion
           </Link>
           <nav className="s-nav-links" aria-label="Site">
             {PAGES.map((p) => (
@@ -152,7 +152,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
         <div className="s-wrap">
           <span className="s-brand">
             <Logo size={36} />
-            Fluxion
+            Hyperion
           </span>
           <h2 id="cta-title">
             Pair it. Map it. <span className="s-gradient">Go live.</span>
@@ -167,7 +167,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
           </div>
           <p className="s-cta-note">Free and open source under the GPL-3.0</p>
           <footer className="s-footer">
-            <span>© 2026 Fluxion. Not affiliated with TikTok.</span>
+            <span>© 2026 Hyperion. Not affiliated with TikTok.</span>
             <nav aria-label="Footer">
               {[...PAGES, DOWNLOAD, PRIVACY].map((p) => (
                 <Link key={p.href} href={p.href}>

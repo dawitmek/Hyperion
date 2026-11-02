@@ -1,13 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
-import { levelForXp, MODES, type LeaderboardEntry, type ModeState } from '@fluxion/shared';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react';
+import { levelForXp, MODES, type LeaderboardEntry, type LiveCard, type ModeState, type StreamStats } from '@hyperion/shared';
 import { api, type Command, type LiveStatus } from '../api';
 import { Link } from '../router';
-import { Card, ErrorNotice, keyLabel, Seg, useError } from '../ui';
-import { Icon } from '../icons';
+import { Card, ErrorNotice, keyLabel, Seg, useError, ViewerAvatar } from '../ui';
+import { Icon, type IconName } from '../icons';
 import type { PageProps } from './Dashboard';
 import type { Activity, ActivityKind } from './live-feed';
 import { MODE_INFO } from './modes';
 import { ActivityFeed } from './ActivityFeed';
+import { CARD_LABELS, LiveCards } from './LiveLayout';
+import { Stat } from './AnalyticsPage';
 import { VoiceControls } from './VoiceControls';
 import { ViewerLink } from './ViewerPanel';
 import { ActivityChart, CommandUsage, useStreamDetail } from './StreamInsights';
@@ -16,21 +18,57 @@ export function LivePage(props: PageProps) {
   return (
     <>
       <StatusTiles {...props} />
-      <div className="live-columns">
-        <div className="stack live-main">
-          <CommandsOverview {...props} />
-          {props.status.live && props.status.source === 'simulated' && <TestConsole />}
-          <ActivityFeed status={props.status} />
-          {props.status.live && <ThisStream />}
-        </div>
-        <aside className="stack live-side" aria-label="Happening now">
-          <ModeCard {...props} />
-          <VoiceControls {...props} />
-          <ActivityCard {...props} />
-          <TopPlayers {...props} />
-        </aside>
-      </div>
+      <LiveCards
+        host={props.host}
+        refreshHost={props.refreshHost}
+        extra={props.status.live && props.status.source === 'simulated' && <TestConsole />}
+        card={(id, editing) => liveCard(id, props, editing)}
+      />
     </>
+  );
+}
+
+function liveCard(id: LiveCard, props: PageProps, editing: boolean): ReactNode {
+  switch (id) {
+    case 'commands':
+      return <CommandsOverview {...props} />;
+    case 'feed':
+      return <ActivityFeed status={props.status} />;
+    case 'stream':
+      if (props.status.live) return <ThisStream />;
+      return editing ? <p className="empty">Shows while you're live.</p> : null;
+    case 'mode':
+      return <ModeCard {...props} />;
+    case 'voice':
+      return <VoiceControls {...props} />;
+    case 'activity':
+      return <ActivityCard {...props} />;
+    case 'players':
+      return <TopPlayers {...props} />;
+    default:
+      return <StreamTile id={id} stats={props.feed.stats} />;
+  }
+}
+
+// One number from the stream that's on now, small enough to sit beside others.
+function StreamTile({ id, stats }: { id: Exclude<LiveCard, 'commands' | 'feed' | 'stream' | 'mode' | 'voice' | 'activity' | 'players'>; stats: StreamStats | null }) {
+  const tiles = {
+    viewers: { icon: 'eye', hue: 'sky', value: stats?.viewers },
+    'peak-viewers': { icon: 'eye', hue: 'sky', value: stats?.peakViewers },
+    interactors: { icon: 'crowd', hue: 'indigo', value: stats?.interactors, note: 'chatted or sent a gift' },
+    gifts: { icon: 'gift', hue: 'pink', value: stats?.gifts },
+    coins: { icon: 'coin', hue: 'teal', value: stats?.diamonds },
+    likes: { icon: 'heart', hue: 'red', value: stats?.likes },
+    follows: { icon: 'follower', hue: 'pink', value: stats?.follows },
+    shares: { icon: 'share', hue: 'violet', value: stats?.shares },
+    'top-gift': { icon: 'trophy', hue: 'orange', value: stats?.topGift?.viewer, note: stats?.topGift && `${stats.topGift.gift}, ${stats.topGift.diamonds.toLocaleString()} coins` },
+    'last-follower': { icon: 'follower', hue: 'pink', value: stats?.lastFollower ?? undefined },
+  } satisfies Record<typeof id, { icon: IconName; hue: string; value: number | string | undefined; note?: string | null }>;
+  const tile: { icon: IconName; hue: string; value: number | string | undefined; note?: string | null } = tiles[id];
+  return (
+    <div className="live-stat">
+      <Stat icon={tile.icon} hue={tile.hue} label={CARD_LABELS[id]} value={tile.value?.toLocaleString() ?? '—'} note={stats ? (tile.note ?? undefined) : 'while live'} />
+    </div>
   );
 }
 
@@ -158,7 +196,9 @@ function StatusTiles({ host, status, setStatus, feed }: PageProps) {
 // beats a single stray press. Every score fades at the same rate, so only a press can change the order: it's
 // redone on each one, and nothing runs in between.
 const HALF_LIFE_MS = 30_000;
-const COMMAND_ROWS = 3;
+const COMMAND_ROWS = 3; // rows of keys until the host picks their own
+const ROWS_KEY = 'hyperion-command-rows';
+const ROW_HEIGHT = 140; // a row's height before there's one to measure, as when every row is hidden
 const SLIDE_MS = 250;
 
 function useBusiestFirst(keywords: string[], pressed: Record<string, number>) {
@@ -186,7 +226,8 @@ function useBusiestFirst(keywords: string[], pressed: Record<string, number>) {
   const [order, setOrder] = useState(rank);
   const key = keywords.join('\n');
   useEffect(() => setOrder(rank()), [key]);
-  return order;
+  // Commands that just loaded start out ranked, rather than sliding into place a moment later.
+  return keywords.every((k) => order.includes(k)) ? order : rank();
 }
 
 // Cards with `data-slide` glide from where they were to where they are now, rather than jumping, whenever they move
@@ -227,6 +268,62 @@ function useColumns() {
   return { grid, columns };
 }
 
+function storedRows() {
+  try {
+    const rows = Number(localStorage.getItem(ROWS_KEY) ?? COMMAND_ROWS);
+    return Number.isInteger(rows) && rows >= 0 ? rows : COMMAND_ROWS;
+  } catch {
+    return COMMAND_ROWS;
+  }
+}
+
+// The line under the keys. Drag it for more or fewer rows, click it to hide or bring back the keys, or use the arrow keys.
+function RowsHandle({ rows, total, grid, onChange }: { rows: number; total: number; grid: RefObject<HTMLDivElement | null>; onChange: (rows: number) => void }) {
+  const drag = useRef<{ y: number; rows: number; rowHeight: number; moved: boolean } | null>(null);
+  const clamp = (n: number) => Math.min(total, Math.max(0, n));
+  const rowHeight = () => {
+    const card = grid.current?.querySelector<HTMLElement>('[data-slide]');
+    return card ? card.offsetHeight + parseFloat(getComputedStyle(grid.current!).rowGap) : ROW_HEIGHT;
+  };
+  return (
+    <div
+      className="line-expand keys-handle"
+      role="slider"
+      tabIndex={0}
+      aria-label="Rows of keys shown"
+      aria-orientation="vertical"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={rows}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        drag.current = { y: e.clientY, rows, rowHeight: rowHeight(), moved: false };
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current;
+        if (!d) return;
+        if (e.buttons === 0) return void (drag.current = null); // released somewhere that didn't tell us
+        if (Math.abs(e.clientY - d.y) > 4) d.moved = true;
+        if (d.moved) onChange(clamp(d.rows + Math.round((e.clientY - d.y) / d.rowHeight)));
+      }}
+      onPointerUp={() => {
+        if (drag.current && !drag.current.moved) onChange(rows > 0 ? 0 : Math.min(COMMAND_ROWS, total));
+        drag.current = null;
+      }}
+      onPointerCancel={() => (drag.current = null)}
+      onLostPointerCapture={() => (drag.current = null)}
+      onKeyDown={(e) => {
+        const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+        if (!step) return;
+        e.preventDefault();
+        onChange(clamp(rows + step));
+      }}
+    >
+      {rows === 0 ? `Keys hidden. Click or drag to show` : `${rows} of ${total} rows. Drag to resize`}
+    </div>
+  );
+}
+
 function CommandsOverview({ host, refreshHost, feed }: PageProps) {
   const [commands, setCommands] = useState<Command[] | null>(null);
   const { error, guard } = useError();
@@ -243,9 +340,15 @@ function CommandsOverview({ host, refreshHost, feed }: PageProps) {
   const sorted = [...enabled].sort((a, b) => order.indexOf(a.keyword) - order.indexOf(b.keyword));
   const { grid, columns } = useColumns();
   useSlide(grid);
-  const [expanded, setExpanded] = useState(false);
-  const fits = columns * COMMAND_ROWS;
-  const shown = expanded ? sorted : sorted.slice(0, fits);
+  const [rows, setRows] = useState(storedRows);
+  useEffect(() => {
+    try {
+      localStorage.setItem(ROWS_KEY, String(rows));
+    } catch {} // only means the size isn't remembered
+  }, [rows]);
+  const totalRows = Math.ceil(sorted.length / columns);
+  const shownRows = Math.min(rows, totalRows);
+  const shown = sorted.slice(0, columns * shownRows);
 
   return (
     <section className="card" aria-labelledby="live-commands">
@@ -270,12 +373,12 @@ function CommandsOverview({ host, refreshHost, feed }: PageProps) {
             <div key={c.id} data-slide={c.keyword} className={`command-card ${feed.lastPress === c.keyword ? 'fired' : ''}`}>
               <div className="command-top">
                 <span className="command-keyword">{c.keyword}</span>
-                <kbd className="kbd">{keyLabel(c.key)}</kbd>
+                <kbd className="kbd">{c.macro ? 'Macro' : c.chain ? 'Chain' : keyLabel(c.key)}</kbd>
               </div>
               <div className="muted small">
                 {c.minLevel > 1 && host.progression && host.levelGating
                   ? `level ${c.minLevel} and up`
-                  : `${c.holdMs / 1000} s hold, ${c.cooldownMs / 1000} s cooldown`}
+                  : `${c.key ? `${c.holdMs / 1000} s hold, ` : ''}${c.cooldownMs / 1000} s cooldown`}
               </div>
               <div className="command-used">
                 <span className="muted">Pressed</span>
@@ -288,12 +391,7 @@ function CommandsOverview({ host, refreshHost, feed }: PageProps) {
           );
         })}
       </div>
-      {sorted.length > fits && (
-        <button className="line-expand command-more" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          {expanded ? 'Show fewer' : `Show ${sorted.length - fits} more command${sorted.length - fits === 1 ? '' : 's'}`}
-          <Icon name="chevron" />
-        </button>
-      )}
+      {totalRows > 0 && <RowsHandle rows={shownRows} total={totalRows} grid={grid} onChange={setRows} />}
       <h3 style={{ margin: '24px 0 10px' }}>Crowd mode</h3>
       <div className="crowd-mode">
         <Seg label="Crowd mode" value={host.mode} options={MODES.map((m) => [m, MODE_INFO[m].label] as const)} onChange={setMode} />
@@ -471,12 +569,12 @@ function TopPlayers({ host, feed }: PageProps) {
       {entries.map((e, i) => (
         <div key={e.viewer} className="player">
           <span className={`player-ring ${PLAYER_RINGS[i]}`} aria-hidden="true">
-            <span>{e.viewer[0]?.toUpperCase()}</span>
+            <ViewerAvatar name={e.name ?? e.viewer} src={e.avatar} />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
               <span className="player-name">
-                <ViewerLink name={e.viewer} />
+                <ViewerLink name={e.viewer} label={e.name} />
                 {host.progression && <span className="muted"> level {levelForXp(e.xp)}</span>}
               </span>
               <span className="muted num">{host.progression ? `${e.xp} XP` : `${e.commands} commands`}</span>

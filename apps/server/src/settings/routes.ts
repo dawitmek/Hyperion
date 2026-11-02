@@ -18,7 +18,9 @@ import {
   type UiTheme,
   type UiThemeStyle,
   type VoiceEffect,
-} from '@fluxion/shared';
+  LIVE_CARDS,
+  type LiveLayout,
+} from '@hyperion/shared';
 import { requireHost } from '../auth/session.js';
 import { activeProfile } from '../profiles/active.js';
 import { alertStyleSchema } from '../actions/routes.js';
@@ -41,7 +43,12 @@ type Body = {
   ttsMode?: TtsMode;
   ttsPrefix?: string;
   ttsMaxLength?: number;
+  ttsMaxWords?: number;
+  ttsUnlockGifts?: string[];
+  ttsUnlockMinutes?: number;
+  ttsTemplate?: string;
   ttsCooldownMs?: number;
+  ttsAutoMaxViewers?: number;
   ttsMinLevel?: number;
   ttsBlockedWords?: string;
   ttsVoice?: string | null;
@@ -60,7 +67,9 @@ type Body = {
   uiTheme?: UiTheme;
   uiThemeStyle?: UiThemeStyle;
   uiMode?: UiMode;
+  liveLayout?: LiveLayout | null;
   alertStyle?: AlertStyle | null;
+  alertStyle2?: AlertStyle | null;
 };
 
 // Tells the host's companions the dashboard's theme, which they follow.
@@ -71,6 +80,8 @@ export async function sendThemeToCompanions(app: FastifyInstance, hostId: string
 
 // Mode settings belong to the active profile (they differ per game); the rest to the host.
 const PROFILE_FIELDS = ['mode', 'voteWindowMs', 'turnMs', 'giftBoosts'] as const;
+
+const liveColumn = { type: 'array', items: { enum: LIVE_CARDS }, uniqueItems: true };
 
 export async function settingsRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireHost);
@@ -100,7 +111,12 @@ export async function settingsRoutes(app: FastifyInstance) {
             ttsMode: { enum: TTS_MODES },
             ttsPrefix: { type: 'string', pattern: '^\\S{1,16}$' },
             ttsMaxLength: { type: 'integer', minimum: 10, maximum: 300 },
+            ttsMaxWords: { type: 'integer', minimum: 0, maximum: 100 },
+            ttsUnlockGifts: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 64 } },
+            ttsUnlockMinutes: { type: 'integer', minimum: 0, maximum: 1440 },
+            ttsTemplate: { type: 'string', maxLength: 200, pattern: '\\{text\\}' },
             ttsCooldownMs: { type: 'integer', minimum: 0, maximum: 600000 },
+            ttsAutoMaxViewers: { type: 'integer', minimum: 0, maximum: 100000 },
             ttsMinLevel: { type: 'integer', minimum: 1, maximum: 99 },
             ttsBlockedWords: { type: 'string', maxLength: 5000 },
             ttsVoice: { type: ['string', 'null'], maxLength: 200 },
@@ -120,13 +136,20 @@ export async function settingsRoutes(app: FastifyInstance) {
             uiTheme: { enum: UI_THEMES.map((t) => t.id) },
             uiThemeStyle: { enum: ['full', 'colors'] },
             uiMode: { enum: UI_MODES },
+            liveLayout: {
+              type: ['object', 'null'],
+              additionalProperties: false,
+              required: ['main', 'side'],
+              properties: { main: liveColumn, side: liveColumn },
+            },
             alertStyle: { anyOf: [{ type: 'null' }, alertStyleSchema()] },
+            alertStyle2: { anyOf: [{ type: 'null' }, alertStyleSchema()] },
           },
         },
       },
     },
     async (req, reply) => {
-      const { tiktokUsername, actionsPerSecond, progression, levelGating, uiTheme, uiThemeStyle, uiMode, alertStyle } = req.body;
+      const { tiktokUsername, actionsPerSecond, progression, levelGating, uiTheme, uiThemeStyle, uiMode, liveLayout, alertStyle, alertStyle2 } = req.body;
       const tts = Object.fromEntries(Object.entries(req.body).filter(([k]) => k.startsWith('tts')));
       const points = Object.fromEntries(Object.entries(req.body).filter(([k]) => k.startsWith('points')));
       if (typeof req.body.ttsCloudKey === 'string') tts.ttsCloudKey = app.secrets.seal(req.body.ttsCloudKey);
@@ -152,7 +175,9 @@ export async function settingsRoutes(app: FastifyInstance) {
         ...(uiTheme !== undefined && { uiTheme }),
         ...(uiThemeStyle !== undefined && { uiThemeStyle }),
         ...(uiMode !== undefined && { uiMode }),
+        ...(liveLayout !== undefined && { liveLayout }),
         ...(alertStyle !== undefined && { alertStyle }),
+        ...(alertStyle2 !== undefined && { alertStyle2 }),
       };
       const profilePatch = Object.fromEntries(
         PROFILE_FIELDS.filter((f) => req.body[f] !== undefined).map((f) => [f, req.body[f]]),

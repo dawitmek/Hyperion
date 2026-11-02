@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UI_THEMES, type UiMode, type UiTheme, type UiThemeStyle } from '@fluxion/shared';
+import { UI_THEMES, type UiMode, type UiTheme, type UiThemeStyle } from '@hyperion/shared';
 import { api, type Host } from '../api';
 import { navigate } from '../router';
 import { Card, Choices, ErrorNotice, Seg, useError } from '../ui';
@@ -19,7 +19,7 @@ export function SettingsPage({ host, refreshHost }: PageProps) {
 
   return (
     <div className="stack">
-      <Card title="Stream" description="You must already be live on TikTok before Fluxion can connect to your stream.">
+      <Card title="Stream" description="You must already be live on TikTok before Hyperion can connect to your stream.">
         <ErrorNotice error={error} />
         <form
           className="stack"
@@ -118,13 +118,13 @@ function Appearance({ host, refreshHost }: { host: Host; refreshHost: () => Prom
         />
         <div className="field">
           What the theme changes
-          <span className="hint">Colors only keeps Fluxion's own font and rounded corners with any theme.</span>
+          <span className="hint">Colors only keeps Hyperion's own font and rounded corners with any theme.</span>
           <Seg<UiThemeStyle>
             label="What the theme changes"
             value={host.uiThemeStyle}
             options={[
-              ['full', 'Full theme'],
               ['colors', 'Colors only'],
+              ['full', 'Full theme'],
             ]}
             onChange={(uiThemeStyle) => save({ uiThemeStyle })}
           />

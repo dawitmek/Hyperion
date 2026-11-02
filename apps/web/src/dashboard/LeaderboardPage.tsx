@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { levelForXp, POINTS_CHECK, xpForLevel } from '@fluxion/shared';
+import { levelForXp, POINTS_CHECK, xpForLevel } from '@hyperion/shared';
 import { api, type Host, type LeaderboardEntry } from '../api';
-import { Card, ErrorNotice, NumberCell, Switch, useError } from '../ui';
+import { Card, ConfirmButton, ErrorNotice, NumberCell, Switch, useError, ViewerAvatar } from '../ui';
 import type { PageProps } from './Dashboard';
 import { ViewerLink } from './ViewerPanel';
 
@@ -30,14 +30,14 @@ function LeaderboardCard({ host, live }: { host: Host; live: LeaderboardEntry[] 
       title="Leaderboard"
       description={`${host.tiktokUsername ? `For @${host.tiktokUsername.replace(/^@/, '')}. Each TikTok account you set has its own leaderboard and points. ` : ''}Commands that pressed a key and gifts sent, per viewer, ranked by XP (1 per command plus gift coins). Updates every few seconds.`}
       actions={
-        <button
+        <ConfirmButton
           className="btn btn-ghost"
-          onClick={guard(async () => {
-            if (confirm('Reset the leaderboard? Viewers keep their points. This cannot be undone.')) await api('DELETE', '/leaderboard').then(load);
-          })}
+          message="Reset the leaderboard? Viewers keep their points. This cannot be undone."
+          confirmLabel="Reset"
+          onConfirm={guard(() => api('DELETE', '/leaderboard').then(load))}
         >
           Reset
-        </button>
+        </ConfirmButton>
       }
     >
       <ErrorNotice error={error} />
@@ -64,7 +64,11 @@ function LeaderboardCard({ host, live }: { host: Host; live: LeaderboardEntry[] 
                     <span className={`rank ${i < 3 ? ['violet', 'pink', 'sky'][i] : ''}`}>{i + 1}</span>
                   </td>
                   <td>
-                    <ViewerLink name={e.viewer} />
+                    <span className="leaderboard-viewer">
+                      <ViewerAvatar name={e.name ?? e.viewer} src={e.avatar} />
+                      <ViewerLink name={e.viewer} label={e.name} />
+                      {e.name && <span className="muted small">@{e.viewer}</span>}
+                    </span>
                   </td>
                   <td className="num">{e.commands}</td>
                   <td className="num">{e.gifts}</td>
@@ -96,14 +100,14 @@ function PointsCard({ host, refreshHost }: { host: Host; refreshHost: () => Prom
       title="Points"
       description="A balance viewers earn on your streams and spend on commands. Set what each command costs on the Commands page. Unlike XP, points go down when spent."
       actions={
-        <button
+        <ConfirmButton
           className="btn btn-ghost"
-          onClick={guard(async () => {
-            if (confirm("Set every viewer's points back to 0? This cannot be undone.")) await api('DELETE', '/leaderboard/points');
-          })}
+          message="Set every viewer's points back to 0? This cannot be undone."
+          confirmLabel="Reset points"
+          onConfirm={guard(() => api('DELETE', '/leaderboard/points'))}
         >
           Reset points
-        </button>
+        </ConfirmButton>
       }
     >
       <ErrorNotice error={error} />

@@ -1,29 +1,33 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { AlertPlayer, type ShownAlert } from './alert-player';
+import { ViewerAvatar } from './ui';
 import {
   levelForXp,
   QUEUE_JOIN,
   WIDGET_SPOTS,
   WIDGET_TYPES,
+  widgetKey,
   type LeaderboardEntry,
   type ModeState,
+  type AlertPosition,
   type OverlayScreen,
   type ScreenWidget,
   type OverlayToServer,
   type ServerToOverlay,
   type StreamStats,
   type WidgetSpot,
-} from '@fluxion/shared';
-import { DEFAULT_FIREWORK_DIAMONDS, Fireworks, GiftBus, Title, usePreview, Widget, type ChatLine } from './overlay-widgets';
+} from '@hyperion/shared';
+import { giftAnimation, GiftBus, LevelUpLine, Title, usePreview, Widget, type ChatLine } from './overlay-widgets';
+import { ScreenEffects } from './effects';
 import { Icon } from './icons';
+import { AlertContent, alertFxClass, alertFxStyle, MIDDLE, revealsInMiddle } from './alert-fx';
 import { alertLook } from './alert-style';
 
 // A command, a level-up shout-out, or a viewer's points when they ask.
-type FeedItem = { id: number; viewer: string } & ({ keyword: string; level?: number } | { levelUp: number } | { points: number });
+type FeedItem = { id: number; viewer: string; avatar?: string } & ({ keyword: string; level?: number } | { levelUp: number } | { points: number });
 
 const MAX_ITEMS = 6;
 const ITEM_TTL_MS = 8000;
-const LEADERBOARD_SIZE = 5;
 const MAX_TALLY = 4;
 const CHAT_LINES = 6;
 
@@ -58,7 +62,7 @@ export function Overlay({ token }: { token: string }) {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [live, setLive] = useState(false);
   // clockOffset converts server times to this machine's clock.
-  const [mode, setMode] = useState<{ state: ModeState; clockOffset: number } | null>(null);
+  const [mode, setMode] = useState<{ state: ModeState; clockOffset: number; avatar?: string } | null>(null);
   const [leaderboard, setLeaderboard] = useState<{ entries: LeaderboardEntry[]; progression: boolean }>({
     entries: [],
     progression: false,
@@ -68,6 +72,7 @@ export function Overlay({ token }: { token: string }) {
   const [player] = useState(() => new AlertPlayer(setAlert, setSoundBlocked));
   // What this screen shows. Until the server says, show nothing rather than everything.
   const [screen, setScreen] = useState<OverlayScreen | null>(null);
+  const alertBox = useRef<HTMLDivElement>(null);
   const screenRef = useRef<OverlayScreen | null>(null);
   const [stats, setStats] = useState<StreamStats | null>(null);
   const [chat, setChat] = useState<ChatLine[]>([]);
@@ -123,9 +128,10 @@ export function Overlay({ token }: { token: string }) {
           if (message.state === 'stopped') player.clear();
         }
         if (message.type === 'stats') setStats(message.stats);
-        if (message.type === 'chat') setChat((lines) => [...lines, { id: nextId++, viewer: message.viewer, text: message.text }].slice(-CHAT_LINES));
+        if (message.type === 'chat') setChat((lines) => [...lines, { id: nextId++, viewer: message.viewer, text: message.text, avatar: message.avatar }].slice(-CHAT_LINES));
         if (message.type === 'gift') bus.emit(message);
-        if (message.type === 'mode') setMode({ state: message.state, clockOffset: Date.now() - message.serverNow });
+        if (message.type === 'levelUp') bus.emitLevelUp(message);
+        if (message.type === 'mode') setMode({ state: message.state, clockOffset: Date.now() - message.serverNow, avatar: message.avatar });
         if (message.type === 'leaderboard') setLeaderboard({ entries: message.entries, progression: message.progression });
         const add = (item: FeedItem) => {
           setLive(true);
@@ -134,14 +140,17 @@ export function Overlay({ token }: { token: string }) {
         };
         if (SINGLE) return; // the rest is alerts, speech and the feed
         if (shown?.feed) {
-          if (message.type === 'command') add({ id: nextId++, viewer: message.viewer, keyword: message.keyword, level: message.level });
-          if (message.type === 'levelUp') add({ id: nextId++, viewer: message.viewer, levelUp: message.level });
-          if (message.type === 'points') add({ id: nextId++, viewer: message.viewer, points: message.points });
+          if (message.type === 'command') add({ id: nextId++, viewer: message.viewer, avatar: message.avatar, keyword: message.keyword, level: message.level });
+          // The level-ups widget takes these out of the feed.
+          if (message.type === 'levelUp' && !shown.widgets.some((w) => w.type === 'level_ups')) add({ id: nextId++, viewer: message.viewer, avatar: message.avatar, levelUp: message.level });
+          if (message.type === 'points') add({ id: nextId++, viewer: message.viewer, avatar: message.avatar, points: message.points });
         }
         // An alert for another screen isn't this one's to show.
         if (message.type === 'alert' && shown?.alerts && (!message.screen || message.screen === shown.id)) player.enqueue(message);
+        if (message.type === 'effect' && shown?.alerts && (!message.screen || message.screen === shown.id)) bus.emitEffect(message);
         if (message.type === 'tts') (report('chat line received', { viewer: message.viewer, text: message.text }), player.say(message.speech, true));
         if (message.type === 'clearSpeech') player.clearSpeech(message.chatOnly);
+        if (message.type === 'skipSpeech') player.skipSpeech();
         if (message.type === 'dropAlerts') player.dropAlerts('their action was turned off', message.actions);
         if (message.type === 'speechVolume') player.speechVolume(message.volume / 100);
       };
@@ -162,21 +171,30 @@ export function Overlay({ token }: { token: string }) {
     };
   }, [token, player, bus]);
 
+  // Alerts at the screen's top, middle or bottom step out of the way of widgets. Sizes change as a picture loads.
+  const auto = alert && !alert.pos && !revealsInMiddle(alert.fx) && screen && !screen.alertPos ? screen : null;
+  const clear = useClearOfWidgets(alertBox, auto?.alertPosition ?? null, (auto?.scale ?? 100) / 100, (alert?.scale ?? 100) / 100, [alert?.id]);
+
+  // Next frame: the alert has stepped clear of the widgets by then, so the burst comes from where it really is.
+  useEffect(() => {
+    if (alert?.fx?.effect !== 'emoji_burst') return;
+    const { emoji, amount, speed } = alert.fx;
+    const next = requestAnimationFrame(() => {
+      if (alertBox.current) bus.emitBurst({ box: alertBox.current.getBoundingClientRect(), emoji, amount, speed });
+    });
+    return () => cancelAnimationFrame(next);
+  }, [alert?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!screen) return null;
   if (SINGLE) {
-    // The screen's own settings for this widget, if it has it (the coin jar's target, say); else the defaults.
-    const widget: ScreenWidget = {
-      ...screen.widgets.find((w) => w.type === SINGLE.type && w.goalId === SINGLE.goalId),
-      ...SINGLE,
-      spot: 'top-left',
-    };
+    const widget = linkedWidget(screen, SINGLE);
     const shownStats = live ? stats : preview.stats;
     return (
       <div className="overlay-screen" style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
         {PREVIEW && !live && <div className="overlay-preview-note">Preview with sample numbers. Your stream shows real ones.</div>}
         {(live || PREVIEW) &&
           (widget.type === 'firework' ? (
-            <Fireworks min={widget.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS} bus={bus} />
+            <ScreenEffects gifts={giftAnimation(widget)} bus={bus} />
           ) : (
             <div className="overlay-spot spot-top-left">
               <Widget widget={widget} stats={shownStats} chat={live ? chat : preview.chat} bus={bus} />
@@ -190,15 +208,19 @@ export function Overlay({ token }: { token: string }) {
       <div className="overlay-fit" style={fit}>
         <div className={`overlay-screen alerts-${screen.alertPosition}`} style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
           {/* Alerts show even while offline, so the dashboard's Test button works before going live. */}
+          <ScreenEffects bus={bus} />
           {alert && (
             <div
               key={alert.id}
-              className={`overlay-alert ${alertLook(alert.style).className} ${alert.text ? '' : 'media-only'}`}
-              style={{ ...alertLook(alert.style).style, ...alertPlace(alert) }}
+              ref={alertBox}
+              className={`overlay-alert ${alertLook(alert.style).className} ${alert.text ? '' : 'media-only'} ${alertFxClass(alert.fx)}`}
+              style={{ ...alertLook(alert.style).style, ...alertPlace({ pos: alert.pos ?? (revealsInMiddle(alert.fx) ? MIDDLE : screen.alertPos), scale: alert.scale }), ...clear, ...alertFxStyle(alert.fx, alert.durationMs, alert.style) }}
             >
-              {alert.media?.kind === 'image' && <img className="overlay-alert-media" src={alert.media.url} alt="" />}
-              {alert.media?.kind === 'video' && <AlertVideo src={alert.media.url} audible={screen.audio} />}
-              {alert.text && <span>{alert.text}</span>}
+              <AlertContent
+                fx={alert.fx}
+                text={alert.text}
+                media={alert.media && (alert.media.kind === 'image' ? <img className="overlay-alert-media" src={alert.media.url} alt="" /> : <AlertVideo src={alert.media.url} audible={screen.audio} />)}
+              />
             </div>
           )}
           {(live || PREVIEW) && (
@@ -225,10 +247,66 @@ export function Overlay({ token }: { token: string }) {
   );
 }
 
+const ALERT_GAP = 12; // px of the 1920 by 1080 layout
+const CANVASES = '.overlay-fit, .pos-canvas'; // the overlay's, and the dashboard previews'
+const WIDGET_BOXES = '.overlay-spot, .overlay-placed';
+
+// `box` moved clear of the widgets, as an alert at `position` is on stream; null `position` leaves it where it is. The
+// overlay and the dashboard's previews share this, so a preview shows the place the alert really gets.
+export function useClearOfWidgets(box: RefObject<HTMLElement | null>, position: AlertPosition | null, zoom: number, alertScale: number, changes: unknown[]): CSSProperties {
+  const [clear, setClear] = useState<CSSProperties>({});
+  useLayoutEffect(() => {
+    setClear({});
+    const alert = box.current;
+    if (!alert || !position) return;
+    const place = () => setClear(clearOfWidgets(alert, position, zoom, alertScale));
+    const resize = new ResizeObserver(place);
+    resize.observe(alert);
+    alert.closest(CANVASES)!.querySelectorAll(WIDGET_BOXES).forEach((w) => resize.observe(w));
+    return () => resize.disconnect();
+  }, [position, zoom, alertScale, ...changes]);
+  return clear;
+}
+
+// Where an alert at `position` goes to clear the widgets above and below it: from its usual place, it moves past
+// each one it would touch, down the screen (up from the bottom). With no free space it stays put.
+function clearOfWidgets(box: HTMLElement, position: AlertPosition, zoom: number, alertScale: number): CSSProperties {
+  const canvas = box.closest<HTMLElement>(CANVASES)!;
+  const page = canvas.getBoundingClientRect();
+  const fit = page.width / parseFloat(canvas.style.width); // the browser source's size to the 1920 by 1080 layout
+  const toScreen = fit * zoom;
+  const gap = ALERT_GAP * fit;
+  const width = box.offsetWidth * alertScale * toScreen;
+  const height = box.offsetHeight * alertScale * toScreen;
+  const left = page.left + page.width / 2 - width / 2;
+  const widgets = [...canvas.querySelectorAll(WIDGET_BOXES)]
+    .map((w) => w.getBoundingClientRect())
+    .filter((w) => w.height > 0 && w.left < left + width && w.right > left);
+  const up = position === 'bottom';
+  const margin = page.height * 0.05;
+  const usual = position === 'middle' ? page.top + (page.height - height) / 2 : up ? page.bottom - margin - height : page.top + margin;
+  let top = usual;
+  for (const w of [...widgets].sort((a, b) => (up ? b.bottom - a.bottom : a.top - b.top))) {
+    if (w.top < top + height + gap && w.bottom + gap > top) top = up ? w.top - gap - height : w.bottom + gap;
+  }
+  if (top === usual || top < page.top || top + height > page.bottom) return {};
+  // The alert's scale grows it away from the edge it's kept at, and from its middle when in the middle.
+  const edge = (px: number) => `${px / toScreen}px`;
+  if (up) return { bottom: edge(page.bottom - top - height) };
+  return { top: edge(top - page.top + (position === 'middle' ? height / 2 : 0)) };
+}
+
+// A Widget link's widget: the screen's own settings for it, if it has it (the coin jar's target, say), and its link look.
+export function linkedWidget(screen: Pick<OverlayScreen, 'widgets' | 'linkStyles'>, w: Pick<ScreenWidget, 'type' | 'goalId'>): ScreenWidget {
+  const key = widgetKey(w);
+  const look = screen.linkStyles[key];
+  return { ...screen.widgets.find((m) => widgetKey(m) === key), ...w, spot: 'top-left', ...(look && { style: look }) };
+}
+
 // An alert placed by hand sits with its middle at that point; its size multiplies the screen's.
 export function alertPlace({ pos, scale }: { pos: { x: number; y: number } | null; scale: number }): CSSProperties {
   return {
-    ...(pos && { top: `${pos.y}%`, left: `${pos.x}%`, bottom: 'auto', '--alert-shift': '-50%' }),
+    ...(pos && { top: `${pos.y}%`, left: `${pos.x}%`, bottom: 'auto', transformOrigin: '50% 50%', '--alert-shift': '-50%' }),
     '--alert-scale': scale / 100,
   } as CSSProperties;
 }
@@ -244,7 +322,7 @@ function LiveWidgets({
   bus,
 }: {
   screen: OverlayScreen;
-  mode: { state: ModeState; clockOffset: number } | null;
+  mode: { state: ModeState; clockOffset: number; avatar?: string } | null;
   leaderboard: { entries: LeaderboardEntry[]; progression: boolean };
   items: FeedItem[];
   stats: StreamStats | null;
@@ -252,9 +330,9 @@ function LiveWidgets({
   bus: GiftBus;
 }) {
   const spots = Object.fromEntries(WIDGET_SPOTS.map((s) => [s, [] as ReactNode[]])) as Record<WidgetSpot, ReactNode[]>;
-  if (mode) spots['top-left'].push(<ModePanel key="mode" state={mode.state} clockOffset={mode.clockOffset} />);
-  if (leaderboard.entries.length > 0) spots['top-right'].push(<Leaderboard key="leaderboard" leaderboard={leaderboard} />);
-  if (screen.feed) spots['bottom-left'].push(<Feed key="feed" items={items} hint={mode?.state.mode === 'anarchy'} />);
+  if (mode) spots['top-left'].push(<ModePanel key="mode" state={mode.state} clockOffset={mode.clockOffset} avatar={mode.avatar} />);
+  if (leaderboard.entries.length > 0) spots['top-right'].push(<Leaderboard key="leaderboard" leaderboard={leaderboard} size={screen.leaderboardSize} />);
+  if (screen.feed) spots['bottom-left'].push(<Feed key="feed" items={items} />);
   // The grouped goals widget leaves out goals that have a widget of their own on this screen.
   const own = new Set(screen.widgets.map((w) => w.goalId).filter(Boolean));
   const grouped = stats && { ...stats, goals: stats.goals.filter((g) => !own.has(g.id)) };
@@ -273,7 +351,7 @@ function LiveWidgets({
   const firework = screen.widgets.find((w) => w.type === 'firework');
   return (
     <>
-      {firework && <Fireworks min={firework.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS} bus={bus} />}
+      {firework && <ScreenEffects gifts={giftAnimation(firework)} bus={bus} />}
       {WIDGET_SPOTS.map((spot) => (
         <div key={spot} className={`overlay-spot spot-${spot}`}>
           {spots[spot]}
@@ -284,15 +362,16 @@ function LiveWidgets({
   );
 }
 
-function Leaderboard({ leaderboard }: { leaderboard: { entries: LeaderboardEntry[]; progression: boolean } }) {
+function Leaderboard({ leaderboard, size }: { leaderboard: { entries: LeaderboardEntry[]; progression: boolean }; size: number }) {
   return (
     <div className="overlay-panel overlay-leaderboard tone-sky">
       <Title icon="trophy">Top players</Title>
-      {leaderboard.entries.slice(0, LEADERBOARD_SIZE).map((entry, i) => (
+      {leaderboard.entries.slice(0, size).map((entry, i) => (
         <div key={entry.viewer} className="overlay-row">
           {/* The top three get medals. */}
           <span className={`overlay-rank ${i < 3 ? `medal-${i + 1}` : ''}`}>{i + 1}</span>
-          <span className="overlay-name">{entry.viewer}</span>
+          <ViewerAvatar name={entry.name ?? entry.viewer} src={entry.avatar} />
+          <span className="overlay-name">{entry.name ?? entry.viewer}</span>
           <span className="overlay-score">{leaderboard.progression ? `Lv ${levelForXp(entry.xp)}` : entry.commands}</span>
         </div>
       ))}
@@ -301,19 +380,16 @@ function Leaderboard({ leaderboard }: { leaderboard: { entries: LeaderboardEntry
 }
 
 // Who pressed what, level-ups and !points answers, newest at the bottom.
-function Feed({ items, hint }: { items: FeedItem[]; hint: boolean }) {
+function Feed({ items }: { items: FeedItem[] }) {
   return (
     <div className="overlay">
-      {hint && items.length === 0 && <div className="overlay-hint">Type a command in chat to play!</div>}
       {items.map((item) =>
         'levelUp' in item ? (
-          <div key={item.id} className="overlay-item overlay-levelup">
-            <Icon name="star" size={18} strokeWidth={2.5} />
-            <span className="overlay-viewer">{item.viewer}</span> reached <span className="overlay-keyword">level {item.levelUp}</span>
-          </div>
+          <LevelUpLine key={item.id} viewer={item.viewer} level={item.levelUp} avatar={item.avatar} />
         ) : 'points' in item ? (
           <div key={item.id} className="overlay-item overlay-points">
             <Icon name="coin" size={18} strokeWidth={2.5} />
+            <ViewerAvatar className="small" name={item.viewer} src={item.avatar} />
             <span className="overlay-viewer">{item.viewer}</span> has{' '}
             <span className="overlay-keyword">
               {item.points.toLocaleString()} point{item.points === 1 ? '' : 's'}
@@ -321,6 +397,7 @@ function Feed({ items, hint }: { items: FeedItem[]; hint: boolean }) {
           </div>
         ) : (
           <div key={item.id} className="overlay-item">
+            <ViewerAvatar className="small" name={item.viewer} src={item.avatar} />
             <span className="overlay-viewer">{item.viewer}</span>
             {item.level !== undefined && <span className="overlay-level">Lv {item.level}</span>}
             <span className="overlay-keyword">{item.keyword}</span>
@@ -345,7 +422,7 @@ function AlertVideo({ src, audible }: { src: string; audible: boolean }) {
   return <video ref={video} className="overlay-alert-media" src={src} playsInline />;
 }
 
-function ModePanel({ state, clockOffset }: { state: ModeState; clockOffset: number }) {
+function ModePanel({ state, clockOffset, avatar }: { state: ModeState; clockOffset: number; avatar?: string }) {
   const endsAt = 'endsAt' in state && state.endsAt !== null ? state.endsAt + clockOffset : null;
   const secondsLeft = useCountdown(endsAt);
 
@@ -374,7 +451,12 @@ function ModePanel({ state, clockOffset }: { state: ModeState; clockOffset: numb
         <Title icon="crowd" end={secondsLeft !== null && <span className="overlay-timer">{secondsLeft}s</span>}>
           {state.viewer ? 'Now playing' : 'Nobody playing'}
         </Title>
-        {state.viewer && <div className="overlay-player">{state.viewer}</div>}
+        {state.viewer && (
+          <div className="overlay-player">
+            <ViewerAvatar name={state.viewer} src={avatar} />
+            {state.viewer}
+          </div>
+        )}
         {state.queue.length > 0 && <div className="overlay-muted">Next: {state.queue.join(', ')}</div>}
         <div className="overlay-muted">
           Type <span className="overlay-keyword">{QUEUE_JOIN}</span> to play

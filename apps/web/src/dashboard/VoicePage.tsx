@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { CLOUD_PROVIDERS, MAX_LEVEL, TIKTOK_VOICES, VOICE_EFFECTS } from '@fluxion/shared';
+import { CLOUD_PROVIDERS, DEFAULT_TTS_TEMPLATE, MAX_LEVEL, TIKTOK_VOICES, VOICE_EFFECTS } from '@hyperion/shared';
 import { api, ApiError, type CloudProvider, type Host, type Speech, type TtsEngine, type VoiceEffect } from '../api';
+import { Icon } from '../icons';
 import { SpeechPlayer } from '../speech-player';
-import { Card, Choices, ErrorNotice, NumberCell, Scrubber, TextCell, useError } from '../ui';
+import { findGift, GiftPicker, useGifts } from './GiftPicker';
+import { Card, Choices, ErrorNotice, HueIcon, NumberCell, Scrubber, Seg, TextCell, useError } from '../ui';
 import type { PageProps } from './Dashboard';
 import { previewAudio } from './audio';
 
@@ -21,7 +23,7 @@ export function useVoices() {
 
 export const ENGINES: [TtsEngine, string, string][] = [
   ['tiktok', 'TikTok voices', "TikTok's own voices, through your TikTok account. Unofficial: TikTok may change or block it."],
-  ['piper', 'Piper (server)', 'Natural offline voices made on the Fluxion server. Plays through OBS.'],
+  ['piper', 'Piper (server)', 'Natural offline voices made on the Hyperion server. Plays through OBS.'],
   ['espeak', 'eSpeak (overlay)', 'Robotic voice made inside the overlay, many languages. Plays through OBS.'],
   ['cloud', 'Your cloud key', 'Google, Azure or ElevenLabs with your own API key (you pay them). Plays through OBS.'],
   ['browser', 'Browser voices', "The streaming PC's built-in voices. Plays outside OBS's mixer; capture Desktop Audio."],
@@ -64,13 +66,21 @@ export function VoicePage({ host, refreshHost }: PageProps) {
           value={host.ttsMode}
           options={[
             ['off', 'Off', 'Only alerts marked "Read aloud" are spoken.'],
-            ['prefix', 'Prefixed chat', `Comments starting with ${host.ttsPrefix}, e.g. "${host.ttsPrefix} hello".`],
-            ['all', 'All chat', 'Every comment that passes the filters below. Busiest option.'],
+            ['auto', 'Auto (recommended)', `All chat up to ${host.ttsAutoMaxViewers} viewers, then prefixed chat, switching as your stream grows or shrinks.`],
+            ['prefix', 'Prefixed chat', `Comments starting with ${host.ttsPrefix}, e.g. "${host.ttsPrefix} hello". Best above ${host.ttsAutoMaxViewers} viewers.`],
+            ['all', 'All chat', `Every comment that passes the filters below. Best up to ${host.ttsAutoMaxViewers} viewers; busier chat gets skipped.`],
           ]}
           onChange={(ttsMode) => save({ ttsMode })}
         />
+        {host.ttsMode === 'auto' && (
+          <label className="field">
+            All chat up to this many viewers
+            <NumberCell value={host.ttsAutoMaxViewers} min={0} max={100000} onSave={(ttsAutoMaxViewers) => save({ ttsAutoMaxViewers })} />
+          </label>
+        )}
       </Card>
       <VoiceCard host={host} save={save} guard={guard} setError={setError} refreshHost={refreshHost} />
+      <GiftUnlock host={host} save={save} />
       <Card
         title="Chat filters"
         description={host.ttsMode === 'off' ? 'Turn on reading chat above to use these.' : 'Applies to chat only; alerts are always read.'}
@@ -86,6 +96,11 @@ export function VoicePage({ host, refreshHost }: PageProps) {
               <NumberCell value={host.ttsMaxLength} min={10} max={300} onSave={(ttsMaxLength) => save({ ttsMaxLength })} />
             </label>
             <label className="field">
+              Max length, in words
+              <span className="hint">0 for no word limit.</span>
+              <NumberCell value={host.ttsMaxWords} min={0} max={100} onSave={(ttsMaxWords) => save({ ttsMaxWords })} />
+            </label>
+            <label className="field">
               Cooldown per viewer, in seconds
               <NumberCell value={host.ttsCooldownMs / 1000} min={0} max={600} onSave={(s) => save({ ttsCooldownMs: s * 1000 })} />
             </label>
@@ -96,6 +111,7 @@ export function VoicePage({ host, refreshHost }: PageProps) {
               </label>
             )}
           </div>
+          <ReadAs template={host.ttsTemplate} onSave={(ttsTemplate) => save({ ttsTemplate })} />
           <label className="field">
             Blocked words
             <span className="hint">Comma-separated. A comment containing one is not read.</span>
@@ -139,7 +155,7 @@ function VoiceCard({
     setError(null);
     setPreviewing(true);
     try {
-      const speech = await api<Speech>('POST', '/tts/preview', { text: 'viewer says hello from Fluxion' });
+      const speech = await api<Speech>('POST', '/tts/preview', { text: 'viewer says hello from Hyperion' });
       previewPlayer ??= new SpeechPlayer(previewAudio);
       previewPlayer.setVolume(host.ttsVolume / 100);
       await previewPlayer.play(speech);
@@ -150,6 +166,9 @@ function VoiceCard({
     }
   };
   const piperMissing = host.ttsEngine === 'piper' && options.piperVoices.length === 0;
+  // TikTok and cloud voices that fail use Piper, or eSpeak on a server without it.
+  const fallsBack = host.ttsEngine === 'cloud' || host.ttsEngine === 'tiktok';
+  const showPiper = host.ttsEngine === 'piper' || (fallsBack && options.piperVoices.length > 0);
   const tiktokWaiting = host.ttsEngine === 'tiktok' && !host.ttsTiktokConnected && !options.tiktokServerAccount;
   // The sign-in happens in the companion app; notice it here without a reload.
   useEffect(() => {
@@ -174,16 +193,16 @@ function VoiceCard({
         {tiktokWaiting && (
           <p className="notice info">
             Sign in to TikTok from the companion app: open it on your PC and choose Sign in to TikTok. Until then, chat is read
-            with eSpeak.
+            with {options.piperVoices.length > 0 ? 'Piper' : 'eSpeak'}.
           </p>
         )}
         {piperMissing && (
           <p className="notice warning">This server has no Piper voices installed, so eSpeak is used instead. The Docker image includes Piper.</p>
         )}
         <div className="form-grid">
-          {host.ttsEngine === 'piper' && options.piperVoices.length > 0 && (
+          {showPiper && options.piperVoices.length > 0 && (
             <label className="field">
-              Piper voice
+              Piper voice{fallsBack && ' (fallback)'}
               <select
                 value={host.ttsPiperVoice ?? ''}
                 // A speaker number from the previous voice means nothing for the new one.
@@ -199,7 +218,7 @@ function VoiceCard({
               </select>
             </label>
           )}
-          {host.ttsEngine === 'piper' && piperVoice && piperVoice.speakers > 1 && (
+          {showPiper && piperVoice && piperVoice.speakers > 1 && (
             <div className="field">
               Speaker
               <span className="hint">0–{piperVoice.speakers - 1}; each one sounds different.</span>
@@ -231,7 +250,7 @@ function VoiceCard({
               </label>
             </>
           )}
-          {(host.ttsEngine === 'espeak' || piperMissing || host.ttsEngine === 'cloud' || host.ttsEngine === 'tiktok') && (
+          {(host.ttsEngine === 'espeak' || piperMissing || (fallsBack && !showPiper)) && (
             <label className="field">
               eSpeak language{host.ttsEngine !== 'espeak' && ' (fallback)'}
               <select value={host.ttsEspeakVoice} onChange={(e) => save({ ttsEspeakVoice: e.target.value })}>
@@ -347,6 +366,94 @@ function VoiceCard({
           </div>
         </div>
       </div>
+    </Card>
+  );
+}
+
+type ReadStyle = 'name' | 'message' | 'custom';
+const READ_TEMPLATES: Partial<Record<ReadStyle, string>> = { name: DEFAULT_TTS_TEMPLATE, message: '{text}' };
+
+// What's said for a chat line: the name and message, only the message, or the host's own wording.
+function ReadAs({ template, onSave }: { template: string; onSave: (template: string) => void }) {
+  const preset = template === READ_TEMPLATES.message ? 'message' : template === READ_TEMPLATES.name ? 'name' : 'custom';
+  const [picked, setPicked] = useState<ReadStyle>(preset);
+  return (
+    <div className="field">
+      Read each message as
+      <Seg<ReadStyle>
+        label="Read each message as"
+        value={picked}
+        options={[
+          ['name', 'Name says message'],
+          ['message', 'Message only'],
+          ['custom', 'Custom'],
+        ]}
+        onChange={(style) => {
+          setPicked(style);
+          const next = READ_TEMPLATES[style];
+          if (next) onSave(next);
+        }}
+      />
+      {picked === 'custom' && (
+        <>
+          <span className="hint">Use {'{text}'} for the message and, if you like, {'{viewer}'} for the name.</span>
+          <TextCell value={template} required label="Custom wording" onSave={onSave} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// Who gets read: anyone, or only viewers who sent one of these gifts, for a while or for the rest of the stream.
+function GiftUnlock({ host, save }: { host: Host; save: (patch: SettingsPatch) => void | Promise<unknown> }) {
+  const gifts = useGifts();
+  const [picked, setPicked] = useState(host.ttsUnlockGifts); // kept here so quick clicks build on each other
+  const [choosing, setChoosing] = useState(false);
+  const toggle = (name: string) => {
+    const has = picked.some((p) => p.toLowerCase() === name.toLowerCase());
+    const next = has ? picked.filter((p) => p.toLowerCase() !== name.toLowerCase()) : [...picked, name];
+    setPicked(next);
+    save({ ttsUnlockGifts: next });
+  };
+  return (
+    <Card
+      title="Unlock with gifts"
+      icon={<HueIcon name="gift" hue="amber" />}
+      description={host.ttsMode === 'off' ? 'Turn on reading chat above to use this.' : `Only read viewers who send a gift you choose, with ${host.ttsPrefix} or in all chat.`}
+      actions={<span className={`tag ${picked.length > 0 ? 'amber' : ''}`}>{picked.length > 0 ? 'Gifters only' : 'Anyone can be read'}</span>}
+    >
+      <fieldset className="stack" disabled={host.ttsMode === 'off'}>
+        {picked.length > 0 && (
+          <ul className="unlock-gifts">
+            {picked.map((name) => {
+              const gift = findGift(gifts, name);
+              return (
+                <li key={name}>
+                  {gift?.image && <img src={gift.image} alt="" referrerPolicy="no-referrer" />}
+                  {gift?.name ?? name}
+                  <button type="button" className="btn btn-ghost btn-sm btn-icon" aria-label={`Remove ${name}`} onClick={() => toggle(name)}>
+                    <Icon name="close" size={14} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div>
+          <button type="button" className={`btn ${choosing ? '' : 'btn-primary'}`} aria-expanded={choosing} onClick={() => setChoosing(!choosing)}>
+            {!choosing && <Icon name="gift" />}
+            {choosing ? 'Done' : picked.length > 0 ? 'Change gifts' : 'Choose gifts'}
+          </button>
+        </div>
+        {choosing && <GiftPicker gifts={gifts} picked={picked} onPick={toggle} />}
+        {picked.length > 0 && (
+          <label className="field">
+            Minutes each gift unlocks
+            <span className="hint">0 for the rest of the stream. More gifts add more time.</span>
+            <NumberCell value={host.ttsUnlockMinutes} min={0} max={1440} onSave={(ttsUnlockMinutes) => save({ ttsUnlockMinutes })} />
+          </label>
+        )}
+      </fieldset>
     </Card>
   );
 }

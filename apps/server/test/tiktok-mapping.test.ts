@@ -43,6 +43,28 @@ describe('toViewerEvent', () => {
     ).toEqual({ kind: 'gift', viewerId: 'a', giftId: 7, giftName: 'Lion', count: 1, diamonds: 29999, at: 1 });
   });
 
+  it("keeps a viewer's display name when it differs from their id", () => {
+    const comment = (nickname: string) => toViewerEvent(WebcastEvent.CHAT, { user: { uniqueId: 'a', nickname }, comment: 'hi' });
+    expect(comment(' Night Owl ')).toMatchObject({ viewerId: 'a', name: 'Night Owl' });
+    expect(comment('a')).not.toHaveProperty('name');
+    expect(comment('   ')).not.toHaveProperty('name');
+  });
+
+  it("keeps the viewer's profile picture, only over https", () => {
+    const comment = (urlList: string[]) => toViewerEvent(WebcastEvent.CHAT, { user: { uniqueId: 'a', avatarThumb: { urlList } }, comment: 'hi' });
+    expect(comment(['http://x/a.jpg', 'https://x/b.jpg'])).toMatchObject({ avatar: 'https://x/b.jpg' });
+    expect(comment(['javascript:alert(1)'])).not.toHaveProperty('avatar');
+  });
+
+  it("keeps a gift's picture, only over https", () => {
+    const gift = (image: { urlList?: string[] }) => ({ user: { uniqueId: 'a' }, giftId: 7, gift: { name: 'Lion', type: 2, diamondCount: 1, image } });
+    expect(toViewerEvent(WebcastEvent.GIFT, gift({ urlList: ['http://x/a.png', 'https://x/b.png'] }))).toMatchObject({ image: 'https://x/b.png' });
+    expect(toViewerEvent(WebcastEvent.GIFT, gift({ urlList: ['javascript:alert(1)'] }))).not.toHaveProperty('image');
+    expect(
+      toViewerEvent(WebcastEvent.GIFT, { user: { uniqueId: 'a' }, giftId: 7, giftDetails: { giftName: 'Lion', giftType: 2, giftImage: { url: ['https://x/c.png'] } } }),
+    ).toMatchObject({ image: 'https://x/c.png' });
+  });
+
   it('maps likes, follows and shares', () => {
     expect(toViewerEvent(WebcastEvent.LIKE, { user: { uniqueId: 'a' }, likeCount: 15 }, 1)).toEqual({
       kind: 'like',
@@ -80,5 +102,7 @@ describe('toViewerEvent', () => {
       topGifters: ['big', 'next'],
     });
     expect(toRoomStats({ viewerCount: 9 })).toEqual({ viewers: 9, topGifters: [] });
+    expect(toRoomStats({ viewerCount: 0, total: '700' }).viewers).toBe(700);
+    expect(toRoomStats({}).viewers).toBe(0);
   });
 });

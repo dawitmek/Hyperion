@@ -1,6 +1,6 @@
 import { StrictMode, useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import '@fluxion/theme/theme.css';
+import '@hyperion/theme/theme.css';
 import { Auth } from './Auth';
 import { ActivityWindow } from './dashboard/ActivityWindow';
 import { Dashboard } from './dashboard/Dashboard';
@@ -13,14 +13,15 @@ import { applyTheme, rememberedTheme, themedPath } from './theme';
 import { installNumberDrag } from './ui';
 import './app.css';
 import './overlay.css';
+import './fonts.css';
 
 // After an update, a tab that is still open asks for bundle files that no longer exist. Reload once to pick up
 // the new version, but not again within a minute, so a genuinely missing file can't cause a reload loop.
 window.addEventListener('vite:preloadError', (event) => {
   try {
-    const last = Number(sessionStorage.getItem('fluxion-reloaded-at'));
+    const last = Number(sessionStorage.getItem('hyperion-reloaded-at'));
     if (Date.now() - last < 60_000) return;
-    sessionStorage.setItem('fluxion-reloaded-at', String(Date.now()));
+    sessionStorage.setItem('hyperion-reloaded-at', String(Date.now()));
   } catch {
     return;
   }

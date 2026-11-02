@@ -1,11 +1,14 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { levelForXp, type StreamDetail, type StreamEvent, type StreamSummary, type ViewerHistoryEvent, type ViewerProfile } from '@fluxion/shared';
+import { levelForXp, type StreamDetail, type StreamEvent, type StreamSummary, type ViewerHistoryEvent, type ViewerProfile } from '@hyperion/shared';
 import type { Db } from '../db/client.js';
 import { viewerStats } from '../db/schema.js';
 
-// Taking part means chatting or gifting; joins and likes are too passive to count.
+// Interacting means chatting or gifting; joins and likes are too passive to count.
 const PARTICIPATION = sql`('comment', 'gift')`;
 const PEAK_WINDOW_MIN = 2;
+
+// An ilike pattern that finds `text` anywhere, taking it literally.
+const containing = (text: string) => `%${text.replace(/[\\%_]/g, '\\$&')}%`;
 
 type SummaryRow = {
   id: string;
@@ -14,6 +17,8 @@ type SummaryRow = {
   tiktok_username: string | null;
   started_at: Date;
   ended_at: Date | null;
+  peak_viewers: number | null;
+  viewers: number;
   participants: number;
   new_participants: number;
   comments: number;
@@ -21,9 +26,9 @@ type SummaryRow = {
   gifts: number;
   diamonds: number;
   follows: number;
-  joins: number;
   top_command: string | null;
   top_player: string | null;
+  top_player_name: string | null;
 };
 
 const toSummary = (r: SummaryRow): StreamSummary => ({
@@ -33,6 +38,8 @@ const toSummary = (r: SummaryRow): StreamSummary => ({
   tiktokUsername: r.tiktok_username,
   startedAt: new Date(r.started_at).getTime(),
   endedAt: r.ended_at ? new Date(r.ended_at).getTime() : null,
+  viewers: Number(r.viewers),
+  peakViewers: r.peak_viewers,
   participants: Number(r.participants),
   newParticipants: Number(r.new_participants),
   comments: Number(r.comments),
@@ -40,15 +47,20 @@ const toSummary = (r: SummaryRow): StreamSummary => ({
   gifts: Number(r.gifts),
   diamonds: Number(r.diamonds),
   follows: Number(r.follows),
-  joins: Number(r.joins),
   topCommand: r.top_command,
   topPlayer: r.top_player,
+  topPlayerName: r.top_player_name,
 });
+
+// Who pressed the most keys in the stream `s`.
+const TOP_PLAYER = sql`(select e.viewer from stream_events e where e.stream_id = s.id and e.kind = 'command' and e.viewer is not null
+  group by 1 order by count(*) desc, 1 limit 1)`;
 
 // Per-stream totals. "New" participants never took part in an earlier real stream on the same TikTok account.
 export async function streamSummaries(db: Db, hostId: string, opts: { streamId?: string; limit?: number } = {}): Promise<StreamSummary[]> {
   const rows = await db.execute<SummaryRow>(sql`
-    select s.id, s.source, s.profile_name, s.tiktok_username, s.started_at, s.ended_at,
+    select s.id, s.source, s.profile_name, s.tiktok_username, s.started_at, s.ended_at, s.peak_viewers,
+      (select count(distinct e.viewer) from stream_events e where e.stream_id = s.id) as viewers,
       (select count(distinct e.viewer) from stream_events e where e.stream_id = s.id and e.kind in ${PARTICIPATION}) as participants,
       (select count(distinct e.viewer) from stream_events e
         where e.stream_id = s.id and e.kind in ${PARTICIPATION}
@@ -63,11 +75,10 @@ export async function streamSummaries(db: Db, hostId: string, opts: { streamId?:
       (select coalesce(sum((e.data->>'count')::int * (e.data->>'diamonds')::int), 0) from stream_events e
         where e.stream_id = s.id and e.kind = 'gift') as diamonds,
       (select count(*) from stream_events e where e.stream_id = s.id and e.kind = 'follow') as follows,
-      (select count(distinct e.viewer) from stream_events e where e.stream_id = s.id and e.kind = 'join') as joins,
       (select e.data->>'keyword' from stream_events e where e.stream_id = s.id and e.kind = 'command'
         group by 1 order by count(*) desc, 1 limit 1) as top_command,
-      (select e.viewer from stream_events e where e.stream_id = s.id and e.kind = 'command' and e.viewer is not null
-        group by 1 order by count(*) desc, 1 limit 1) as top_player
+      ${TOP_PLAYER} as top_player,
+      (select max(e.data->>'name') from stream_events e where e.stream_id = s.id and e.viewer = ${TOP_PLAYER}) as top_player_name
     from streams s
     where s.host_id = ${hostId}
       and ${opts.streamId ? sql`s.id = ${opts.streamId}` : sql`s.source = 'tiktok'`}
@@ -100,9 +111,9 @@ export async function streamDetail(db: Db, hostId: string, streamId: string): Pr
           count(*) filter (where e.kind = 'command') as fired, count(*) filter (where e.kind = 'refused') as refused
         ${from} and e.kind in ('command', 'refused') group by 1, 2
       ) per_reason group by keyword order by sum(fired) + sum(refused) desc`),
-    db.execute<{ gift: string; count: number; diamonds: number }>(sql`
+    db.execute<{ gift: string; count: number; diamonds: number; image: string | null }>(sql`
       select e.data->>'gift' as gift, sum((e.data->>'count')::int)::int as count,
-        sum((e.data->>'count')::int * (e.data->>'diamonds')::int)::int as diamonds
+        sum((e.data->>'count')::int * (e.data->>'diamonds')::int)::int as diamonds, max(e.data->>'image') as image
       ${from} and e.kind = 'gift' group by 1 order by 3 desc, 2 desc`),
     db.execute<{ hour: number; diamonds: number }>(sql`
       select floor(extract(epoch from (e.at - s.started_at)) / 3600)::int as hour,
@@ -148,7 +159,7 @@ export async function streamDetail(db: Db, hostId: string, streamId: string): Pr
       new Map(minutes.map((m) => [Number(m.minute), Number(m.all_events)])),
     ).map((p) => ({ ...p, start: summary.startedAt + p.start * 60_000, end: summary.startedAt + p.end * 60_000 })),
     gifts: {
-      byGift: gifts.map((g) => ({ gift: g.gift, count: Number(g.count), diamonds: Number(g.diamonds) })),
+      byGift: gifts.map((g) => ({ gift: g.gift, count: Number(g.count), diamonds: Number(g.diamonds), image: g.image })),
       perHour: giftHours.map((h) => ({ hour: Number(h.hour), diamonds: Number(h.diamonds) })),
     },
     modes: {
@@ -183,7 +194,7 @@ export async function streamActivity(
     select id, at, kind, viewer, data from stream_events
     where stream_id = ${streamId}
       and kind in (${sql.join(opts.kinds.map((k) => sql`${k}`), sql`, `)})
-      ${opts.viewer ? sql`and viewer ilike ${`%${opts.viewer.replace(/[\\%_]/g, '\\$&')}%`}` : sql``}
+      ${opts.viewer ? sql`and (viewer ilike ${containing(opts.viewer)} or data->>'name' ilike ${containing(opts.viewer)})` : sql``}
       ${opts.before !== undefined ? sql`and id < ${opts.before}` : sql``}
       ${opts.after !== undefined ? sql`and id > ${opts.after}` : sql``}
     order by id ${opts.after !== undefined ? sql`asc` : sql`desc`}
@@ -196,7 +207,7 @@ const onAccount = (account?: string) => (account ? sql`and s.tiktok_username = $
 
 // Level and points are the ones held on `streamer` (see streamerKey); the rest covers `account`, or every account.
 export async function viewerProfile(db: Db, hostId: string, viewer: string, streamer: string, account?: string): Promise<ViewerProfile> {
-  const [perStream, topCommands, [stats]] = await Promise.all([
+  const [perStream, topCommands, [stats], [named]] = await Promise.all([
     db.execute<{
       id: string; started_at: Date; source: 'tiktok' | 'simulated'; tiktok_username: string | null;
       comments: number; commands: number; gifts: number; diamonds: number; first_at: Date; last_at: Date;
@@ -219,12 +230,18 @@ export async function viewerProfile(db: Db, hostId: string, viewer: string, stre
       .select({ xp: viewerStats.xp, points: viewerStats.points })
       .from(viewerStats)
       .where(and(eq(viewerStats.hostId, hostId), eq(viewerStats.streamer, streamer), eq(viewerStats.viewerId, viewer))),
+    db.execute<{ name: string }>(sql`
+      select e.data->>'name' as name
+      from stream_events e join streams s on s.id = e.stream_id
+      where s.host_id = ${hostId} and e.viewer = ${viewer} and e.data->>'name' is not null
+      order by e.id desc limit 1`),
   ]);
   const sum = (key: 'comments' | 'commands' | 'gifts' | 'diamonds') => perStream.reduce((n, r) => n + Number(r[key]), 0);
   const times = perStream.flatMap((r) => [new Date(r.first_at).getTime(), new Date(r.last_at).getTime()]);
   const xp = stats?.xp ?? 0;
   return {
     viewer,
+    name: named?.name ?? null,
     firstSeen: times.length ? Math.min(...times) : null,
     lastSeen: times.length ? Math.max(...times) : null,
     streams: perStream.length,
@@ -248,12 +265,12 @@ export async function viewerProfile(db: Db, hostId: string, viewer: string, stre
   };
 }
 
-// What a viewer did across streams, newest first.
+// What a viewer did across streams, newest first. `search` looks in chat text, gift names and command keywords.
 export async function viewerActivity(
   db: Db,
   hostId: string,
   viewer: string,
-  opts: { before?: number; account?: string; kinds: string[]; limit: number },
+  opts: { before?: number; account?: string; stream?: string; search?: string; kinds: string[]; limit: number },
 ): Promise<ViewerHistoryEvent[]> {
   const rows = await db.execute<{ id: number; at: Date; kind: StreamEvent['kind']; data: Record<string, unknown>; stream_id: string; started_at: Date }>(sql`
     select e.id, e.at, e.kind, e.data, e.stream_id, s.started_at
@@ -261,6 +278,8 @@ export async function viewerActivity(
     where s.host_id = ${hostId} and e.viewer = ${viewer}
       and e.kind in (${sql.join(opts.kinds.map((k) => sql`${k}`), sql`, `)})
       ${onAccount(opts.account)}
+      ${opts.stream ? sql`and e.stream_id = ${opts.stream}` : sql``}
+      ${opts.search ? sql`and concat_ws(' ', e.data->>'text', e.data->>'gift', e.data->>'keyword') ilike ${containing(opts.search)}` : sql``}
       ${opts.before !== undefined ? sql`and e.id < ${opts.before}` : sql``}
     order by e.id desc limit ${opts.limit}`);
   return rows.map((r) => ({

@@ -1,0 +1,1 @@
+ALTER TABLE "hosts" ADD COLUMN "live_layout" jsonb;

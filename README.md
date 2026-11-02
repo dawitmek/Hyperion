@@ -1,20 +1,39 @@
-# Fluxion
+<div align="center">
+  <h1><sub><img src="apps/web/public/logo.png" alt="" width="36" height="36" /></sub> Hyperion</h1>
+  <h2>Let your TikTok LIVE chat play your game.</h2>
+  <h3>Viewers type commands or send gifts, and Hyperion presses the keys on your PC.</h3>
+  <p>Free and open source. Works with the games you already play, on Windows and macOS, with no game mods or plugins.</p>
+  <p>
+    <a href="https://github.com/dawitmek/Hyperion/releases">Download</a> ·
+    <a href="#getting-started">Get started</a> ·
+    <a href="#features">Features</a> ·
+    <a href="#safety">Safety</a> ·
+    <a href="docs/SELF_HOSTING.md">Self-hosting guide</a>
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/version-0.3.0-5b5fef?style=flat-square&amp;labelColor=27272a" alt="Version 0.3.0" />
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-5b5fef?style=flat-square&amp;labelColor=27272a" alt="License: GPL-3.0" /></a>
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-5b5fef?style=flat-square&amp;labelColor=27272a" alt="Platforms: Windows and macOS" />
+  </p>
+</div>
 
-![Version 0.2.0](https://img.shields.io/badge/version-0.2.0-blue)
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/images/dashboard-preview.png" />
+    <img src="docs/images/live-demo.gif" alt="The Live page during a stream: chat commands arrive on the left, command keys press in the middle, and a vote runs on the right" width="100%" />
+  </picture>
+  <br />
+  <sub>Sample chat · Default dark theme</sub>
+</p>
 
-Let your TikTok LIVE chat play your game. Viewers type commands or send gifts, and Fluxion presses the matching keys
-on your gaming PC. It works with the games you already play, on Windows and macOS, with no game mods or plugins.
-
-Fluxion is free and open source under the GPL-3.0.
+<p align="center">
+  <a href="https://github.com/dawitmek/Hyperion/releases"><img src="https://img.shields.io/badge/Download-5b5fef?style=for-the-badge&amp;logo=github&amp;logoColor=ffffff" alt="Download" height="24" /></a>
+  <a href="#getting-started"><img src="https://img.shields.io/badge/Get%20started-27272a?style=for-the-badge" alt="Get started" height="24" /></a>
+</p>
 
 ## How it works
 
-```
-TikTok LIVE chat ──▶ Fluxion server ──▶ Companion app on your gaming PC ──▶ key presses in your game
-                          │
-                          ├──▶ Dashboard: commands, modes, gifts, voices, profiles
-                          └──▶ Stream overlay: votes, alerts, leaderboard, speech
-```
+![TikTok LIVE chat goes to the Hyperion server, which tells the companion app on your gaming PC which keys to press in your game. The server also drives the dashboard and the stream overlay.](docs/images/how-it-works.png)
 
 1. The **server** reads your public LIVE chat by username. It never asks for your TikTok password.
 2. It decides what happens, based on your commands, crowd mode, cooldowns and rate limit.
@@ -22,6 +41,8 @@ TikTok LIVE chat ──▶ Fluxion server ──▶ Companion app on your gaming
 4. The **overlay**, a browser source in TikTok LIVE Studio or OBS, shows what chat is doing.
 
 ## Features
+
+![Six feature previews: crowd mode voting, a gift that presses a key, chat read aloud, viewer levels, game profiles, and allowed keys with a focus check](docs/images/features.png)
 
 - **Four crowd modes:**
   - Anarchy: every command fires.
@@ -58,7 +79,8 @@ TikTok LIVE chat ──▶ Fluxion server ──▶ Companion app on your gaming
 
 - **Points:** viewers earn points for chatting, gifts, follows and shares, and spend them on commands that cost
   points. `!points` shows a balance on the overlay when you allow it.
-- **Text-to-speech:** read prefixed comments, alerts or all of chat. The engines are:
+- **Text-to-speech:** read prefixed comments, alerts or all of chat. The Recommended mode reads all chat up to 25
+  viewers, then only prefixed comments. The engines are:
   - Piper voices on your server
   - eSpeak in the overlay
   - TikTok's own voices, after you sign in to TikTok in the companion (an unofficial TikTok API, so it may break)
@@ -77,6 +99,10 @@ TikTok LIVE chat ──▶ Fluxion server ──▶ Companion app on your gaming
 - **Test mode:** type as a pretend viewer and watch the keys press before you go live.
 - **Appearance:** color themes for the dashboard, with System, Light or Dark. The companion follows your choice.
 
+![The Analytics page with totals across streams, charts of viewers and coins per stream, and a table of streams](docs/images/analytics.png)
+
+_The Analytics page, shown with sample data._
+
 ## Safety
 
 Chat is unpredictable, so the companion is built so it can't take over your PC:
@@ -87,8 +113,13 @@ Chat is unpredictable, so the companion is built so it can't take over your PC:
   Ctrl+Shift+E) is only pressed once it's allowed on that PC. The server can propose a combination but never approve
   one.
 - **Blocked combinations:** shortcuts that act outside the game, like Ctrl+Alt+Del, Ctrl+W, Alt+F4 and Alt+Enter, are
-  refused by both the server and the companion. A combination is pressed on its own, so viewers' overlapping key
-  holds can't add up to one.
+  refused by both the server and the companion. A combination with Ctrl or Alt is pressed on its own, so viewers'
+  overlapping key holds can't add up to one. With Shift alone, other keys can overlap it, so run and jump can happen
+  together, unless they'd make a blocked combination.
+- **Macros stay on your PC:** you record them in the companion, and only input made while your game has focus is
+  kept. The server can ask for one by name but can't create or change one. They stop if the game loses focus, and
+  on pause or the panic hotkey, letting go of everything held. Macros are recorded by you, so they can press any
+  key the allowed-keys list covers even if you've switched it off, plus mouse clicks and movement.
 - **Focus check:** keys go to your game only while its window is in front.
 - **Rate limit and cooldowns:** you set a cap on presses per second, and each command has a cooldown per viewer.
 - **Panic hotkey:** <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Backspace</kbd> pauses the companion and lets go of every
@@ -99,7 +130,7 @@ Chat is unpredictable, so the companion is built so it can't take over your PC:
 1. **Run a server.** See [Self-hosting](#self-hosting) below. Then sign up in its dashboard and add your TikTok
    username in Settings.
 2. **Install the companion** on the PC that runs your game. Get it from the site's Download page or the
-   [releases page](https://github.com/dawitmek/Fluxion/releases).
+   [releases page](https://github.com/dawitmek/Hyperion/releases).
    - The builds aren't code-signed yet, so the first time you open it:
      - on Windows, choose _More info_ and then _Run anyway_
      - on macOS, go to _System Settings → Privacy & Security_ and choose _Open Anyway_
@@ -116,13 +147,13 @@ Chat is unpredictable, so the companion is built so it can't take over your PC:
 One container runs the server, dashboard and overlay, and a second runs Postgres. You need Docker and Git.
 
 ```sh
-git clone https://github.com/dawitmek/Fluxion && cd Fluxion
+git clone https://github.com/dawitmek/Hyperion && cd Hyperion
 cp .env.example .env
 # edit .env: set POSTGRES_PASSWORD, and SECRETS_KEY to the output of: openssl rand -base64 32
 docker compose -f docker/compose.yml --env-file .env up -d --build
 ```
 
-Fluxion is then on http://127.0.0.1:3000.
+Hyperion is then on http://127.0.0.1:3000.
 
 - **HTTPS:** built in. Add your domain to `.env` and Caddy handles certificates.
 - **Signups:** open to anyone who can reach your server, so only share its address with people you trust.
@@ -151,7 +182,8 @@ What `npm run dev` starts:
 If another program uses port 3000, set `PORT=3001` in `.env`. To start the server and dashboard separately, use
 `npm run dev:server` and `npm run dev:web`.
 
-Without Piper, the Piper voice engine falls back to eSpeak. To use it in development, install the `piper-tts` Python
+TikTok and cloud voices that fail fall back to Piper, and without Piper they and the Piper engine fall back to eSpeak.
+To use Piper in development, install the `piper-tts` Python
 package and download a voice (an `.onnx` model and its `.onnx.json`) from
 [piper-voices](https://huggingface.co/rhasspy/piper-voices). Then set `PIPER_BIN` and `PIPER_VOICES_DIR` in `.env`.
 The `piper-tts` package works on macOS; the older standalone macOS build is missing its libraries.
@@ -159,7 +191,7 @@ The `piper-tts` package works on macOS; the older standalone macOS build is miss
 ```sh
 uv venv .local/piper-venv && uv pip install --python .local/piper-venv/bin/python piper-tts
 # .env
-PIPER_BIN=/absolute/path/to/Fluxion/.local/piper-venv/bin/piper
+PIPER_BIN=/absolute/path/to/Hyperion/.local/piper-venv/bin/piper
 PIPER_VOICES_DIR=/absolute/path/to/voices
 ```
 
@@ -185,23 +217,22 @@ Pushing a tag that starts with `companion-v` runs
 [`.github/workflows/release-companion.yml`](.github/workflows/release-companion.yml):
 
 ```sh
-git tag companion-v0.2.0 && git push origin companion-v0.2.0
+git tag companion-v0.3.0 && git push origin companion-v0.3.0
 ```
 
-The workflow builds a Windows installer (`.exe`) and a universal macOS disk image (`.dmg`), and attaches them to a
-draft GitHub release. Check the files, then publish the draft. The site's Download page always offers the newest
-published release.
+The workflow builds a Windows installer (`.exe`) and a universal macOS disk image (`.dmg`), and publishes them as a
+GitHub release once both have built. The site's Download page always offers the newest published release.
 
 To build an installer locally, run `npm run tauri build -w apps/companion`. It's saved in
 `apps/companion/src-tauri/target/release/bundle`.
 
 ## Built with Claude
 
-[Claude Code](https://claude.ai), was used in the development of Fluxion.
+[Claude Code](https://claude.ai), was used in the development of Hyperion.
 
 ## License
 
-Fluxion is free software under the [GNU General Public License v3.0 or later](LICENSE). Third-party components keep
-their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Fluxion is not affiliated with TikTok.
+Hyperion is free software under the [GNU General Public License v3.0 or later](LICENSE). Third-party components keep
+their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Hyperion is not affiliated with TikTok.
 
 The original prototype is kept at the `v0-legacy` tag.

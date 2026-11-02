@@ -1,4 +1,4 @@
-// Keeps a WebSocket open to the Fluxion server and turns its actions into key presses.
+// Keeps a WebSocket open to the Hyperion server and turns its actions into key presses.
 
 use crate::controller::Controller;
 use crate::protocol::{CompanionMessage, PROTOCOL_VERSION, ServerMessage};
@@ -77,12 +77,22 @@ async fn session(
     let hello = serde_json::to_string(&hello).unwrap();
     tx.send(Message::text(hello)).await.map_err(|e| Retry(e.to_string()))?;
 
-    while let Some(message) = rx.next().await {
+    let send_macros = |names: Vec<String>| serde_json::to_string(&CompanionMessage::Macros { names }).unwrap();
+    loop {
+        let message = tokio::select! {
+            message = rx.next() => message,
+            _ = controller.macros_changed.notified() => {
+                tx.send(Message::text(send_macros(controller.macro_names()))).await.map_err(|e| Retry(e.to_string()))?;
+                continue;
+            }
+        };
+        let Some(message) = message else { break };
         match message.map_err(|e| Retry(e.to_string()))? {
             Message::Text(text) => match serde_json::from_str::<ServerMessage>(&text) {
                 Ok(ServerMessage::Ready {}) => {
                     *backoff = Duration::from_secs(1);
                     controller.set_connection("connected");
+                    tx.send(Message::text(send_macros(controller.macro_names()))).await.map_err(|e| Retry(e.to_string()))?;
                 }
                 Ok(ServerMessage::Profile { name, game_process }) => {
                     let _ = controller.apply_profile(name, game_process);
@@ -95,7 +105,10 @@ async fn session(
                 }
                 Ok(ServerMessage::Error { reason }) => controller.set_connection(format!("server error: {reason}")),
                 Ok(ServerMessage::Action { action }) => {
-                    let result = controller.perform(&action.key, action.hold_ms);
+                    let result = match &action.macro_name {
+                        Some(name) => controller.run_macro(name),
+                        None => controller.perform(&action.key, action.hold_ms),
+                    };
                     let ack = CompanionMessage::Ack {
                         id: &action.id,
                         status: if result.is_ok() { "done" } else { "rejected" },
@@ -122,6 +135,6 @@ mod tests {
     #[test]
     fn builds_websocket_urls() {
         assert_eq!(ws_url("http://127.0.0.1:3000"), "ws://127.0.0.1:3000/ws/companion");
-        assert_eq!(ws_url("https://fluxion.example.com/"), "wss://fluxion.example.com/ws/companion");
+        assert_eq!(ws_url("https://hyperion.example.com/"), "wss://hyperion.example.com/ws/companion");
     }
 }

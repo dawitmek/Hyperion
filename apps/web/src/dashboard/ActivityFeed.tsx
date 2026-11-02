@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { StreamEvent, StreamSummary } from '@fluxion/shared';
+import type { StreamEvent, StreamSummary } from '@hyperion/shared';
 import { api, type LiveStatus } from '../api';
 import { Icon } from '../icons';
 import { ViewerLink } from './ViewerPanel';
 
-type Kind = 'comment' | 'gift' | 'join' | 'follow' | 'share' | 'like' | 'subscribe' | 'emote';
-const FILTERS: { kind: Kind; label: string; tag: string }[] = [
+export type Kind = StreamEvent['kind'];
+type Filter = { kind: Kind; label: string; tag: string };
+const FILTERS: Filter[] = [
   { kind: 'comment', label: 'Chat', tag: 'sky' },
   { kind: 'gift', label: 'Gifts', tag: 'pink' },
   { kind: 'join', label: 'Joins', tag: 'teal' },
@@ -15,6 +16,8 @@ const FILTERS: { kind: Kind; label: string; tag: string }[] = [
   { kind: 'subscribe', label: 'Subs', tag: 'orange' },
   { kind: 'emote', label: 'Stickers', tag: 'indigo' },
 ];
+// A viewer's profile also has their key presses.
+export const VIEWER_FILTERS: Filter[] = [...FILTERS, { kind: 'command', label: 'Key presses', tag: 'indigo' }];
 // Tag text and colour for each kind of event, also used by viewer profiles.
 export const KIND_TAGS: Partial<Record<StreamEvent['kind'], { label: string; hue: string }>> = Object.fromEntries(
   FILTERS.map((f) => [f.kind, { label: f.label.replace(/s$/, ''), hue: f.tag }]),
@@ -55,6 +58,39 @@ export function describeEvent(e: StreamEvent): string {
   }
 }
 
+// Which kinds of activity to show.
+// `coded` adds each kind's color, as in the activity list, and an All chip.
+export function KindChips({ filters, kinds, onChange, coded }: { filters: Filter[]; kinds: Kind[]; onChange: (kinds: Kind[]) => void; coded?: boolean }) {
+  const flip = (kind: Kind) => (kinds.includes(kind) ? kinds.filter((k) => k !== kind) : [...kinds, kind]);
+  // A double-click's first click already flipped the filter; undo that, then show only this one.
+  // Double-clicking the only one shown brings the rest back.
+  const only = (kind: Kind) => {
+    const before = flip(kind);
+    onChange(before.length === 1 && before[0] === kind ? filters.map((f) => f.kind) : [kind]);
+  };
+  return (
+    <div className={`chips ${coded ? 'coded' : ''}`} role="group" aria-label="Show">
+      {coded && (
+        <button className={`chip ${kinds.length === filters.length ? 'on' : ''}`} aria-pressed={kinds.length === filters.length} onClick={() => onChange(filters.map((f) => f.kind))}>
+          All
+        </button>
+      )}
+      {filters.map((f) => (
+        <button
+          key={f.kind}
+          className={`chip ${kinds.includes(f.kind) ? 'on' : ''} ${coded ? `hue-${f.tag}` : ''}`}
+          aria-pressed={kinds.includes(f.kind)}
+          title="Double-click to show only this"
+          onClick={(e) => (e.detail === 2 ? only(f.kind) : onChange(flip(f.kind)))}
+        >
+          {coded && <i aria-hidden="true" />}
+          {f.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const readOpen = (key: string) => {
   try {
     return localStorage.getItem(key) === '1';
@@ -72,7 +108,7 @@ const streamLabel = (s: StreamSummary) =>
 export function ActivityFeed({
   status,
   stream: fixed,
-  storageKey = 'fluxion-activity-open',
+  storageKey = 'hyperion-activity-open',
   window: own,
 }: {
   status: LiveStatus;
@@ -170,15 +206,6 @@ export function ActivityFeed({
       .finally(() => setLoadingOlder(false));
   };
 
-  const flip = (list: Kind[], kind: Kind) => (list.includes(kind) ? list.filter((k) => k !== kind) : [...list, kind]);
-  const toggleKind = (kind: Kind) => setKinds((current) => flip(current, kind));
-  // A double-click's first click already flipped the filter; undo that, then show only this one.
-  // Double-clicking the only one shown brings the rest back.
-  const onlyKind = (kind: Kind) =>
-    setKinds((current) => {
-      const before = flip(current, kind);
-      return before.length === 1 && before[0] === kind ? FILTERS.map((f) => f.kind) : [kind];
-    });
   const stream = page?.stream;
 
   return (
@@ -199,7 +226,7 @@ export function ActivityFeed({
               className="btn btn-ghost btn-sm btn-icon"
               title="Open in a new window"
               aria-label="Open full activity in a new window"
-              onClick={() => window.open('/dashboard/activity-window', 'fluxion-activity', 'popup,width=560,height=820')}
+              onClick={() => window.open('/dashboard/activity-window', 'hyperion-activity', 'popup,width=560,height=820')}
             >
               <Icon name="popOut" />
             </button>
@@ -209,20 +236,8 @@ export function ActivityFeed({
       {open && (
         <div id="full-activity-body" className="stack activity-body">
           <div className="activity-filters">
-            <div className="chips" role="group" aria-label="Show">
-              {FILTERS.map((f) => (
-                <button
-                  key={f.kind}
-                  className={`chip ${kinds.includes(f.kind) ? 'on' : ''}`}
-                  aria-pressed={kinds.includes(f.kind)}
-                  title="Double-click to show only this"
-                  onClick={(e) => (e.detail === 2 ? onlyKind(f.kind) : toggleKind(f.kind))}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <input className="input activity-search" type="search" placeholder="Search viewers" aria-label="Search viewers" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <KindChips coded filters={FILTERS} kinds={kinds} onChange={setKinds} />
+            <input className="input activity-search" type="search" placeholder="Search viewers" aria-label="Search viewers by name or ID" value={search} onChange={(e) => setSearch(e.target.value)} />
             {!fixed && pastStreams.length > 0 && (
               <select className="input activity-stream" aria-label="Stream" value={selected} onChange={(e) => setSelected(e.target.value)}>
                 <option value="latest">{status.live ? 'This stream' : 'Latest session'}</option>
@@ -272,7 +287,7 @@ export function ActivityFeed({
                     </time>
                     <span className={`tag ${filter?.tag ?? ''}`}>{filter?.label.replace(/s$/, '') ?? e.kind}</span>
                     <span className="activity-text">
-                      {e.viewer && <ViewerLink name={e.viewer} />} <span className={e.kind === 'comment' ? '' : 'muted'}>{describeEvent(e)}</span>
+                      {e.viewer && <ViewerLink name={e.viewer} label={e.data.name as string | undefined} />} <span className={e.kind === 'comment' ? '' : 'muted'}>{describeEvent(e)}</span>
                     </span>
                   </li>
                 );

@@ -1,0 +1,1 @@
+ALTER TABLE "viewer_stats" ADD COLUMN "avatar_url" text;

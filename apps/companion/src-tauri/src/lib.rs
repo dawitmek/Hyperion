@@ -4,6 +4,7 @@ mod controller;
 mod device;
 mod input;
 mod keys;
+mod macros;
 mod protocol;
 mod tiktok;
 
@@ -109,6 +110,26 @@ async fn tiktok_status(ctl: Ctl<'_>) -> Result<tiktok::Status, String> {
 }
 
 #[tauri::command]
+fn start_recording(ctl: Ctl, name: String) -> Result<(), String> {
+    ctl.start_recording(&name)
+}
+
+#[tauri::command]
+fn cancel_recording(ctl: Ctl) {
+    ctl.cancel_recording();
+}
+
+#[tauri::command]
+fn delete_macro(ctl: Ctl, name: String) -> Result<(), String> {
+    ctl.delete_macro(&name)
+}
+
+#[tauri::command]
+fn try_macro(ctl: Ctl, name: String) {
+    ctl.try_macro(name);
+}
+
+#[tauri::command]
 fn request_permission() {
     input::request_permission();
 }
@@ -125,6 +146,11 @@ pub fn run() {
                 .with_handler(move |app, shortcut, event| {
                     if shortcut == &panic_key && event.state() == ShortcutState::Pressed {
                         app.state::<Arc<Controller>>().set_paused(true);
+                    }
+                    if shortcut == &controller::stop_key() && event.state() == ShortcutState::Pressed {
+                        // Not from inside this handler: stopping unregisters the shortcut that called it.
+                        let controller = app.state::<Arc<Controller>>().inner().clone();
+                        std::thread::spawn(move || controller.finish_recording());
                     }
                 })
                 .build(),
@@ -151,9 +177,13 @@ pub fn run() {
             set_combo_approved,
             set_paused,
             request_permission,
+            start_recording,
+            cancel_recording,
+            delete_macro,
+            try_macro,
             tiktok_sign_in,
             tiktok_status
         ])
         .run(tauri::generate_context!())
-        .expect("error while running the Fluxion companion");
+        .expect("error while running the Hyperion companion");
 }

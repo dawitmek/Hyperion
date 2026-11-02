@@ -1,46 +1,80 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { ALERT_POSITIONS, GOAL_METRICS, MAX_WIDGETS, WIDGET_SPOTS, WIDGET_TYPES, type GoalMetric, type ScreenWidget, type StreamStats, type WidgetSpot, type WidgetType } from '@fluxion/shared';
+import { type ActionEffect, EFFECT_SPEEDS, ALERT_POSITIONS, DEFAULT_MESSAGE, MAX_MESSAGE_LENGTH, GOAL_METRICS, WIDGET_PRESETS, WIDGET_STYLE_LIMITS, widgetKey, MAX_LEADERBOARD_SIZE, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, WIDGET_SPOTS, WIDGET_TYPES, type AlertStyle, type GoalMetric, type GoalRaise, type ScreenWidget, type StreamStats, type WidgetSpot, type WidgetStyle, type WidgetType } from '@hyperion/shared';
 import { api, type AlertPosition, type Goal, type Screen } from '../api';
-import { Card, ErrorNotice, HueIcon, NumberCell, Scrubber, Seg, TextCell, useError, type Hue } from '../ui';
+import { alertLook } from '../alert-style';
+import { FontPicker } from './FontPicker';
+import { alertPlace, linkedWidget, useClearOfWidgets } from '../Overlay';
+import { dragAlert } from './alert-drag';
+import { ColorField } from './AlertLookEditor';
+import { Card, ConfirmButton, ErrorNotice, HueIcon, NumberCell, Scrubber, Seg, TextCell, useError, type Hue } from '../ui';
 import { Icon, type IconName } from '../icons';
-import { DEFAULT_FIREWORK_DIAMONDS, Fireworks, GiftBus, usePreview, Widget, type ChatLine } from '../overlay-widgets';
+import { EFFECT_LABELS, ScreenEffects } from '../effects';
+import { EffectOptions, speedLabel } from './EffectFields';
+import { DEFAULT_FIREWORK_DIAMONDS, giftAnimation, GiftBus, usePreview, Widget, type ChatLine } from '../overlay-widgets';
+import type { PageProps } from './Dashboard';
+
+const effectName = (effect: ActionEffect) => (effect === 'random' ? 'Random animation' : EFFECT_LABELS[effect]);
 
 const POSITION_LABELS: Record<AlertPosition, string> = { top: 'Top', middle: 'Middle', bottom: 'Bottom' };
 
-export function OverlayPage() {
+export function OverlayPage({ host, refreshHost }: PageProps) {
   const [screens, setScreens] = useState<Screen[]>([]);
   const [name, setName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState<string | null>(null);
+  // A new overlay lands below the main one and the notes, likely out of view.
+  useEffect(() => {
+    if (added) document.getElementById(`screen-${added}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [added]);
   const { error, guard } = useError();
   const [goals, setGoals] = useState<Goal[]>([]);
   const load = useCallback(() => api<Screen[]>('GET', '/screens').then(setScreens), []);
   const loadGoals = useCallback(() => api<Goal[]>('GET', '/goals').then(setGoals), []);
   useEffect(() => void (load(), loadGoals()), [load, loadGoals]);
   const main = screens.find((s) => s.main);
+  const card = (s: Screen) => <ScreenCard key={s.id} screen={s} goals={goals} alertStyle={host.alertStyle} reload={load} refreshHost={refreshHost} />;
   const add = (e: FormEvent) => {
     e.preventDefault();
-    guard(() => api('POST', '/screens', { name }).then(() => (setName(''), load())))();
+    guard(async () => {
+      const created = await api<Screen>('POST', '/screens', { name });
+      await load();
+      setName('');
+      setAdding(false);
+      setAdded(created.id);
+    })();
   };
 
   return (
     <div className="stack">
-      <Card
-        title="Overlay screens"
-        description="Add each screen's address as a browser source in TikTok LIVE Studio or OBS. The background is transparent, so size the source to cover your whole canvas. Keep the addresses private."
-      >
-        <ErrorNotice error={error} />
-        <p className="muted small">
-          Use more than one screen to put alerts and widgets in different places, like alerts in a corner and the leaderboard on
-          another scene. Turn sound on for one screen only, or you'll hear everything twice.
-        </p>
-        <form className="row add-row" onSubmit={add}>
-          <input className="input" placeholder="Screen name, e.g. Alerts corner" value={name} onChange={(e) => setName(e.target.value)} required maxLength={40} aria-label="New screen name" />
-          <button className="btn btn-primary">Add screen</button>
-        </form>
-      </Card>
-      {screens.map((s) => (
-        <ScreenCard key={s.id} screen={s} goals={goals} reload={load} />
-      ))}
-      {main && <WidgetLinksCard main={main} goals={goals} />}
+      <div className="page-tools">
+        {adding ? (
+          <form className="row" onSubmit={add}>
+            <input
+              className="input"
+              autoFocus
+              placeholder="Overlay name, e.g. Alerts corner"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              maxLength={40}
+              aria-label="New overlay name"
+            />
+            <button className="btn btn-primary">Add</button>
+            <button type="button" className="btn btn-ghost" onClick={() => setAdding(false)}>
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <button className="btn btn-primary" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={16} />
+            Add overlay
+          </button>
+        )}
+      </div>
+      <ErrorNotice error={error} />
+      {main && card(main)}
+      {screens.filter((s) => !s.main).map(card)}
+      {main && <WidgetLinksCard main={main} goals={goals} reload={load} />}
       {/* Deleting a goal also takes its widgets off the screens. */}
       <GoalsCard goals={goals} reload={() => Promise.all([loadGoals(), load()])} />
     </div>
@@ -57,12 +91,16 @@ const WIDGETS: Record<WidgetType, { label: string; help: string; spot: WidgetSpo
   stats: { label: 'Stream stats', help: 'Viewers, likes, follows and coins this stream.', spot: 'top', icon: 'analytics', hue: 'teal' },
   chat: { label: 'Chat', help: 'The last few chat messages.', spot: 'bottom-right', icon: 'chat', hue: 'indigo' },
   coin_jar: { label: 'Coin jar', help: 'Gifts drop coins into a jar that fills toward a target.', spot: 'bottom-right', icon: 'coin', hue: 'amber' },
-  firework: { label: 'Gift fireworks', help: 'Fireworks across the screen for big gifts.', spot: 'top', icon: 'sparkle', hue: 'pink' },
+  level_ups: { label: 'Level-ups', help: 'Level-up shout-outs in a spot of their own, instead of in the command feed.', spot: 'left', icon: 'star', hue: 'orange' },
+  message: { label: 'Custom message', help: 'Your own text on the screen, like how to play.', spot: 'bottom-left', icon: 'chat', hue: 'indigo' },
+  firework: { label: 'Gift screen animation', help: 'A screen animation for big gifts.', spot: 'top', icon: 'sparkle', hue: 'pink' },
 };
 const SPOT_LABELS: Record<WidgetSpot, string> = {
   'top-left': 'Top left',
   top: 'Top',
   'top-right': 'Top right',
+  left: 'Left',
+  right: 'Right',
   'bottom-left': 'Bottom left',
   bottom: 'Bottom',
   'bottom-right': 'Bottom right',
@@ -89,7 +127,7 @@ function widgetInfo(w: Pick<ScreenWidget, 'type' | 'goalId'>, goals: Goal[]) {
   return { ...WIDGETS.goals, label: goal?.name ?? 'Goal', help: "Just this goal's progress bar.", ...(goal && METRIC_ICONS[goal.metric]) };
 }
 // Each widget once per screen: a type, or one goal's own.
-const widgetKey = (w: Pick<ScreenWidget, 'type' | 'goalId'>) => (w.goalId ? `goal:${w.goalId}` : w.type);
+const without = ({ style: _style, ...widget }: ScreenWidget): ScreenWidget => widget;
 // Into a spot, below whatever is there already: a spot stacks its widgets in list order, so it moves to the end.
 // The hand-placed position goes. Already in that spot, it stays where it is.
 function moveToSpot(widgets: ScreenWidget[], i: number, spot: WidgetSpot): ScreenWidget[] {
@@ -98,11 +136,45 @@ function moveToSpot(widgets: ScreenWidget[], i: number, spot: WidgetSpot): Scree
   return [...widgets.filter((_, j) => j !== i), { ...widget, spot }];
 }
 
-function WidgetsEditor({ widgets, goals, scale, onSave }: { widgets: ScreenWidget[]; goals: Goal[]; scale: number; onSave: (widgets: ScreenWidget[]) => void }) {
+const HOVER_MS = 200;
+const HOVER_HEIGHT = 200; // .widget-hover's height
+
+// A small live preview by a widget's row, under it unless that runs off the window. The mouse can't reach it.
+function HoverPreview({ widget, row }: { widget: ScreenWidget; row: DOMRect }) {
+  const [bus] = useState(() => new GiftBus());
+  const { stats, chat } = usePreview(true, bus);
+  const below = row.bottom + HOVER_HEIGHT + 8 < innerHeight;
+  return (
+    <div className="widget-hover" aria-hidden="true" style={{ top: below ? row.bottom + 4 : row.top - HOVER_HEIGHT - 4, right: innerWidth - row.right }}>
+      <PreviewStage widget={widget} feed={{ stats, chat, bus }} compact />
+    </div>
+  );
+}
+
+// Where a widget is, for its row in the list.
+function widgetPlace(w: ScreenWidget) {
+  if (w.type === 'firework') return `${effectName(w.effect ?? 'fireworks')}, from ${giftAnimation(w).min.toLocaleString()} coins`;
+  return w.pos ? 'Custom position' : SPOT_LABELS[w.spot];
+}
+
+type AlertSpot = Pick<Screen, 'alertPosition' | 'alertPos'>;
+
+function WidgetsEditor({ widgets, goals, scale, alertSpot, alertStyle, onSave }: { widgets: ScreenWidget[]; goals: Goal[]; scale: number; alertSpot: AlertSpot | null; alertStyle: AlertStyle | null; onSave: (widgets: ScreenWidget[], alertSpot?: AlertSpot) => void }) {
   const [positioning, setPositioning] = useState<number | 'all' | null>(null); // one widget, or every one
-  const toSpot = (i: number, spot: WidgetSpot) => onSave(moveToSpot(widgets, i, spot));
-  const [previewing, setPreviewing] = useState<string | null>(null);
-  const change = (i: number, patch: Partial<ScreenWidget>) => onSave(widgets.map((w, j) => (j === i ? { ...w, ...patch } : w)));
+  const [hovered, setHovered] = useState<{ widget: ScreenWidget; row: DOMRect } | null>(null);
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const endHover = () => (clearTimeout(hoverTimer.current), setHovered(null));
+  // A moment's wait, so moving the mouse across the list doesn't flash a preview for every row.
+  const startHover = (widget: ScreenWidget, row: HTMLElement) => {
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setHovered({ widget, row: row.getBoundingClientRect() }), HOVER_MS);
+  };
+  useEffect(() => {
+    if (!hovered) return;
+    addEventListener('scroll', endHover, true); // it's placed by the row, which has moved
+    return () => removeEventListener('scroll', endHover, true);
+  }, [hovered]);
+  useEffect(() => () => clearTimeout(hoverTimer.current), []);
   const used = new Set(widgets.map(widgetKey));
   const types = WIDGET_TYPES.filter((t) => !used.has(t));
   const ownGoals = goals.filter((g) => !used.has(`goal:${g.id}`));
@@ -115,10 +187,14 @@ function WidgetsEditor({ widgets, goals, scale, onSave }: { widgets: ScreenWidge
         <h3>
           Widgets {widgets.length > 0 && <span className="tag">{widgets.length}</span>}
         </h3>
-        {widgets.some((w) => w.type !== 'firework') && (
-          <button className="btn btn-sm btn-icon" onClick={() => setPositioning('all')} aria-label="Position every widget" title="Position every widget">
-            <Icon name="layout" />
-          </button>
+        {(alertSpot || widgets.some((w) => w.type !== 'firework')) && (
+          <>
+            <span className="spacer" />
+            <button className="btn btn-sm" onClick={() => setPositioning('all')} title="See your widgets and alerts on one screen and drag them into place">
+              <Icon name="layout" />
+              Arrange on screen
+            </button>
+          </>
         )}
       </div>
       {widgets.length === 0 ? (
@@ -127,69 +203,36 @@ function WidgetsEditor({ widgets, goals, scale, onSave }: { widgets: ScreenWidge
         <ul className="list">
           {widgets.map((w, i) => {
             const info = widgetInfo(w, goals);
-            const key = widgetKey(w);
             return (
-              <li key={key}>
-                <HueIcon name={info.icon} hue={info.hue} />
-                <span className="widget-name">
-                  <strong>{info.label}</strong>
-                  <span className="muted small">{info.help}</span>
-                </span>
-                <span className="spacer" />
-                {w.type === 'firework' || w.type === 'coin_jar' ? (
-                  <label className="row" style={{ flexWrap: 'nowrap' }}>
-                    <span className="muted small">{w.type === 'firework' ? 'From' : 'Full at'}</span>
-                    <NumberCell
-                      value={w.minDiamonds ?? (w.type === 'firework' ? 100 : 1000)}
-                      min={1}
-                      max={10_000_000}
-                      label={w.type === 'firework' ? 'Fireworks for gifts worth at least, in coins' : 'Coins that fill the jar'}
-                      onSave={(minDiamonds) => change(i, { minDiamonds })}
-                    />
-                    <span className="muted small">coins</span>
-                  </label>
-                ) : null}
+              <li key={widgetKey(w)}>
                 <button
-                  type="button"
-                  className="spot-map-btn"
-                  onClick={() => setPositioning(i)}
-                  aria-label={w.type === 'firework' ? `Preview ${info.label} on the screen` : `Position ${info.label} on the screen`}
-                  title={w.type === 'firework' ? 'Preview on the screen' : 'Position and preview'}
+                  className="widget-row"
+                  onClick={() => (endHover(), setPositioning(i))}
+                  onPointerEnter={(e) => e.pointerType === 'mouse' && startHover(w, e.currentTarget)}
+                  onPointerLeave={endHover}
+                  aria-label={`Edit ${info.label}`}
                 >
+                  <HueIcon name={info.icon} hue={info.hue} />
+                  <strong className="widget-row-name">{info.label}</strong>
+                  <span className="muted small">{widgetPlace(w)}</span>
+                  {w.style && (
+                    <span className="widget-row-look muted small">
+                      <i style={{ background: w.style.accent }} aria-hidden="true" />
+                      Custom look
+                    </span>
+                  )}
+                  <span className="spacer" />
                   <SpotMap spot={w.type === 'firework' ? null : w.spot} pos={w.type === 'firework' ? undefined : w.pos} hue={info.hue} />
+                  <span className="widget-row-go" aria-hidden="true">
+                    <Icon name="chevron" />
+                  </span>
                 </button>
-                {w.type !== 'firework' && (
-                  <select className="input widget-spot" value={w.pos ? 'custom' : w.spot} aria-label={`Where ${info.label} goes`} onChange={(e) => toSpot(i, e.target.value as WidgetSpot)}>
-                    {w.pos && (
-                      <option value="custom" disabled>
-                        Custom position
-                      </option>
-                    )}
-                    {WIDGET_SPOTS.map((s) => (
-                      <option key={s} value={s}>
-                        {SPOT_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <button
-                  className="btn btn-sm btn-try btn-icon"
-                  aria-expanded={previewing === key}
-                  aria-label={`${previewing === key ? 'Hide preview of' : 'Preview'} ${info.label}`}
-                  title={previewing === key ? 'Hide preview' : 'Preview'}
-                  onClick={() => setPreviewing(previewing === key ? null : key)}
-                >
-                  <Icon name={previewing === key ? 'eyeOff' : 'eye'} />
-                </button>
-                <button className="btn btn-ghost btn-sm btn-delete" onClick={() => onSave(widgets.filter((_, j) => j !== i))}>
-                  Remove
-                </button>
-                {previewing === key && <WidgetPreview widget={w} />}
               </li>
             );
           })}
         </ul>
       )}
+      {hovered && <HoverPreview widget={hovered.widget} row={hovered.row} />}
       {options.length > 0 && widgets.length < MAX_WIDGETS && <WidgetPicker options={options} goals={goals} onAdd={add} />}
       {(positioning === 'all' || (positioning !== null && widgets[positioning])) && (
         <PositionDialog
@@ -197,6 +240,8 @@ function WidgetsEditor({ widgets, goals, scale, onSave }: { widgets: ScreenWidge
           index={positioning === 'all' ? null : positioning}
           goals={goals}
           scale={scale}
+          alertSpot={alertSpot}
+          alertStyle={alertStyle}
           onSave={onSave}
           onClose={() => setPositioning(null)}
         />
@@ -209,7 +254,51 @@ const LINKS_SHOWN = 8; // four rows of two, then the rest behind Show more
 
 // Every widget, and every goal on its own, as a browser source of its own: for a stream that wants just the chat, say.
 // Laid out like the widget picker, each card showing its widget. One sample feed drives them all.
-function WidgetLinksCard({ main, goals }: { main: Screen; goals: Goal[] }) {
+// A Widget link's look, apart from the widget on the Main screen. Default goes back to following that one.
+function LinkLookDialog({ widget, label, value, feed, onSave, onClose }: { widget: ScreenWidget; label: string; value: WidgetStyle | undefined; feed: PreviewFeed; onSave: (style: WidgetStyle | undefined) => void; onClose: () => void }) {
+  const [style, setStyle] = useState(value);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => dialog.current?.showModal(), []);
+  return (
+    <dialog ref={dialog} className="pos-dialog" onClose={onClose} aria-labelledby="link-look-title">
+      <div className="pos-head">
+        <div>
+          <h2 id="link-look-title">{label}: link look</h2>
+          <p className="muted small">Only for this widget's link. On your Main overlay it keeps its own look.</p>
+        </div>
+        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => dialog.current?.close()} aria-label="Close">
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className="widget-look-grid">
+        <PreviewStage widget={style ? { ...widget, style } : widget} feed={feed} />
+        <WidgetLookControls value={style} onChange={setStyle} />
+      </div>
+      <div className="pos-foot">
+        <span className="spacer" />
+        <button className="btn btn-ghost" onClick={() => dialog.current?.close()}>
+          Cancel
+        </button>
+        <button className="btn btn-primary" onClick={() => onSave(style)}>
+          Save look
+        </button>
+      </div>
+    </dialog>
+  );
+}
+
+function WidgetLinksCard({ main, goals, reload }: { main: Screen; goals: Goal[]; reload: () => Promise<unknown> }) {
+  const [styling, setStyling] = useState<WidgetChoice | null>(null);
+  const { error, guard } = useError();
+  const saveLook = (key: string, style: WidgetStyle | undefined) =>
+    guard(async () => {
+      // Goals deleted since go too.
+      const keep = all.map(widgetKey).filter((k) => k !== key && main.linkStyles[k]);
+      const linkStyles = Object.fromEntries([...keep.map((k) => [k, main.linkStyles[k]!] as const), ...(style ? [[key, style] as const] : [])]);
+      await api('PATCH', `/screens/${main.id}`, { linkStyles });
+      await reload();
+      setStyling(null);
+    })();
   const [copied, setCopied] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [search, setSearch] = useState('');
@@ -229,7 +318,7 @@ function WidgetLinksCard({ main, goals }: { main: Screen; goals: Goal[] }) {
   return (
     <Card
       title="Widget links"
-      description="Each widget on its own, as a browser source of its own, without a whole screen. Size and the coin jar and fireworks amounts follow your Main screen. Previews use sample viewers and gifts. Keep the links private."
+      description="Each widget on its own, as a browser source of its own, without a whole screen. Customize gives a link its own look. Size and the coin jar and fireworks amounts follow your Main screen. Previews use sample viewers and gifts. Keep the links private."
     >
       <input
         className="input"
@@ -239,6 +328,17 @@ function WidgetLinksCard({ main, goals }: { main: Screen; goals: Goal[] }) {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
+      <ErrorNotice error={error} />
+      {styling && (
+        <LinkLookDialog
+          widget={linkedWidget({ ...main, linkStyles: {} }, styling)}
+          label={widgetInfo(styling, goals).label}
+          value={main.linkStyles[widgetKey(styling)]}
+          feed={{ stats, chat, bus }}
+          onSave={(style) => saveLook(widgetKey(styling), style)}
+          onClose={() => setStyling(null)}
+        />
+      )}
       {found.length === 0 && <p className="empty">No widget matches “{search.trim()}”.</p>}
       <div className="widget-picker">
         {shown.map((w) => {
@@ -252,12 +352,17 @@ function WidgetLinksCard({ main, goals }: { main: Screen; goals: Goal[] }) {
                   <strong>{info.label}</strong>
                   <span className="muted small">{help(w)}</span>
                 </span>
+                {w.type !== 'firework' && (
+                  <button className="btn btn-ghost btn-sm" aria-label={`Customize ${info.label} link`} onClick={() => setStyling(w)}>
+                    Customize
+                  </button>
+                )}
                 <button className="btn btn-sm" onClick={() => navigator.clipboard.writeText(link(w)).then(() => setCopied(key))}>
                   {copied === key ? 'Copied' : 'Copy link'}
                 </button>
               </div>
-              {/* With the Main screen's settings for it, as the link uses them. */}
-              <PreviewStage widget={{ ...main.widgets.find((m) => widgetKey(m) === key), ...w, spot: 'top-left' }} feed={{ stats, chat, bus }} compact />
+              {/* With the Main screen's settings for it and its link look, as the link uses them. */}
+              <PreviewStage widget={linkedWidget(main, w)} feed={{ stats, chat, bus }} compact />
             </div>
           );
         })}
@@ -303,14 +408,19 @@ export function FadedWidgets({ widgets, feed }: { widgets: ScreenWidget[]; feed:
 // The screen as a 1920 by 1080 canvas, drawn smaller to fit. Widgets keep their real size against it.
 export const CANVAS = { width: 1920, height: 1080 };
 
-// Places one widget, or with no index every widget on the screen: drag them anywhere, or snap the one picked to a spot.
-// With one widget, the screen's others show faded behind it. Fireworks cover the whole screen, so for them it's a
-// preview only.
+const ALERT_KEY = 'alerts'; // the sample alert, picked like a widget
+const SAMPLE_ALERT = 'nightowl sent 5× Rose!'; // as wide as a real one: a wider alert has more widgets to clear
+
+// With no index, every widget on the screen and its alerts: drag them anywhere, or snap the one picked to a spot. With one, everything
+// about that widget: where it goes, with the screen's others faded behind it, how it looks, and removing it. Fireworks
+// cover the whole screen, so they have no place or look of their own.
 function PositionDialog({
   widgets,
   index,
   goals,
   scale,
+  alertSpot,
+  alertStyle,
   onSave,
   onClose,
 }: {
@@ -318,7 +428,9 @@ function PositionDialog({
   index: number | null;
   goals: Goal[];
   scale: number;
-  onSave: (widgets: ScreenWidget[]) => void;
+  alertSpot: AlertSpot | null; // null when the screen doesn't show alerts
+  alertStyle: AlertStyle | null;
+  onSave: (widgets: ScreenWidget[], alertSpot?: AlertSpot) => void;
   onClose: () => void;
 }) {
   // Saving keeps the window open, and a save can reorder the screen's list (snapping moves a widget to the end of its
@@ -326,12 +438,19 @@ function PositionDialog({
   const [opened] = useState(widgets);
   const [draft, setDraft] = useState<ScreenWidget[]>(widgets);
   const [saved, setSaved] = useState<ScreenWidget[]>(widgets); // what the screen has now
-  const changed = draft !== saved;
+  const [alertOpened] = useState(alertSpot);
+  const [alertDraft, setAlertDraft] = useState(alertSpot);
+  const [alertSaved, setAlertSaved] = useState(alertSpot);
+  const changed = draft !== saved || alertDraft !== alertSaved;
   // By key, not place in the list: snapping to a spot moves a widget to the end.
   const movable = (w: ScreenWidget) => (index === null ? w.type !== 'firework' : widgetKey(w) === widgetKey(opened[index]!));
-  const [picked, setPicked] = useState(() => widgetKey(opened[index ?? opened.findIndex((w) => w.type !== 'firework')] ?? opened[0]!));
+  const [picked, setPicked] = useState(() => {
+    const first = opened[index ?? opened.findIndex((w) => w.type !== 'firework')];
+    return first ? widgetKey(first) : ALERT_KEY;
+  });
   const info = index === null ? { label: 'Every widget', icon: 'layout' as const, hue: 'indigo' as const } : widgetInfo(opened[index]!, goals);
   const fixedPlace = index !== null && opened[index]!.type === 'firework';
+  const [tab, setTab] = useState<'position' | 'look'>('position');
   const dialog = useRef<HTMLDialogElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(0.4); // canvas pixels to stage pixels
@@ -397,6 +516,15 @@ function PositionDialog({
     else spots[w.spot].push(el);
   });
   const current = draft.find((w) => widgetKey(w) === picked);
+  const alertLooks = alertLook(alertStyle);
+  const alertBox = useRef<HTMLDivElement>(null);
+  const clear = useClearOfWidgets(alertBox, index === null && alertDraft && !alertDraft.alertPos ? alertDraft.alertPosition : null, scale / 100, 1, [draft, fit]);
+  const alertMoved = Object.keys(clear).length > 0;
+  const single = index !== null;
+  const remove = () => {
+    onSave(saved.filter((w) => widgetKey(w) !== picked));
+    dialog.current?.close();
+  };
 
   return (
     <dialog ref={dialog} className="pos-dialog" onClose={onClose} aria-labelledby="pos-title">
@@ -406,48 +534,164 @@ function PositionDialog({
           <h2 id="pos-title">{info.label}</h2>
           <p className="muted small">
             {fixedPlace
-              ? 'Fireworks cover the whole screen. Sample gifts set them off.'
+              ? 'Gift animations cover the whole screen. Sample gifts set them off.'
               : index === null
-                ? 'Drag any widget anywhere. The one you moved last is picked: snap it to a spot below. Sample viewers and gifts.'
-                : 'Drag the widget anywhere, or snap it to a spot. Your other widgets show faded. Sample viewers and gifts.'}
+                ? `Drag any widget${alertDraft ? ' or the sample alert' : ''} anywhere. The one you moved last is picked: snap it to a spot below. Sample viewers and gifts.`
+                : tab === 'position'
+                  ? 'Drag the widget anywhere, or snap it to a spot. Your other widgets show faded. Sample viewers and gifts.'
+                  : 'Pick a preset, or any colors you like. Sample viewers and gifts.'}
           </p>
         </div>
         <button className="btn btn-ghost btn-sm btn-icon" onClick={() => dialog.current?.close()} aria-label="Close">
           <Icon name="close" />
         </button>
       </div>
-      <div className="pos-stage" ref={stage} style={{ aspectRatio: `${CANVAS.width} / ${CANVAS.height}` }}>
+      {single && !fixedPlace && (
+        <div className="widget-tabs" role="tablist" aria-label="Widget settings">
+          {(
+            [
+              ['position', 'Position', 'Where it sits on the screen', 'layout'],
+              ['look', 'Look', 'Colors, font and size', 'sparkle'],
+            ] as const
+          ).map(([id, name, hint, icon]) => (
+            <button key={id} type="button" role="tab" aria-selected={tab === id} className="widget-tab" onClick={() => setTab(id)}>
+              <Icon name={icon} size={18} />
+              <span>
+                <strong>{name}</strong>
+                <span className="small">{hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {tab === 'look' && current && (
+        <div className="widget-look-grid">
+          <PreviewStage widget={current} feed={{ stats, chat, bus }} />
+          <WidgetLookControls value={current.style} onChange={(style) => setDraft((d) => d.map((w) => (widgetKey(w) === picked ? (style ? { ...w, style } : without(w)) : w)))} />
+        </div>
+      )}
+      <div className="pos-stage" ref={stage} hidden={tab === 'look'} style={{ aspectRatio: `${CANVAS.width} / ${CANVAS.height}` }}>
         <div className="pos-canvas" style={{ ...CANVAS, transform: `scale(${fit})` }}>
-          <div className="overlay-screen" style={{ '--overlay-scale': scale / 100 } as CSSProperties}>
-            {fixedPlace && <Fireworks min={opened[index]!.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS} bus={bus} />}
+          <div className={`overlay-screen ${alertDraft ? `alerts-${alertDraft.alertPosition}` : ''}`} style={{ '--overlay-scale': scale / 100 } as CSSProperties}>
+            {fixedPlace && <ScreenEffects gifts={giftAnimation(opened[index]!)} bus={bus} />}
             {WIDGET_SPOTS.map((s) => (
               <div key={s} className={`overlay-spot spot-${s}`}>
                 {spots[s]}
               </div>
             ))}
             {placed}
+            {index === null && alertDraft && (
+              <div
+                ref={alertBox}
+                className={`overlay-alert alert-drag ${alertLooks.className} ${picked === ALERT_KEY ? '' : 'unpicked'}`}
+                style={{ ...alertLooks.style, ...alertPlace({ pos: alertDraft.alertPos, scale: 100 }), ...clear }}
+                onPointerDown={(e) => {
+                  setPicked(ALERT_KEY);
+                  dragAlert(e, stage.current!, (alertPos) => setAlertDraft((a) => ({ ...a!, alertPos })));
+                }}
+              >
+                <span>{SAMPLE_ALERT}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
-      {!fixedPlace && current && (
+      {(current || picked === ALERT_KEY) && (
         <div className="pos-foot">
-          <div className="pos-spots" role="group" aria-label={`Snap ${widgetInfo(current, goals).label} to a spot`}>
-            {WIDGET_SPOTS.map((s) => (
-              <button key={s} type="button" className={`btn btn-sm ${!current.pos && current.spot === s ? 'on' : ''}`} aria-pressed={!current.pos && current.spot === s} onClick={() => snap(s)}>
-                {SPOT_LABELS[s]}
-              </button>
-            ))}
-          </div>
-          <span className="muted small">
-            {index === null && <strong>{widgetInfo(current, goals).label}: </strong>}
-            {current.pos ? `Custom: ${Math.round(current.pos.x)}% across, ${Math.round(current.pos.y)}% down` : `In the ${SPOT_LABELS[current.spot].toLowerCase()} spot`}
-          </span>
+          {picked === ALERT_KEY && alertDraft && (
+            <>
+              <div className="pos-spots" role="group" aria-label="Snap alerts to a spot">
+                {ALERT_POSITIONS.map((p) => (
+                  <button key={p} type="button" className={`btn btn-sm ${!alertDraft.alertPos && alertDraft.alertPosition === p ? 'on' : ''}`} aria-pressed={!alertDraft.alertPos && alertDraft.alertPosition === p} onClick={() => setAlertDraft({ alertPosition: p, alertPos: null })}>
+                    {POSITION_LABELS[p]}
+                  </button>
+                ))}
+              </div>
+              <span className="muted small">
+                <strong>Alerts: </strong>
+                {alertDraft.alertPos ? `Custom: ${Math.round(alertDraft.alertPos.x)}% across, ${Math.round(alertDraft.alertPos.y)}% down` : `In the ${POSITION_LABELS[alertDraft.alertPosition].toLowerCase()} spot${alertMoved ? ', moved clear of your widgets' : ''}`}. Actions you placed by hand keep their own place.
+              </span>
+            </>
+          )}
+          {current && !fixedPlace && tab === 'position' && (
+            <>
+              <div className="pos-spots" role="group" aria-label={`Snap ${widgetInfo(current, goals).label} to a spot`}>
+                {WIDGET_SPOTS.map((s) => (
+                  <button key={s} type="button" className={`btn btn-sm ${!current.pos && current.spot === s ? 'on' : ''}`} aria-pressed={!current.pos && current.spot === s} onClick={() => snap(s)}>
+                    {SPOT_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+              <span className="muted small">
+                {index === null && <strong>{widgetInfo(current, goals).label}: </strong>}
+                {current.pos ? `Custom: ${Math.round(current.pos.x)}% across, ${Math.round(current.pos.y)}% down` : `In the ${SPOT_LABELS[current.spot].toLowerCase()} spot`}
+              </span>
+            </>
+          )}
+          {single && current?.type === 'message' && (
+            <label className="field widget-message-field">
+              Message
+              <input
+                className="input"
+                value={current.text ?? DEFAULT_MESSAGE}
+                required
+                maxLength={MAX_MESSAGE_LENGTH}
+                onChange={(e) => place(picked, { text: e.target.value })}
+              />
+            </label>
+          )}
+          {single && current?.type === 'firework' && (
+            <>
+            <label className="row" style={{ flexWrap: 'nowrap' }}>
+              <span className="muted small">Screen animation</span>
+              <select className="input" value={current.effect ?? 'fireworks'} onChange={(e) => place(picked, { effect: e.target.value as ActionEffect })}>
+                <EffectOptions />
+              </select>
+            </label>
+            <label className="row" style={{ flexWrap: 'nowrap' }}>
+              <span className="muted small">Speed</span>
+              <select className="input" value={current.effectSpeed ?? 100} onChange={(e) => place(picked, { effectSpeed: Number(e.target.value) })}>
+                {EFFECT_SPEEDS.map((speed) => (
+                  <option key={speed} value={speed}>
+                    {speedLabel(speed)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            </>
+          )}
+          {single && (current?.type === 'firework' || current?.type === 'coin_jar') && (
+            <label className="row" style={{ flexWrap: 'nowrap' }}>
+              <span className="muted small">{current.type === 'firework' ? 'From' : 'Full at'}</span>
+              <NumberCell
+                value={current.minDiamonds ?? (current.type === 'firework' ? DEFAULT_FIREWORK_DIAMONDS : 1000)}
+                min={1}
+                max={10_000_000}
+                label={current.type === 'firework' ? 'Animation for gifts worth at least, in coins' : 'Coins that fill the jar'}
+                onSave={(minDiamonds) => place(picked, { minDiamonds })}
+              />
+              <span className="muted small">coins</span>
+            </label>
+          )}
           <span className="spacer" />
+          {single && (
+            <button className="btn btn-ghost btn-delete" onClick={remove}>
+              Remove widget
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={() => dialog.current?.close()}>
             {changed ? 'Cancel' : 'Close'}
           </button>
-          <button className="btn btn-primary" disabled={!changed} onClick={() => (onSave(draft), setSaved(draft))}>
-            {!changed && saved !== opened ? 'Saved' : index === null ? 'Save positions' : 'Save position'}
+          <button
+            className="btn btn-primary"
+            disabled={!single && !changed} // a coin amount only reaches the draft as focus leaves it, on the way to this button
+            onClick={() => {
+              onSave(draft.map((w) => (w.type === 'message' && !w.text?.trim() ? { ...w, text: DEFAULT_MESSAGE } : w)), alertDraft !== alertSaved && alertDraft ? alertDraft : undefined);
+              if (single) dialog.current?.close();
+              else (setSaved(draft), setAlertSaved(alertDraft));
+            }}
+          >
+            {single ? 'Save' : !changed && (saved !== opened || alertSaved !== alertOpened) ? 'Saved' : 'Save positions'}
           </button>
         </div>
       )}
@@ -464,7 +708,7 @@ function PreviewStage({ widget, feed, compact }: { widget: ScreenWidget; feed: P
   return (
     <div className={`widget-stage ${compact ? 'compact' : ''}`}>
       {widget.type === 'firework' ? (
-        <Fireworks min={widget.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS} bus={feed.bus} />
+        <ScreenEffects gifts={giftAnimation(widget)} bus={feed.bus} />
       ) : (
         <Widget widget={widget} stats={feed.stats} chat={feed.chat} bus={feed.bus} />
       )}
@@ -473,7 +717,7 @@ function PreviewStage({ widget, feed, compact }: { widget: ScreenWidget; feed: P
       {!compact && (
         <span className="widget-stage-note">
           {widget.type === 'firework'
-            ? `Sample gifts of up to 1,500 coins. Only those worth ${(widget.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS).toLocaleString()} or more set off fireworks.`
+            ? `Sample gifts of up to 1,500 coins. Only those worth ${(widget.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS).toLocaleString()} or more play the animation.`
             : 'Sample viewers and gifts'}
         </span>
       )}
@@ -481,10 +725,50 @@ function PreviewStage({ widget, feed, compact }: { widget: ScreenWidget; feed: P
   );
 }
 
-function WidgetPreview({ widget }: { widget: ScreenWidget }) {
-  const [bus] = useState(() => new GiftBus());
-  const { stats, chat } = usePreview(true, bus);
-  return <PreviewStage widget={widget} feed={{ stats, chat, bus }} />;
+// A widget's colors, font and shape. Without a style it has its own colors; changing anything starts from the first preset.
+function WidgetLookControls({ value, onChange }: { value: WidgetStyle | undefined; onChange: (style: WidgetStyle | undefined) => void }) {
+  const style = value ?? WIDGET_PRESETS[0]!.style;
+  const set = (patch: Partial<WidgetStyle>) => onChange({ ...style, ...patch });
+  const range = (key: keyof typeof WIDGET_STYLE_LIMITS) => ({ min: WIDGET_STYLE_LIMITS[key][0], max: WIDGET_STYLE_LIMITS[key][1] });
+  return (
+    <div className="stack">
+      <div className="row" role="group" aria-label="Preset">
+        <button type="button" className={`btn btn-sm ${value ? '' : 'on'}`} aria-pressed={!value} onClick={() => onChange(undefined)}>
+          Default
+        </button>
+        {WIDGET_PRESETS.map((p) => (
+          <button key={p.id} type="button" className="btn btn-sm" onClick={() => onChange({ ...p.style, size: style.size })}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <div className="look-colors">
+        <ColorField label="Background" value={style.background} onChange={(background) => set({ background })} />
+        <ColorField label="Text" value={style.textColor} onChange={(textColor) => set({ textColor })} />
+        <ColorField label="Accent" value={style.accent} onChange={(accent) => set({ accent })} />
+        <ColorField label="Border" value={style.borderColor} onChange={(borderColor) => set({ borderColor, ...(style.borderWidth === 0 && { borderWidth: 2 }) })} />
+      </div>
+      <div className="look-row">
+        <div className="field">
+          Background opacity
+          <Scrubber value={style.opacity} {...range('opacity')} buttonStep={5} unit="%" label="Background opacity" onSave={(opacity) => set({ opacity })} />
+        </div>
+        <div className="field">
+          Size
+          <Scrubber value={style.size} {...range('size')} buttonStep={5} unit="%" label="Widget size" onSave={(size) => set({ size })} />
+        </div>
+        <div className="field">
+          Corner roundness
+          <Scrubber value={style.radius} {...range('radius')} buttonStep={2} unit="px" label="Corner roundness" onSave={(radius) => set({ radius })} />
+        </div>
+        <div className="field">
+          Border thickness
+          <Scrubber value={style.borderWidth} {...range('borderWidth')} unit="px" label="Border thickness" onSave={(borderWidth) => set({ borderWidth })} />
+        </div>
+      </div>
+      <FontPicker value={style.font} onChange={(font) => set({ font })} />
+    </div>
+  );
 }
 
 // Adding a widget: every one you can add, two to a row, each showing itself. One sample feed drives them all.
@@ -538,6 +822,41 @@ const METRIC_ICONS: Record<GoalMetric, { icon: IconName; hue: Hue }> = {
   subscriptions: { icon: 'star', hue: 'violet' },
 };
 
+const RAISE_MULTIPLES = [1.25, 1.5, 2, 3, 5, 10];
+
+// What a goal does once it's reached.
+function RaiseCell({ goal, onSave }: { goal: Goal; onSave: (raise: GoalRaise | null) => void }) {
+  const { raise } = goal;
+  const pick = (kind: string) => {
+    if (kind === 'times') onSave({ kind, by: 2 });
+    else if (kind === 'plus') onSave({ kind, by: goal.target });
+    else if (kind === 'to') onSave({ kind, by: goal.target * 2 });
+    else onSave(null);
+  };
+  return (
+    <span className="goal-raise">
+      <select className="input" value={raise?.kind ?? ''} aria-label={`What ${goal.name} does when reached`} onChange={(e) => pick(e.target.value)}>
+        <option value="">Stay reached</option>
+        <option value="times">Multiply by</option>
+        <option value="plus">Add</option>
+        <option value="to">Move once to</option>
+      </select>
+      {raise?.kind === 'times' && (
+        <select className="input" value={raise.by} aria-label="Multiply the target by" onChange={(e) => onSave({ kind: 'times', by: Number(e.target.value) })}>
+          {[...new Set([...RAISE_MULTIPLES, raise.by])].map((m) => (
+            <option key={m} value={m}>
+              ×{m}
+            </option>
+          ))}
+        </select>
+      )}
+      {(raise?.kind === 'plus' || raise?.kind === 'to') && (
+        <NumberCell value={raise.by} min={1} max={100_000_000} label={raise.kind === 'plus' ? 'Amount to add' : 'New target'} onSave={(by) => onSave({ kind: raise.kind, by })} />
+      )}
+    </span>
+  );
+}
+
 function GoalsCard({ goals, reload: load }: { goals: Goal[]; reload: () => Promise<unknown> }) {
   const [draft, setDraft] = useState<{ name: string; metric: GoalMetric; target: number }>({ name: '', metric: 'likes', target: 1000 });
   const { error, guard } = useError();
@@ -550,7 +869,7 @@ function GoalsCard({ goals, reload: load }: { goals: Goal[]; reload: () => Promi
   return (
     <Card
       title="Goals"
-      description="Targets for each stream, counted from when you go live. Show them with the Goals widget, and use the Actions page's “Reaches a goal” trigger to celebrate."
+      description="Targets for each stream, counted from when you go live. Show them with the Goals widget, and use the Actions page's “Reaches a goal” trigger to celebrate. A goal that moves up when reached starts back at its target next stream."
     >
       <ErrorNotice error={error} />
       {goals.length > 0 && (
@@ -562,6 +881,7 @@ function GoalsCard({ goals, reload: load }: { goals: Goal[]; reload: () => Promi
                 <th>Name</th>
                 <th>Counts</th>
                 <th>Target</th>
+                <th>When reached</th>
                 <th />
               </tr>
             </thead>
@@ -590,6 +910,9 @@ function GoalsCard({ goals, reload: load }: { goals: Goal[]; reload: () => Promi
                   </td>
                   <td>
                     <NumberCell value={g.target} min={1} max={100_000_000} label="Target" onSave={(target) => update(g.id, { target })} />
+                  </td>
+                  <td>
+                    <RaiseCell goal={g} onSave={(raise) => update(g.id, { raise })} />
                   </td>
                   <td className="actions">
                     <button className="btn btn-ghost btn-sm btn-delete" onClick={guard(() => api('DELETE', `/goals/${g.id}`).then(load))}>
@@ -625,11 +948,73 @@ function GoalsCard({ goals, reload: load }: { goals: Goal[]; reload: () => Promi
   );
 }
 
-function ScreenCard({ screen, goals, reload }: { screen: Screen; goals: Goal[]; reload: () => Promise<unknown> }) {
+// Where this screen's alerts show: drag a sample alert. Actions placed by hand keep their own place.
+function AlertSpotDialog({ screen, style, onDone, onClose }: { screen: Screen; style: AlertStyle | null; onDone: (pos: { x: number; y: number }) => void; onClose: () => void }) {
+  const [pos, setPos] = useState(screen.alertPos ?? { x: 50, y: 50 });
+  const dialog = useRef<HTMLDialogElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(0.4);
+  const [bus] = useState(() => new GiftBus());
+  const { stats, chat } = usePreview(true, bus);
+  const look = alertLook(style);
+  useEffect(() => dialog.current?.showModal(), []);
+  useLayoutEffect(() => {
+    const measure = () => stage.current && setFit(stage.current.clientWidth / CANVAS.width);
+    measure();
+    const resize = new ResizeObserver(measure);
+    resize.observe(stage.current!);
+    return () => resize.disconnect();
+  }, []);
+  return (
+    <dialog ref={dialog} className="pos-dialog" onClose={onClose} aria-labelledby="alert-spot-title">
+      <div className="pos-head">
+        <div>
+          <h2 id="alert-spot-title">Where alerts appear on {screen.name}</h2>
+          <p className="muted small">Drag the sample alert anywhere. Actions you placed by hand keep their own place.</p>
+        </div>
+        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => dialog.current?.close()} aria-label="Close">
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className="pos-stage" ref={stage} style={{ aspectRatio: `${CANVAS.width} / ${CANVAS.height}` }}>
+        <div className="pos-canvas" style={{ ...CANVAS, transform: `scale(${fit})` }}>
+          <div className="overlay-screen" style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
+            <FadedWidgets widgets={screen.widgets} feed={{ stats, chat, bus }} />
+            <div className={`overlay-alert alert-drag ${look.className}`} style={{ ...look.style, ...alertPlace({ pos, scale: 100 }) }} onPointerDown={(e) => dragAlert(e, stage.current!, setPos)}>
+              <span>Your alert</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="pos-foot">
+        <span className="muted small">
+          Middle at {Math.round(pos.x)}% across, {Math.round(pos.y)}% down
+        </span>
+        <span className="spacer" />
+        <button className="btn btn-ghost" onClick={() => dialog.current?.close()}>
+          Cancel
+        </button>
+        <button className="btn btn-primary" onClick={() => onDone(pos)}>
+          Save position
+        </button>
+      </div>
+    </dialog>
+  );
+}
+
+function ScreenCard({ screen, goals, alertStyle, reload, refreshHost }: { screen: Screen; goals: Goal[]; alertStyle: AlertStyle | null; reload: () => Promise<unknown>; refreshHost: () => Promise<unknown> }) {
+  const [placingAlerts, setPlacingAlerts] = useState(false);
   const url = `${location.origin}/overlay/${screen.token}`;
   const [copied, setCopied] = useState(false);
   const { error, guard } = useError();
   const save = (patch: Partial<Screen>) => guard(() => api('PATCH', `/screens/${screen.id}`, patch).then(reload))();
+  const newLink = guard(async () => {
+    await api('POST', `/screens/${screen.id}/new-link`);
+    setCopied(false);
+    await reload();
+    // The dashboard's live feed uses the main screen's link.
+    if (screen.main) await refreshHost();
+  });
 
   return (
     <Card
@@ -647,7 +1032,19 @@ function ScreenCard({ screen, goals, reload }: { screen: Screen; goals: Goal[]; 
     >
       <ErrorNotice error={error} />
       <div className="row">
-        <input className="input" readOnly value={url} onFocus={(e) => e.target.select()} aria-label={`${screen.name} address`} />
+        <span className="link-field">
+          <input className="input" readOnly value={url} onFocus={(e) => e.target.select()} aria-label={`${screen.name} address`} />
+          <ConfirmButton
+            className="btn btn-ghost btn-sm btn-icon"
+            label={`Get a new link for ${screen.name}`}
+            title="New link. Use this if it leaked; your settings stay."
+            message={`The old link stops working right away, so you'll need to paste the new one into OBS or LIVE Studio.${screen.main ? ' Your widget links change too.' : ''}`}
+            confirmLabel="Get new link"
+            onConfirm={newLink}
+          >
+            <Icon name="refresh" />
+          </ConfirmButton>
+        </span>
         <button className="btn btn-primary" onClick={() => navigator.clipboard.writeText(url).then(() => setCopied(true))}>
           {copied ? 'Copied' : 'Copy'}
         </button>
@@ -662,20 +1059,52 @@ function ScreenCard({ screen, goals, reload }: { screen: Screen; goals: Goal[]; 
         </label>
         <div className="field">
           Alerts appear at the
-          <Seg label="Alert position" value={screen.alertPosition} options={ALERT_POSITIONS.map((p) => [p, POSITION_LABELS[p]] as const)} onChange={(alertPosition) => save({ alertPosition })} />
+          <div className="alert-spots" role="radiogroup" aria-label="Alert position">
+            {[...ALERT_POSITIONS, 'custom' as const].map((p) => {
+              const on = (screen.alertPos ? 'custom' : screen.alertPosition) === p;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  className={`alert-spot ${p}`}
+                  onClick={() => (p === 'custom' ? setPlacingAlerts(true) : save({ alertPosition: p, alertPos: null }))}
+                >
+                  <span className="alert-spot-map" aria-hidden="true">
+                    <i />
+                  </span>
+                  {p === 'custom' ? 'Custom' : POSITION_LABELS[p]}
+                </button>
+              );
+            })}
+          </div>
+          {screen.alertPos && (
+            <button type="button" className="link-button small" onClick={() => setPlacingAlerts(true)}>
+              Move it
+            </button>
+          )}
+          {placingAlerts && <AlertSpotDialog screen={screen} style={alertStyle} onDone={(alertPos) => (save({ alertPos }), setPlacingAlerts(false))} onClose={() => setPlacingAlerts(false)} />}
         </div>
         <div className="field">
           Size
           <span className="hint">Of everything on this screen. 100% is normal.</span>
           <Scrubber value={screen.scale} min={50} max={200} buttonStep={5} unit="%" label="Size" onSave={(scale) => save({ scale })} />
         </div>
+        {screen.leaderboard && (
+          <div className="field">
+            Leaderboard players
+            <span className="hint">How many it lists, once that many have played.</span>
+            <Scrubber value={screen.leaderboardSize} min={MIN_LEADERBOARD_SIZE} max={MAX_LEADERBOARD_SIZE} buttonStep={1} label="Leaderboard players" onSave={(leaderboardSize) => save({ leaderboardSize })} />
+          </div>
+        )}
       </div>
       <div className="screen-switches">
         {SCREEN_PARTS.map((part) => (
           <PartToggle key={part.part} {...part} checked={screen[part.part]} onChange={(on) => save({ [part.part]: on })} />
         ))}
       </div>
-      <WidgetsEditor widgets={screen.widgets} goals={goals} scale={screen.scale} onSave={(widgets) => save({ widgets })} />
+      <WidgetsEditor widgets={screen.widgets} goals={goals} scale={screen.scale} alertSpot={screen.alerts ? { alertPosition: screen.alertPosition, alertPos: screen.alertPos } : null} alertStyle={alertStyle} onSave={(widgets, alertSpot) => save({ widgets, ...alertSpot })} />
     </Card>
   );
 }

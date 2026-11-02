@@ -1,4 +1,4 @@
-// Signs the host in to TikTok in a separate window and hands the session to the Fluxion server, which uses it
+// Signs the host in to TikTok in a separate window and hands the session to the Hyperion server, which uses it
 // for TikTok's text-to-speech voices. The window shows plain tiktok.com and gets no access to the app's commands
 // (capabilities only cover the main window).
 
@@ -15,7 +15,7 @@ const LOGIN_URL: &str = "https://www.tiktok.com/login";
 pub async fn sign_in(app: AppHandle, controller: Arc<Controller>) -> Result<bool, String> {
     let config = controller.config();
     let (Some(server_url), Some(token)) = (config.server_url, config.device_token) else {
-        return Err("Pair this PC with Fluxion first".into());
+        return Err("Pair this PC with Hyperion first".into());
     };
     if let Some(open) = app.get_webview_window(WINDOW) {
         let _ = open.set_focus();

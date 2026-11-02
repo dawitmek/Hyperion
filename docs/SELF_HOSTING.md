@@ -1,6 +1,6 @@
 # Self-hosting
 
-Run your own Fluxion server. One container runs the server, dashboard and overlay, a second runs Postgres, and an
+Run your own Hyperion server. One container runs the server, dashboard and overlay, a second runs Postgres, and an
 optional third runs [Caddy](https://caddyserver.com) for automatic HTTPS. The companion app isn't part of this: it
 runs on the PC that plays the game and connects to your server.
 
@@ -18,10 +18,10 @@ You need:
 - A Linux server with [Docker](https://docs.docker.com/engine/install/) (with Compose) and Git
 - About 2 GB of free disk space for the build. The finished image is about 700 MB with all five voices; see
   [Text-to-speech](#text-to-speech) for a smaller one
-- A domain or subdomain you can point at the server, such as `fluxion.example.com`
+- A domain or subdomain you can point at the server, such as `hyperion.example.com`
 - Ports 80 and 443 open to the internet
 
-Run every command from the `Fluxion` folder.
+Run every command from the `Hyperion` folder.
 
 ## Step by step
 
@@ -31,7 +31,7 @@ Add an `A` record for your domain with the server's IP address, at your domain p
 certificate until this works, so check it first:
 
 ```sh
-dig +short fluxion.example.com
+dig +short hyperion.example.com
 ```
 
 This should print your server's IP address.
@@ -39,7 +39,7 @@ This should print your server's IP address.
 ### 2. Get the code
 
 ```sh
-git clone https://github.com/dawitmek/Fluxion && cd Fluxion
+git clone https://github.com/dawitmek/Hyperion && cd Hyperion
 ```
 
 ### 3. Create your settings
@@ -51,7 +51,7 @@ encryption key:
 cat > .env <<EOF
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 SECRETS_KEY=$(openssl rand -base64 32)
-DOMAIN=fluxion.example.com
+DOMAIN=hyperion.example.com
 COMPOSE_PROFILES=https
 EOF
 ```
@@ -59,7 +59,7 @@ EOF
 Copy `.env` somewhere safe, such as a password manager. If you lose `SECRETS_KEY`, hosts have to enter their saved
 API keys and TikTok sign-ins again.
 
-### 4. Start Fluxion
+### 4. Start Hyperion
 
 ```sh
 docker compose -f docker/compose.yml --env-file .env up -d --build
@@ -71,7 +71,7 @@ The first build takes a while, because it downloads the voices. Database migrati
 
 ```sh
 docker compose -f docker/compose.yml --env-file .env ps
-curl https://fluxion.example.com/api/health
+curl https://hyperion.example.com/api/health
 ```
 
 All three services should show as `Up`, and the second command should print `{"ok":true,...}`. The certificate can
@@ -88,7 +88,7 @@ and there's no switch to turn signups off yet, so only share the address with pe
 
 1. On the gaming PC, install the companion from your server's `/download` page.
 2. In the dashboard, open the Companion page and click **Create pairing code**. The code lasts 10 minutes.
-3. In the companion, enter your full address, such as `https://fluxion.example.com`, and the code.
+3. In the companion, enter your full address, such as `https://hyperion.example.com`, and the code.
 
 ### 8. Add the overlay
 
@@ -97,7 +97,7 @@ this link like a password: anyone who has it can watch your overlay's live data,
 
 ## Just on your own PC
 
-For trying Fluxion out. Leave out `DOMAIN` and `COMPOSE_PROFILES`:
+For trying Hyperion out. Leave out `DOMAIN` and `COMPOSE_PROFILES`:
 
 ```sh
 cat > .env <<EOF
@@ -107,16 +107,16 @@ EOF
 docker compose -f docker/compose.yml --env-file .env up -d --build
 ```
 
-Fluxion is then on `http://localhost:3000`, and nothing outside your PC can reach it. Pair the companion with
+Hyperion is then on `http://localhost:3000`, and nothing outside your PC can reach it. Pair the companion with
 `http://localhost:3000`.
 
 ## On a private network
 
-To reach Fluxion from other devices at home, over plain HTTP, add these to `.env` and start it the same way:
+To reach Hyperion from other devices at home, over plain HTTP, add these to `.env` and start it the same way:
 
 ```sh
 COOKIE_SECURE=false
-FLUXION_BIND=0.0.0.0
+HYPERION_BIND=0.0.0.0
 TRUST_PROXY=none
 ```
 
@@ -128,7 +128,7 @@ network you trust, and never forward the port to the internet.
 Leave out `DOMAIN` and `COMPOSE_PROFILES`, and proxy to `127.0.0.1:3000`. With Caddy already on the host:
 
 ```
-fluxion.example.com {
+hyperion.example.com {
 	reverse_proxy 127.0.0.1:3000
 }
 ```
@@ -150,7 +150,7 @@ Your data stays in Docker volumes. Back up first, because migrations run on star
 Save the database:
 
 ```sh
-docker compose -f docker/compose.yml --env-file .env exec -T postgres pg_dump -U fluxion --clean --if-exists fluxion > fluxion.sql
+docker compose -f docker/compose.yml --env-file .env exec -T postgres pg_dump -U hyperion --clean --if-exists hyperion > hyperion.sql
 ```
 
 A backup is only complete with `.env`: without `SECRETS_KEY`, the saved keys in it can't be read.
@@ -158,14 +158,14 @@ A backup is only complete with `.env`: without `SECRETS_KEY`, the saved keys in 
 To restore one, stop the server, load the file and start it again:
 
 ```sh
-docker compose -f docker/compose.yml --env-file .env stop fluxion
-docker compose -f docker/compose.yml --env-file .env exec -T postgres psql -q -U fluxion -d fluxion < fluxion.sql
-docker compose -f docker/compose.yml --env-file .env start fluxion
+docker compose -f docker/compose.yml --env-file .env stop hyperion
+docker compose -f docker/compose.yml --env-file .env exec -T postgres psql -q -U hyperion -d hyperion < hyperion.sql
+docker compose -f docker/compose.yml --env-file .env start hyperion
 ```
 
 ## Troubleshooting
 
-See what a service is doing with `docker compose -f docker/compose.yml --env-file .env logs -f fluxion` (or `caddy`).
+See what a service is doing with `docker compose -f docker/compose.yml --env-file .env logs -f hyperion` (or `caddy`).
 
 | Problem | Likely cause |
 | --- | --- |
@@ -188,10 +188,10 @@ See what a service is doing with `docker compose -f docker/compose.yml --env-fil
 | `COMPOSE_PROFILES` | empty | Set to `https` to run Caddy |
 | `COOKIE_SECURE` | `true` | Set `false` only to use plain HTTP on a private network |
 | `TRUST_PROXY` | `loopback,uniquelocal` | Which addresses are your reverse proxy, so rate limits apply per visitor: addresses, ranges, or `loopback` and `uniquelocal` (private networks). The default suits the built-in Caddy or a proxy on the same machine. With no proxy (port published on a LAN), set `none`, or clients could fake their address |
-| `FLUXION_BIND` | `127.0.0.1` | Interface the port is published on; `0.0.0.0` exposes it on the LAN |
-| `FLUXION_PORT` | `3000` | Published port |
+| `HYPERION_BIND` | `127.0.0.1` | Interface the port is published on; `0.0.0.0` exposes it on the LAN |
+| `HYPERION_PORT` | `3000` | Published port |
 
-Browsers share cookies between servers on the same host name regardless of port, so two Fluxion servers on
+Browsers share cookies between servers on the same host name regardless of port, so two Hyperion servers on
 `127.0.0.1:3000` and `127.0.0.1:3131` log each other out in one browser. Use different host names (for example
 `localhost` for one and `127.0.0.1` for the other) or separate browser profiles.
 

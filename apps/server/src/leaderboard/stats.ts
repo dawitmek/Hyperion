@@ -1,10 +1,11 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { levelForXp, type LeaderboardEntry } from '@fluxion/shared';
+import { levelForXp, MAX_LEADERBOARD_SIZE, type LeaderboardEntry } from '@hyperion/shared';
 import type { Db } from '../db/client.js';
 import { hosts, viewerStats } from '../db/schema.js';
 
 type Counts = { commands: number; gifts: number; xp: number; points: number };
 type Totals = { xp: number; points: number };
+type Seen = { avatar?: string; name?: string };
 type Pending = { hostId: string; streamer: string; viewers: Map<string, Counts> };
 
 // Stats are kept per TikTok account a host streams as, so switching accounts starts a fresh leaderboard and
@@ -18,6 +19,7 @@ export class Stats {
   private pending = new Map<string, Pending>(); // "hostId/streamer" -> unflushed counts per viewer
   private totals = new Map<string, Map<string, Totals>>(); // hostId -> viewerId -> XP and points (live hosts only)
   private streamers = new Map<string, string>(); // hostId -> the account a live host is streaming as
+  private seen = new Map<string, Map<string, Seen>>(); // hostId -> viewerId -> their latest picture and name, this stream
 
   constructor(private db: Db) {}
 
@@ -35,6 +37,21 @@ export class Stats {
     totals.set(viewerId, after);
     const level = levelForXp(after.xp);
     return level > levelForXp(before.xp) ? level : null;
+  }
+
+  // Kept in memory; only viewers with counts to write get theirs saved, so joining doesn't add a row.
+  sawViewer(hostId: string, viewerId: string, seen: Seen) {
+    const viewers = this.seen.get(hostId);
+    viewers?.set(viewerId, { ...viewers.get(viewerId), ...seen });
+  }
+
+  avatarOf(hostId: string, viewerId: string) {
+    return this.seen.get(hostId)?.get(viewerId)?.avatar;
+  }
+
+  // What to call a viewer on screen.
+  nameOf(hostId: string, viewerId: string) {
+    return this.seen.get(hostId)?.get(viewerId)?.name ?? viewerId;
   }
 
   // Levels and points are only known for hosts loaded with load(); others count as level 1 with no points.
@@ -68,11 +85,12 @@ export class Stats {
     }
     this.totals.set(hostId, totals);
     this.streamers.set(hostId, streamer);
+    this.seen.set(hostId, new Map());
   }
 
   unload(hostId: string) {
     this.totals.delete(hostId);
-    this.streamers.delete(hostId);
+    this.streamers.delete(hostId); // seen stays until the next stream: the last counts are still to be flushed
   }
 
   // Returns the hosts whose stats changed.
@@ -81,7 +99,10 @@ export class Stats {
     if (batch.size === 0) return [];
     this.pending = new Map();
     const rows = [...batch.values()].flatMap(({ hostId, streamer, viewers }) =>
-      [...viewers].map(([viewerId, counts]) => ({ hostId, streamer, viewerId, ...counts })),
+      [...viewers].map(([viewerId, counts]) => {
+        const seen = this.seen.get(hostId)?.get(viewerId);
+        return { hostId, streamer, viewerId, ...counts, avatarUrl: seen?.avatar ?? null, displayName: seen?.name ?? null };
+      }),
     );
     try {
       // A host deleted since its counts were recorded would fail the whole insert on the foreign key.
@@ -99,21 +120,23 @@ export class Stats {
             gifts: sql`${viewerStats.gifts} + excluded.gifts`,
             xp: sql`${viewerStats.xp} + excluded.xp`,
             points: sql`greatest(0, ${viewerStats.points} + excluded.points)`,
+            avatarUrl: sql`coalesce(excluded.avatar_url, ${viewerStats.avatarUrl})`,
+            displayName: sql`coalesce(excluded.display_name, ${viewerStats.displayName})`,
             updatedAt: sql`now()`,
           },
         });
       return [...live];
     } catch (err) {
       // Put the counts back so the next flush retries them. The in-memory totals already include them.
-      for (const { hostId, streamer, viewerId, ...counts } of rows) this.addPending(hostId, streamer, viewerId, counts);
+      for (const { hostId, streamer, viewerId, avatarUrl: _a, displayName: _n, ...counts } of rows) this.addPending(hostId, streamer, viewerId, counts);
       throw err;
     }
   }
 
-  async top(hostId: string, limit = 10): Promise<LeaderboardEntry[]> {
+  async top(hostId: string, limit = MAX_LEADERBOARD_SIZE): Promise<LeaderboardEntry[]> {
     const streamer = await this.streamerOf(hostId);
     return this.db
-      .select({ viewer: viewerStats.viewerId, commands: viewerStats.commands, gifts: viewerStats.gifts, xp: viewerStats.xp, points: viewerStats.points })
+      .select({ viewer: viewerStats.viewerId, commands: viewerStats.commands, gifts: viewerStats.gifts, xp: viewerStats.xp, points: viewerStats.points, avatar: viewerStats.avatarUrl, name: viewerStats.displayName })
       .from(viewerStats)
       // Viewers who have only earned points from chat haven't played yet.
       .where(and(eq(viewerStats.hostId, hostId), eq(viewerStats.streamer, streamer), sql`(${viewerStats.commands} > 0 or ${viewerStats.gifts} > 0)`))

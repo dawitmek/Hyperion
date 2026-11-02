@@ -1,8 +1,10 @@
-import type { KeyAction, ModeState, ViewerEvent } from '@fluxion/shared';
+import type { ChainStep, KeyAction, ModeState, ViewerEvent } from '@hyperion/shared';
 
 export interface EngineCommand {
   keyword: string; // lowercase
-  key: string;
+  key: string; // empty for a macro or chain
+  macro?: string | null;
+  chain?: ChainStep[] | null;
   holdMs: number;
   cooldownMs: number;
   enabled: boolean;
@@ -34,6 +36,7 @@ export interface EngineContext {
 
 export interface Decision {
   action: KeyAction;
+  then?: { action: KeyAction; delayMs: number }[]; // a chain's later steps, from when it starts
   keyword: string;
   viewer: string; // shown on the overlay
   credit: string[]; // viewer ids whose command count goes up, and who pay its cost

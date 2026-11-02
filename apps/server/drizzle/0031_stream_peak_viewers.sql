@@ -1,0 +1,1 @@
+ALTER TABLE "streams" ADD COLUMN "peak_viewers" integer;

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { GAME_TEMPLATES } from '@fluxion/shared';
+import { GAME_TEMPLATES } from '@hyperion/shared';
 import { actions, commands, hosts, profiles } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { isUniqueViolation } from '../db/client.js';

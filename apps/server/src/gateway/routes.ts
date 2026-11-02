@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { RawData, WebSocket } from 'ws';
 import { eq } from 'drizzle-orm';
-import { PROTOCOL_VERSION, type CompanionToServer, type OverlayToServer, type ServerToCompanion } from '@fluxion/shared';
+import { MAX_MACROS, PROTOCOL_VERSION, type CompanionToServer, type OverlayToServer, type ServerToCompanion } from '@hyperion/shared';
 import { companions, hosts, overlayScreens } from '../db/schema.js';
 import { toScreen } from '../screens/routes.js';
 import { sha256 } from '../crypto.js';
@@ -43,21 +43,25 @@ export async function gatewayRoutes(app: FastifyInstance) {
       return socket.close(4001, 'Unauthorized');
     }
 
-    hub.addCompanion(companion.hostId, companion.id, socket);
-    reply(socket, { type: 'ready', hostId: companion.hostId });
-    await sendProfileToCompanions(app, companion.hostId).catch((err) => app.log.error(err, 'could not send profile'));
-    await sendThemeToCompanions(app, companion.hostId).catch((err) => app.log.error(err, 'could not send theme'));
-
+    // Listening before saying ready: the companion answers it straight away.
     socket.on('message', (data) => {
       try {
         const message = JSON.parse(data.toString()) as CompanionToServer;
         if (message.type === 'ack' && message.status === 'rejected') {
           app.log.warn({ companionId: companion.id, ...message }, 'companion rejected action');
         }
+        if (message.type === 'macros' && Array.isArray(message.names)) {
+          hub.setMacros(companion.id, message.names.filter((n) => typeof n === 'string').slice(0, MAX_MACROS));
+        }
       } catch {
         // Ignore malformed messages from an authenticated companion.
       }
     });
+
+    hub.addCompanion(companion.hostId, companion.id, socket);
+    reply(socket, { type: 'ready', hostId: companion.hostId });
+    await sendProfileToCompanions(app, companion.hostId).catch((err) => app.log.error(err, 'could not send profile'));
+    await sendThemeToCompanions(app, companion.hostId).catch((err) => app.log.error(err, 'could not send theme'));
   };
 
   // The token travels in the first message rather than the URL, so it never lands in access logs.

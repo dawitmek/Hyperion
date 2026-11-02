@@ -1,0 +1,1 @@
+ALTER TABLE "actions" ADD COLUMN "effect_speed" integer DEFAULT 100 NOT NULL;

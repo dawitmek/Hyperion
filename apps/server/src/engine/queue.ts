@@ -1,4 +1,4 @@
-import { QUEUE_JOIN } from '@fluxion/shared';
+import { QUEUE_JOIN } from '@hyperion/shared';
 import { createRateLimit, decide, matchComment } from './common.js';
 import type { Engine, EngineContext } from './types.js';
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export const GITHUB_URL = 'https://github.com/dawitmek/Fluxion';
+export const GITHUB_URL = 'https://github.com/dawitmek/Hyperion';
 export const RELEASES_URL = `${GITHUB_URL}/releases`;
 
 export type Platform = 'windows' | 'mac';

@@ -3,14 +3,14 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_USER: fluxion
-      POSTGRES_PASSWORD: fluxion
-      POSTGRES_DB: fluxion
+      POSTGRES_USER: hyperion
+      POSTGRES_PASSWORD: hyperion
+      POSTGRES_DB: hyperion
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - fluxion-pg:/var/lib/postgresql/data
+      - hyperion-pg:/var/lib/postgresql/data
       - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
 
 volumes:
-  fluxion-pg:
+  hyperion-pg:

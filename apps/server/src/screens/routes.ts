@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { ALERT_POSITIONS, MAX_WIDGETS, WIDGET_SPOTS, WIDGET_TYPES, type OverlayScreen } from '@fluxion/shared';
-import { overlayScreens } from '../db/schema.js';
+import { ALERT_FONTS, ALERT_POSITIONS, EFFECT_SPEEDS, WIDGET_STYLE_LIMITS, MAX_LEADERBOARD_SIZE, MAX_MESSAGE_LENGTH, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, SCREEN_EFFECTS, WIDGET_SPOTS, WIDGET_TYPES, type OverlayScreen } from '@hyperion/shared';
+import { hosts, overlayScreens } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { newToken } from '../crypto.js';
 
@@ -9,15 +9,37 @@ type Row = typeof overlayScreens.$inferSelect;
 export const toScreen = ({ hostId: _h, token: _t, position: _p, ...screen }: Row): OverlayScreen => screen;
 
 const MAX_SCREENS = 8;
+const color = { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' };
+const widgetStyle = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['background', 'opacity', 'textColor', 'accent', 'borderColor', 'borderWidth', 'radius', 'font', 'size'],
+  properties: {
+    background: color,
+    textColor: color,
+    accent: color,
+    borderColor: color,
+    font: { enum: ALERT_FONTS },
+    ...Object.fromEntries(Object.entries(WIDGET_STYLE_LIMITS).map(([key, [minimum, maximum]]) => [key, { type: 'integer', minimum, maximum }])),
+  },
+};
 const fields = {
   name: { type: 'string', minLength: 1, maxLength: 40 },
   alerts: { type: 'boolean' },
   feed: { type: 'boolean' },
   leaderboard: { type: 'boolean' },
+  leaderboardSize: { type: 'integer', minimum: MIN_LEADERBOARD_SIZE, maximum: MAX_LEADERBOARD_SIZE },
   mode: { type: 'boolean' },
   audio: { type: 'boolean' },
   alertPosition: { enum: ALERT_POSITIONS },
+  alertPos: {
+    type: ['object', 'null'],
+    additionalProperties: false,
+    required: ['x', 'y'],
+    properties: { x: { type: 'number', minimum: 0, maximum: 100 }, y: { type: 'number', minimum: 0, maximum: 100 } },
+  },
   scale: { type: 'integer', minimum: 50, maximum: 200 },
+  linkStyles: { type: 'object', maxProperties: 40, propertyNames: { maxLength: 64 }, additionalProperties: widgetStyle },
   widgets: {
     type: 'array',
     maxItems: MAX_WIDGETS,
@@ -29,7 +51,11 @@ const fields = {
         type: { enum: WIDGET_TYPES },
         spot: { enum: WIDGET_SPOTS },
         minDiamonds: { type: 'integer', minimum: 1, maximum: 10_000_000 },
+        effect: { enum: [...SCREEN_EFFECTS, 'random'] },
+        effectSpeed: { enum: EFFECT_SPEEDS },
         goalId: { type: 'string', format: 'uuid' },
+        text: { type: 'string', minLength: 1, maxLength: MAX_MESSAGE_LENGTH },
+        style: widgetStyle,
         pos: {
           type: 'object',
           additionalProperties: false,
@@ -83,6 +109,24 @@ export async function screenRoutes(app: FastifyInstance) {
       return { ...screen, token: updated.token };
     },
   );
+
+  // A leaked link can be replaced without losing the screen's setup. The old one stops working at once, and anything
+  // using it is disconnected. The main screen's link is also the host's overlay token.
+  app.post<{ Params: { id: string } }>('/:id/new-link', { schema: { params: idParam } }, async (req, reply) => {
+    const token = newToken();
+    const updated = await db.transaction(async (tx) => {
+      const [screen] = await tx
+        .update(overlayScreens)
+        .set({ token })
+        .where(and(eq(overlayScreens.id, req.params.id), eq(overlayScreens.hostId, req.hostId)))
+        .returning();
+      if (screen?.main) await tx.update(hosts).set({ overlayToken: token }).where(eq(hosts.id, req.hostId));
+      return screen;
+    });
+    if (!updated) return reply.code(404).send({ error: 'Screen not found' });
+    hub.sendToScreen(req.hostId, updated.id, null);
+    return { ...toScreen(updated), token };
+  });
 
   app.delete<{ Params: { id: string } }>('/:id', { schema: { params: idParam } }, async (req, reply) => {
     const where = and(eq(overlayScreens.id, req.params.id), eq(overlayScreens.hostId, req.hostId));
