@@ -2,7 +2,7 @@
   "name": "@hyperion/companion",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hyperion/theme": "0.3.0",
+    "@hyperion/theme": "0.3.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2.7.2",
     "react": "^19.1.0",

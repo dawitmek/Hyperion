@@ -37,6 +37,20 @@ interface Snapshot {
   theme: string | null; // the account's dashboard theme, which this window follows
   themeStyle: string | null;
   themeMode: string | null; // "light", "dark" or "system"
+  version: string;
+  updatesSupported: boolean;
+  autoUpdate: boolean | null; // null until the host answers the one-time question
+  update: UpdateView;
+}
+
+interface UpdateView {
+  status: "idle" | "checking" | "upToDate" | "available" | "downloading" | "ready" | "installing" | "error";
+  version: string | null;
+  notesUrl: string | null;
+  progress: number | null; // 0 to 1
+  error: string | null;
+  waiting: boolean; // downloaded, waiting for chat to leave this PC alone
+  dismissed: boolean;
 }
 
 interface CommandView {
@@ -110,6 +124,7 @@ export default function App() {
         <h1>Hyperion Companion</h1>
         {state.paired && <ConnectionTag connection={state.connection} />}
       </header>
+      <UpdateNotice state={state} run={run} />
       {!state.platformSupported && (
         <p className="notice warning">Key input only works on Windows and macOS so far. This build can pair and connect, but refuses every action.</p>
       )}
@@ -123,10 +138,17 @@ export default function App() {
             <button className="btn btn-sm" onClick={() => run("request_permission")}>
               Open Accessibility settings
             </button>
-            <button className="btn btn-sm" onClick={() => invoke<Snapshot>("get_state").then(setState)}>
-              Check again
+            <button className="btn btn-sm" onClick={() => run("restart_app")}>
+              Restart companion
             </button>
           </div>
+          <p className="small" style={{ marginTop: 10 }}>
+            Already turned on? After an update or reinstall, macOS keeps the switch for the old copy. Reset it, then turn it
+            on again.{" "}
+            <button className="btn btn-sm btn-ghost" onClick={() => run("reset_permission")}>
+              Reset permission
+            </button>
+          </p>
         </div>
       )}
       {error && (
@@ -135,7 +157,137 @@ export default function App() {
         </p>
       )}
       {state.paired ? <Paired state={state} run={run} /> : <PairForm run={run} defaultServer={state.serverUrl} />}
+      <AppFooter state={state} run={run} />
     </main>
+  );
+}
+
+// New versions. The first one found asks once whether to update automatically; after that it either installs by
+// itself (once chat leaves this PC alone) or asks each time, as chosen. The switch in the footer changes it any time.
+function UpdateNotice({ state, run }: { state: Snapshot; run: Run }) {
+  const u = state.update;
+  const version = u.version ? `Version ${u.version}` : "A new version";
+  const notes = u.notesUrl && (
+    <a href="#" onClick={(e) => (e.preventDefault(), void openUrl(u.notesUrl!))}>
+      What's new
+    </a>
+  );
+
+  if (u.status === "available" && state.autoUpdate === null) {
+    return (
+      <section className="notice info update-notice" aria-label="Update">
+        <p>
+          <strong>{version} is out</strong> (you have {state.version}). {notes}
+        </p>
+        <p className="small">
+          Keep the companion up to date automatically? Updates wait until your game has been out of focus for a minute, then
+          the companion restarts by itself. You can change this at the bottom of the window.
+        </p>
+        <div className="row">
+          <button className="btn btn-sm btn-primary" onClick={() => run("set_auto_update", { enabled: true })}>
+            Update automatically
+          </button>
+          <button className="btn btn-sm" onClick={() => run("set_auto_update", { enabled: false })}>
+            Ask me each time
+          </button>
+        </div>
+      </section>
+    );
+  }
+  if (u.status === "available" && state.autoUpdate === false && !u.dismissed) {
+    return (
+      <section className="notice info update-notice" aria-label="Update">
+        <p>
+          <strong>{version} is available</strong> (you have {state.version}). {notes}
+        </p>
+        <div className="row">
+          <button className="btn btn-sm btn-primary" onClick={() => run("install_update")}>
+            Update and restart
+          </button>
+          <button className="btn btn-sm btn-ghost" onClick={() => run("dismiss_update")}>
+            Not now
+          </button>
+        </div>
+      </section>
+    );
+  }
+  if (u.status === "downloading") {
+    const pct = Math.round((u.progress ?? 0) * 100);
+    return (
+      <section className="notice info update-notice" aria-label="Update" role="status">
+        <p>
+          Downloading {version.toLowerCase()}… {pct}%
+        </p>
+        <div className="update-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+          <span style={{ width: `${pct}%` }} />
+        </div>
+      </section>
+    );
+  }
+  if (u.status === "ready") {
+    return (
+      <section className="notice info update-notice" aria-label="Update" role="status">
+        <p>
+          <strong>{version} is ready.</strong>{" "}
+          {u.waiting ? "It installs once your game has been out of focus for a minute." : "Install it whenever you like."}
+        </p>
+        <div className="row">
+          <button className="btn btn-sm btn-primary" onClick={() => run("install_update")}>
+            Install and restart now
+          </button>
+        </div>
+      </section>
+    );
+  }
+  if (u.status === "installing") {
+    return (
+      <p className="notice info" role="status">
+        Installing {version.toLowerCase()}. The companion restarts by itself.
+      </p>
+    );
+  }
+  if (u.status === "error") {
+    return (
+      <div className="notice error update-notice" role="alert">
+        <p>Couldn't update: {u.error}</p>
+        <div className="row">
+          <button className="btn btn-sm" onClick={() => run("check_update")}>
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+// The app's version and the update settings, at the bottom of every screen.
+function AppFooter({ state, run }: { state: Snapshot; run: Run }) {
+  const status = state.update.status;
+  const busy = status === "checking" || status === "downloading" || status === "installing";
+  return (
+    <footer className="app-foot">
+      <span>Version {state.version}</span>
+      <span className="spacer" />
+      {state.updatesSupported && (
+        <>
+          <label className="approve">
+            <span className="small">Update automatically</span>
+            <span className="switch">
+              <input
+                type="checkbox"
+                checked={state.autoUpdate === true}
+                aria-label="Update automatically"
+                onChange={(e) => run("set_auto_update", { enabled: e.target.checked })}
+              />
+            </span>
+          </label>
+          <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => run("check_update")}>
+            {status === "checking" ? "Checking…" : status === "upToDate" ? "Up to date" : "Check for updates"}
+          </button>
+        </>
+      )}
+    </footer>
   );
 }
 
@@ -306,14 +458,14 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
   useEffect(() => void refreshWindows(), []);
 
   const connected = state.connection === "connected";
-  // One state for the whole PC, most pressing first: nothing arrives while disconnected, nothing is pressed while
-  // paused or with no game picked.
+  // One state for the whole PC, most pressing first: nothing arrives while disconnected, and nothing is pressed until
+  // a game is picked and the host resumes. The companion starts paused.
   const status = !connected
     ? { hue: "red", title: state.connection === "connecting" ? "Connecting" : "Offline", text: "Not connected to the server, so chat's keys can't reach this PC." }
-    : state.paused
-      ? { hue: "amber", title: "Paused", text: "Nothing is pressed until you resume." }
-      : !state.targetProcess
-        ? { hue: "amber", title: "Pick a game", text: "Nothing is pressed until you pick the game chat plays." }
+    : !state.targetProcess
+      ? { hue: "amber", title: "Pick a game", text: "Pick the game chat plays below, then press Resume." }
+      : state.paused
+        ? { hue: "amber", title: "Paused", text: `Nothing is pressed until you resume. Keys will go to ${state.targetProcess}.` }
         : { hue: "green", title: "Ready", text: `Chat's keys go to ${state.targetProcess} while its window is in focus.` };
 
   return (
@@ -330,6 +482,8 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
           {connected ? (
             <button
               className={`btn hero-toggle ${state.paused ? "btn-success" : "btn-danger"}`}
+              disabled={state.paused && !state.targetProcess}
+              title={state.paused && !state.targetProcess ? "Pick your game first" : undefined}
               onClick={() => run("set_paused", { paused: !state.paused })}
             >
               <Icon name={state.paused ? "play" : "pause"} />

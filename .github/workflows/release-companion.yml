@@ -26,6 +26,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # The companion compares its own version with the newest release tag to offer updates, so a tag that doesn't
+      # match the version built into the app would be offered again forever after installing.
+      - name: Check the tag matches the app's version
+        shell: bash
+        run: |
+          want="${GITHUB_REF_NAME#companion-v}"
+          conf=$(node -p "require('./apps/companion/src-tauri/tauri.conf.json').version")
+          cargo=$(grep -m1 '^version' apps/companion/src-tauri/Cargo.toml | cut -d'"' -f2)
+          if [ "$want" != "$conf" ] || [ "$want" != "$cargo" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match tauri.conf.json ($conf) and Cargo.toml ($cargo)"
+            exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22

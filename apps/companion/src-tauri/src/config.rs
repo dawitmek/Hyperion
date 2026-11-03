@@ -18,6 +18,11 @@ pub struct Config {
     pub theme: Option<String>,
     pub theme_style: Option<String>,
     pub theme_mode: Option<String>, // "light", "dark" or "system"
+    /// Whether new versions install by themselves. None until the host answers the one-time question, which comes
+    /// with the first update found; false means asking each time.
+    pub auto_update: Option<bool>,
+    /// A version the host chose "Not now" for, so it isn't offered again until they check by hand.
+    pub skipped_version: Option<String>,
 }
 
 impl Config {

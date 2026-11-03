@@ -134,3 +134,11 @@ body { background: var(--aurora), var(--ground); background-repeat: no-repeat; m
 .macro-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: calc(10px * var(--radius-scale, 1)); }
 .macro-buttons { display: flex; gap: 6px; margin-left: auto; }
 .notice.recording { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+/* Updates: the notice under the header and the version line at the bottom. */
+.update-notice { display: flex; flex-direction: column; gap: 8px; }
+.update-notice .btn { margin-top: 0; }
+.update-progress { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.update-progress > span { display: block; height: 100%; background: var(--indigo-fill); transition: width 0.2s; }
+.app-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 0 4px; color: var(--muted); font-size: 12.5px; }
+.app-foot .spacer { flex: 1; }

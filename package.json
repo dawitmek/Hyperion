@@ -23,7 +23,11 @@
     "start": "npm run start -w apps/server",
     "db:up": "docker compose -f docker/compose.dev.yml -p hyperion up -d",
     "db:down": "docker compose -f docker/compose.dev.yml -p hyperion down",
-    "test": "npm run build -w packages/shared && vitest run"
+    "test": "npm run build -w packages/shared && vitest run",
+    "companion:dev": "npm run tauri -w apps/companion -- dev",
+    "companion:build": "npm run tauri -w apps/companion -- build",
+    "companion:build:app": "npm run tauri -w apps/companion -- build --bundles app",
+    "companion:build:universal": "rustup target add x86_64-apple-darwin aarch64-apple-darwin && npm run tauri -w apps/companion -- build --target universal-apple-darwin"
   },
   "devDependencies": {
     "concurrently": "^9.2.5",

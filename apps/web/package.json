@@ -1,6 +1,6 @@
 {
   "name": "@hyperion/web",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -22,8 +22,8 @@
     "@fontsource/permanent-marker": "^5.3.0",
     "@fontsource/press-start-2p": "^5.3.0",
     "@fontsource/righteous": "^5.3.0",
-    "@hyperion/shared": "0.3.0",
-    "@hyperion/theme": "0.3.0",
+    "@hyperion/shared": "0.3.1",
+    "@hyperion/theme": "0.3.1",
     "espeak-ng": "^1.0.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

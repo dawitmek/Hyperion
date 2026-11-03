@@ -357,13 +357,26 @@ mod imp {
         fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
     }
 
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        // Whether this app may post input events: the same Accessibility switch, asked the way CGEventPost asks it.
+        fn CGPreflightPostEventAccess() -> bool;
+    }
+
     // macOS drops synthetic key events from apps without Accessibility permission, silently.
     pub fn permission_problem() -> Option<&'static str> {
-        if unsafe { AXIsProcessTrusted() } {
+        if unsafe { AXIsProcessTrusted() || CGPreflightPostEventAccess() } {
             None
         } else {
             Some("Hyperion Companion needs Accessibility permission to press keys")
         }
+    }
+
+    // Forgets this app's Accessibility entry, then asks again. An unsigned app counts as a new app after each update or
+    // reinstall, so the switch still showing as on belongs to the old copy and does nothing for this one.
+    pub fn reset_permission(bundle_id: &str) {
+        let _ = std::process::Command::new("tccutil").args(["reset", "Accessibility", bundle_id]).status();
+        request_permission();
     }
 
     // Shows macOS's own prompt and opens the Accessibility settings pane.
@@ -506,10 +519,12 @@ mod permission {
     }
 
     pub fn request_permission() {}
+
+    pub fn reset_permission(_bundle_id: &str) {}
 }
 
 #[cfg(target_os = "macos")]
 use imp as permission;
 
 pub use imp::{foreground_process, list_windows, send_key};
-pub use permission::{permission_problem, request_permission};
+pub use permission::{permission_problem, request_permission, reset_permission};

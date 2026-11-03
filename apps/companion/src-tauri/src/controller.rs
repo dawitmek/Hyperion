@@ -5,6 +5,7 @@ use crate::input::{self, GameWindow};
 use crate::keys::{self, ALL_KEYS, Combo, Modifier, OLD_MODIFIER_TOGGLES};
 use crate::macros::{self, Input, Macro, Pressed, Recorder};
 use crate::protocol::CommandInfo;
+use crate::updater::{self, UpdateView, Updater};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -78,6 +79,10 @@ pub struct Snapshot {
     theme: Option<String>,
     theme_style: Option<String>,
     theme_mode: Option<String>,
+    version: &'static str,
+    updates_supported: bool,
+    auto_update: Option<bool>, // None until the host answers the one-time question
+    update: UpdateView,
 }
 
 /// A dashboard command and whether this PC will press it.
@@ -115,6 +120,7 @@ pub struct Controller {
     macro_running: AtomicBool,
     macro_generation: AtomicU64, // bumped to stop the macro playing
     pub connection_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    pub update: Mutex<Updater>,
 }
 
 impl Controller {
@@ -132,7 +138,8 @@ impl Controller {
             app,
             config_path,
             config: Mutex::new(config),
-            paused: AtomicBool::new(false),
+            // Starts paused: nothing is pressed until the host has picked the game and pressed Resume.
+            paused: AtomicBool::new(true),
             connection: Mutex::new("disconnected".into()),
             profile: Mutex::new((None, None)),
             commands: Mutex::new(Vec::new()),
@@ -141,7 +148,42 @@ impl Controller {
             combo: Mutex::new(None),
             combo_count: AtomicU64::new(0),
             connection_task: Mutex::new(None),
+            update: Mutex::new(Updater::default()),
         })
+    }
+
+    pub fn app(&self) -> &AppHandle {
+        &self.app
+    }
+
+    /// Tells the window when macOS's Accessibility permission changes, so granting it in System Settings shows up here
+    /// without a click.
+    pub fn watch_permission(self: &Arc<Self>) {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        let this = self.clone();
+        std::thread::spawn(move || {
+            let mut last = input::permission_problem();
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                let now = input::permission_problem();
+                if now != last {
+                    last = now;
+                    this.emit();
+                }
+            }
+        });
+    }
+
+    /// Whether chat is using this PC right now: the game in front, keys held, or a macro playing or being recorded.
+    /// Automatic updates wait until it isn't.
+    pub fn in_use(&self) -> bool {
+        // One lock at a time: press_combo takes combo, then held.
+        let combo = self.combo.lock().unwrap().is_some();
+        let held = !self.held.lock().unwrap().is_empty();
+        let recording = self.recording.lock().unwrap().is_some();
+        combo || held || recording || self.macro_running.load(Ordering::SeqCst) || self.game_focused().is_ok()
     }
 
     pub fn config(&self) -> Config {
@@ -167,6 +209,8 @@ impl Controller {
         let commands: Vec<CommandView> = self.commands.lock().unwrap().iter().map(|c| command_view(c, &allowed, &approved, &macro_names)).collect();
         let (recording, recording_started) = self.recording.lock().unwrap().as_ref().map_or((None, false), |r| (Some(r.name.clone()), r.started));
         let pending_approvals = commands.iter().filter(|c| c.enabled && c.combo && !c.approved && c.problem.is_none()).count();
+        let mut update = self.update.lock().unwrap().view();
+        update.dismissed = update.version.is_some() && update.version == config.skipped_version;
         Snapshot {
             paired: config.device_token.is_some(),
             server_url: config.server_url,
@@ -192,6 +236,10 @@ impl Controller {
             theme: config.theme,
             theme_style: config.theme_style,
             theme_mode: config.theme_mode,
+            version: updater::CURRENT,
+            updates_supported: updater::SUPPORTED,
+            auto_update: config.auto_update,
+            update,
         }
     }
 

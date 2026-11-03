@@ -44,3 +44,6 @@ Still to design:
 
 - [ ] GTA V story mode runs live through Hyperion
 - [ ] Look and feel reviewed in a browser and the companion, on Windows and macOS, light and dark, phone to desktop
+- [ ] Companion updates end to end from a real release, on Windows and macOS: the one-time question, asking each
+      time, automatic (waits while the game is in front), and the restart. Mac: check whether Accessibility has to
+      be granted again after updating an unsigned build

@@ -7,6 +7,7 @@ mod keys;
 mod macros;
 mod protocol;
 mod tiktok;
+mod updater;
 
 use controller::{Controller, Snapshot};
 use input::GameWindow;
@@ -81,6 +82,10 @@ fn list_windows(ctl: Ctl) -> Vec<GameWindow> {
 
 #[tauri::command]
 fn set_target(ctl: Ctl, process: Option<String>) -> Result<(), String> {
+    // With no game there's nothing to press into, so pause; picking one again waits for Resume.
+    if process.is_none() {
+        ctl.set_paused(true);
+    }
     ctl.update_config(|c| c.target_process = process.map(|p| p.to_lowercase()))
 }
 
@@ -95,8 +100,12 @@ fn set_combo_approved(ctl: Ctl, key: String, approved: bool) -> Result<(), Strin
 }
 
 #[tauri::command]
-fn set_paused(ctl: Ctl, paused: bool) {
+fn set_paused(ctl: Ctl, paused: bool) -> Result<(), String> {
+    if !paused && ctl.config().target_process.is_none() {
+        return Err("Pick your game first, then resume".into());
+    }
     ctl.set_paused(paused);
+    Ok(())
 }
 
 #[tauri::command]
@@ -134,6 +143,45 @@ fn request_permission() {
     input::request_permission();
 }
 
+#[tauri::command]
+fn reset_permission(app: AppHandle) {
+    input::reset_permission(&app.config().identifier);
+}
+
+/// macOS sometimes only applies a newly granted Accessibility permission once the app starts again.
+#[tauri::command]
+fn restart_app(app: AppHandle) {
+    app.restart();
+}
+
+/// The host's answer to "update automatically?", from the one-time question or the switch at the bottom of the window.
+#[tauri::command]
+fn set_auto_update(ctl: Ctl, enabled: bool) -> Result<(), String> {
+    ctl.update_config(|c| c.auto_update = Some(enabled))?;
+    if enabled {
+        updater::resume(ctl.inner().clone());
+    }
+    Ok(())
+}
+
+// Update problems show in the window's update notice rather than as an error.
+#[tauri::command]
+async fn check_update(ctl: Ctl<'_>) -> Result<(), String> {
+    updater::check(ctl.inner(), true).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn install_update(ctl: Ctl<'_>) -> Result<(), String> {
+    let _ = updater::install(ctl.inner().clone(), false).await;
+    Ok(())
+}
+
+#[tauri::command]
+fn dismiss_update(ctl: Ctl) -> Result<(), String> {
+    updater::dismiss(&ctl)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // The panic hotkey only ever pauses; resuming is a deliberate click in the app.
@@ -163,6 +211,8 @@ pub fn run() {
             if controller.config().device_token.is_some() {
                 connection::restart(&controller);
             }
+            updater::start(controller.clone());
+            controller.watch_permission();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -177,12 +227,18 @@ pub fn run() {
             set_combo_approved,
             set_paused,
             request_permission,
+            reset_permission,
+            restart_app,
             start_recording,
             cancel_recording,
             delete_macro,
             try_macro,
             tiktok_sign_in,
-            tiktok_status
+            tiktok_status,
+            set_auto_update,
+            check_update,
+            install_update,
+            dismiss_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Hyperion companion");
