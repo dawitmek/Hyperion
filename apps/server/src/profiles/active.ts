@@ -24,7 +24,7 @@ export async function sendProfileToCompanions(app: FastifyInstance, hostId: stri
 export async function sendCommandsToCompanions(app: FastifyInstance, hostId: string, profileId?: string) {
   const id = profileId ?? (await activeProfile(app.db, hostId)).id;
   const rows = await app.db
-    .select({ keyword: commands.keyword, key: commands.key, enabled: commands.enabled, macro: commands.macro, chain: commands.chain })
+    .select({ keyword: commands.keyword, key: commands.key, enabled: commands.enabled, macro: commands.macro, gameAction: commands.gameAction, chain: commands.chain })
     .from(commands)
     .where(eq(commands.profileId, id))
     .orderBy(commands.position);

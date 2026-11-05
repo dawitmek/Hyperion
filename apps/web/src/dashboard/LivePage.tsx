@@ -375,7 +375,7 @@ function CommandsOverview({ host, refreshHost, feed }: PageProps) {
             <div key={c.id} data-slide={c.keyword} className={`command-card ${feed.lastPress === c.keyword ? 'fired' : ''}`}>
               <div className="command-top">
                 <span className="command-keyword">{c.keyword}</span>
-                <kbd className="kbd">{c.macro ? 'Macro' : c.chain ? 'Chain' : keyLabel(c.key)}</kbd>
+                <kbd className="kbd">{c.macro ? 'Macro' : c.gameAction ? 'Action' : c.chain ? 'Chain' : keyLabel(c.key)}</kbd>
               </div>
               <div className="muted small">
                 {c.minLevel > 1 && host.progression && host.levelGating

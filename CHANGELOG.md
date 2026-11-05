@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Game actions: the companion sends commands straight into a Minecraft Java server, through the RCON connection Minecraft servers have built in. Set up the server and write actions in the companion's Game actions section, then pick one with "Run a game action" for a chat command or gift action.
+- An action is one or more commands, repeated up to 100 times with a wait between. Blanks fill in the viewer's name ({viewer}), how many gifts they sent ({count}) and your Minecraft name ({player}), so `execute at {player} run summon creeper ~ ~ ~` spawns a creeper beside you. Viewer names are cleaned so they can never change a command.
+- Actions and the RCON password stay on your PC. The server only knows action names, and a command whose action isn't on the connected PC is marked "(PC offline)".
+- Try runs an action from the companion as a viewer called Tester, and commands Minecraft refuses show in the activity list with Minecraft's reason.
+
+### Fixed
+- The Download page finds the newest companion release itself, so it keeps offering the installers when a server release is marked as GitHub's latest.
+
 ## [0.4.0] - 2026-11-04
 
 Stream reports, phone layouts and a published image.

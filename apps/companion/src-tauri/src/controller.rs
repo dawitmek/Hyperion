@@ -1,9 +1,11 @@
 // Shared companion state plus the safety gate every action passes through before a key is pressed.
 
 use crate::config::Config;
+use crate::game_actions::{self, GameAction, Values};
 use crate::input::{self, GameWindow};
 use crate::keys::{self, ALL_KEYS, Combo, Modifier, OLD_MODIFIER_TOGGLES};
 use crate::macros::{self, Input, Macro, Pressed, Recorder};
+use crate::minecraft::{self, Rcon};
 use crate::protocol::CommandInfo;
 use crate::updater::{self, UpdateView, Updater};
 use serde::Serialize;
@@ -28,6 +30,16 @@ pub struct MacroView {
     name: String,
     length_ms: u32,
     steps: usize,
+}
+
+/// The Minecraft Java connection settings, without the password.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MinecraftView {
+    host: String,
+    port: u16,
+    player: Option<String>,
+    has_password: bool,
 }
 
 /// The stop key. Taken from other programs only during a recording, so F9 keeps working in games otherwise.
@@ -74,6 +86,9 @@ pub struct Snapshot {
     macros_supported: bool, // recording and playing need Windows so far
     recording: Option<String>,       // its name, during the countdown or after it
     recording_started: bool,
+    game_actions: Vec<GameAction>,
+    minecraft_java: Option<MinecraftView>,
+    minecraft_default_port: u16,
     stop_recording_hotkey: &'static str,
     pending_approvals: usize, // enabled combinations waiting for this PC's OK
     theme: Option<String>,
@@ -118,7 +133,12 @@ pub struct Controller {
     recording: Mutex<Option<Recording>>,
     recording_count: AtomicU64,
     macro_running: AtomicBool,
-    macro_generation: AtomicU64, // bumped to stop the macro playing
+    macro_generation: AtomicU64, // bumped to stop the macro playing, and any game action running
+    game_actions_path: PathBuf,
+    game_actions: Mutex<Vec<GameAction>>,
+    pub game_actions_changed: tokio::sync::Notify, // tells the server the list changed
+    // The open RCON connection and the settings it was made with. Held while an action runs, so actions go in order.
+    rcon: tokio::sync::Mutex<Option<(minecraft::Settings, Rcon)>>,
     pub connection_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     pub update: Mutex<Updater>,
 }
@@ -127,7 +147,12 @@ impl Controller {
     pub fn new(app: AppHandle, config_path: PathBuf) -> Arc<Controller> {
         let config = Config::load(&config_path);
         let macros_path = config_path.with_file_name("macros.json");
+        let game_actions_path = config_path.with_file_name("game-actions.json");
         Arc::new(Controller {
+            game_actions: Mutex::new(game_actions::load(&game_actions_path)),
+            game_actions_path,
+            game_actions_changed: tokio::sync::Notify::new(),
+            rcon: tokio::sync::Mutex::new(None),
             macros: Mutex::new(macros::load(&macros_path)),
             macros_path,
             macros_changed: tokio::sync::Notify::new(),
@@ -176,14 +201,15 @@ impl Controller {
         });
     }
 
-    /// Whether chat is using this PC right now: the game in front, keys held, or a macro playing or being recorded.
-    /// Automatic updates wait until it isn't.
+    /// Whether chat is using this PC right now: the game in front, keys held, a macro playing or being recorded, or a
+    /// game action running. Automatic updates wait until it isn't.
     pub fn in_use(&self) -> bool {
         // One lock at a time: press_combo takes combo, then held.
         let combo = self.combo.lock().unwrap().is_some();
         let held = !self.held.lock().unwrap().is_empty();
         let recording = self.recording.lock().unwrap().is_some();
-        combo || held || recording || self.macro_running.load(Ordering::SeqCst) || self.game_focused().is_ok()
+        let action = self.rcon.try_lock().is_err();
+        combo || held || recording || action || self.macro_running.load(Ordering::SeqCst) || self.game_focused().is_ok()
     }
 
     pub fn config(&self) -> Config {
@@ -206,7 +232,9 @@ impl Controller {
         let allowed = allowed_keys(&config.allowed_keys);
         let approved = config.approved_combos.clone().unwrap_or_default();
         let macro_names = self.macro_names();
-        let commands: Vec<CommandView> = self.commands.lock().unwrap().iter().map(|c| command_view(c, &allowed, &approved, &macro_names)).collect();
+        let action_names = self.game_action_names();
+        let commands: Vec<CommandView> =
+            self.commands.lock().unwrap().iter().map(|c| command_view(c, &allowed, &approved, &macro_names, &action_names)).collect();
         let (recording, recording_started) = self.recording.lock().unwrap().as_ref().map_or((None, false), |r| (Some(r.name.clone()), r.started));
         let pending_approvals = commands.iter().filter(|c| c.enabled && c.combo && !c.approved && c.problem.is_none()).count();
         let mut update = self.update.lock().unwrap().view();
@@ -231,6 +259,9 @@ impl Controller {
             macros_supported: cfg!(windows),
             recording,
             recording_started,
+            game_actions: self.game_actions.lock().unwrap().clone(),
+            minecraft_java: config.minecraft_java.map(|m| MinecraftView { host: m.host, port: m.port, player: m.player, has_password: !m.password.is_empty() }),
+            minecraft_default_port: minecraft::DEFAULT_PORT,
             stop_recording_hotkey: STOP_RECORDING_HOTKEY,
             pending_approvals,
             theme: config.theme,
@@ -431,6 +462,127 @@ impl Controller {
         for input in pressed.releases() {
             let _ = input::send(&input);
         }
+    }
+
+    pub fn game_action_names(&self) -> Vec<String> {
+        self.game_actions.lock().unwrap().iter().map(|a| a.name.clone()).collect()
+    }
+
+    fn save_game_actions(&self, change: impl FnOnce(&mut Vec<GameAction>) -> Result<(), String>) -> Result<(), String> {
+        let mut list = self.game_actions.lock().unwrap();
+        let mut changed = list.clone();
+        change(&mut changed)?;
+        game_actions::save(&self.game_actions_path, &changed)?;
+        *list = changed;
+        drop(list);
+        self.game_actions_changed.notify_one();
+        self.emit();
+        Ok(())
+    }
+
+    /// Adds an action, or changes the one called `editing`. Names are unique.
+    pub fn save_game_action(&self, action: GameAction, editing: Option<String>) -> Result<(), String> {
+        let action = game_actions::check(action)?;
+        self.save_game_actions(|list| {
+            if list.iter().any(|a| a.name == action.name && Some(&a.name) != editing.as_ref()) {
+                return Err(format!("There's already an action called {}", action.name));
+            }
+            match list.iter_mut().find(|a| Some(&a.name) == editing.as_ref()) {
+                Some(old) => *old = action,
+                None => list.push(action),
+            }
+            Ok(())
+        })
+    }
+
+    pub fn delete_game_action(&self, name: &str) -> Result<(), String> {
+        self.save_game_actions(|list| {
+            list.retain(|a| a.name != name);
+            Ok(())
+        })
+    }
+
+    /// Saves the Minecraft server's address and the host's name in the game. No password keeps the saved one.
+    pub fn set_minecraft(&self, host: &str, port: u16, password: Option<String>, player: &str) -> Result<(), String> {
+        let host = host.trim();
+        if host.is_empty() || host.contains(char::is_whitespace) {
+            return Err("Enter the server's address, like localhost".into());
+        }
+        if port == 0 {
+            return Err("Enter the RCON port, like 25575".into());
+        }
+        let player = if player.trim().is_empty() { None } else { Some(game_actions::check_player(player)?) };
+        self.update_config(|c| {
+            let saved = c.minecraft_java.take().map(|m| m.password).unwrap_or_default();
+            let password = password.filter(|p| !p.is_empty()).unwrap_or(saved);
+            c.minecraft_java = Some(minecraft::Settings { host: host.to_string(), port, password, player });
+        })
+    }
+
+    /// Logs in to Minecraft and asks who's online, to show the connection works.
+    pub async fn test_minecraft(&self) -> Result<String, String> {
+        let settings = self.config().minecraft_java.ok_or("Set up the Minecraft server first")?;
+        let mut rcon = self.rcon.lock().await;
+        *rcon = None;
+        let mut fresh = Rcon::connect(&settings).await?;
+        let online = fresh.run("list").await?;
+        *rcon = Some((settings, fresh));
+        Ok(online)
+    }
+
+    /// Runs a game action set up on this PC, for `viewer`'s gift of `count`. Pausing or the panic key stops it
+    /// between commands.
+    pub fn run_game_action(self: &Arc<Self>, name: &str, viewer: &str, count: u32) -> Result<(), String> {
+        let result = self.start_game_action(name, viewer, count);
+        self.record(&format!("Action: {name}"), &result);
+        result
+    }
+
+    fn start_game_action(self: &Arc<Self>, name: &str, viewer: &str, count: u32) -> Result<(), String> {
+        let found = self.game_actions.lock().unwrap().iter().find(|a| a.name == name).cloned();
+        let found = found.ok_or_else(|| format!("no game action called {name} on this PC"))?;
+        if self.paused.load(Ordering::SeqCst) {
+            return Err("paused".into());
+        }
+        let settings = self.config().minecraft_java.ok_or("Minecraft isn't set up on this PC")?;
+        // Filled in now, so a missing {player} is refused before anything runs.
+        let values = Values { viewer, count, player: settings.player.as_deref() };
+        let commands = found.commands.iter().map(|c| game_actions::fill(c, &values)).collect::<Result<Vec<_>, _>>()?;
+        let generation = self.macro_generation.load(Ordering::SeqCst);
+        let this = self.clone();
+        let name = name.to_string();
+        tauri::async_runtime::spawn(async move {
+            if let Err(reason) = this.send_rounds(&settings, &commands, found.repeat, found.delay_ms, generation).await {
+                this.record(&format!("Action: {name}"), &Err(reason));
+            }
+        });
+        Ok(())
+    }
+
+    async fn send_rounds(&self, settings: &minecraft::Settings, commands: &[String], rounds: u32, delay_ms: u32, generation: u64) -> Result<(), String> {
+        let mut rcon = self.rcon.lock().await;
+        // A command Minecraft turns down doesn't stop the rest; the first one is reported at the end.
+        let mut refused = None;
+        'rounds: for round in 0..rounds {
+            if round > 0 {
+                tokio::time::sleep(Duration::from_millis(delay_ms.into())).await;
+            }
+            for command in commands {
+                if self.macro_generation.load(Ordering::SeqCst) != generation || self.paused.load(Ordering::SeqCst) {
+                    break 'rounds;
+                }
+                let answer = minecraft_command(&mut rcon, settings, command).await?;
+                if refused.is_none() {
+                    refused = minecraft::refusal(&answer);
+                }
+            }
+        }
+        refused.map_or(Ok(()), |reason| Err(format!("Minecraft said: {reason}")))
+    }
+
+    /// Runs a game action from this window, as a viewer called Tester sending one gift.
+    pub fn try_game_action(self: &Arc<Self>, name: &str) {
+        let _ = self.run_game_action(name, "Tester", 1);
     }
 
     /// Starts recording after a countdown, to give time to get back to the game. Only what happens while the game
@@ -644,6 +796,21 @@ impl Controller {
     }
 }
 
+/// Runs one command over the open connection, or a new one if there's none, the settings changed, or it dropped
+/// (Minecraft restarted, say).
+async fn minecraft_command(rcon: &mut Option<(minecraft::Settings, Rcon)>, settings: &minecraft::Settings, command: &str) -> Result<String, String> {
+    if let Some((_, open)) = rcon.as_mut().filter(|(made_with, _)| made_with == settings) {
+        if let Ok(answer) = open.run(command).await {
+            return Ok(answer);
+        }
+    }
+    *rcon = None;
+    let mut fresh = Rcon::connect(settings).await?;
+    let answer = fresh.run(command).await?;
+    *rcon = Some((settings.clone(), fresh));
+    Ok(answer)
+}
+
 /// Lets go of a combination's key, then its modifiers in reverse order.
 fn release_combo(combo: &Combo) {
     if let Some(scan) = keys::scan_code(&combo.key) {
@@ -663,7 +830,18 @@ fn allowed_keys(saved: &Option<Vec<String>>) -> Vec<String> {
 }
 
 /// What the companion shows for a command: whether it will be pressed here, and if not, why.
-fn command_view(command: &CommandInfo, allowed: &[String], approved: &[String], macro_names: &[String]) -> CommandView {
+fn command_view(command: &CommandInfo, allowed: &[String], approved: &[String], macro_names: &[String], action_names: &[String]) -> CommandView {
+    if let Some(name) = &command.game_action {
+        return CommandView {
+            keyword: command.keyword.clone(),
+            key: command.key.clone(),
+            label: format!("Action: {name}"),
+            enabled: command.enabled,
+            combo: false,
+            approved: false,
+            problem: (!action_names.contains(name)).then(|| format!("no game action called {name} on this PC")),
+        };
+    }
     if let Some(name) = &command.macro_name {
         return CommandView {
             keyword: command.keyword.clone(),
@@ -727,7 +905,7 @@ mod tests {
     use super::*;
 
     fn command(keyword: &str, key: &str) -> CommandInfo {
-        CommandInfo { keyword: keyword.into(), key: key.into(), enabled: true, macro_name: None }
+        CommandInfo { keyword: keyword.into(), key: key.into(), enabled: true, macro_name: None, game_action: None }
     }
     fn keys(list: &[&str]) -> Vec<String> {
         list.iter().map(|k| k.to_string()).collect()
@@ -737,7 +915,7 @@ mod tests {
     fn single_keys_go_by_the_grid_and_combinations_by_approval() {
         let allowed = keys(&["KeyA", "KeyE"]);
         let approved = keys(&["Control+Shift+KeyE"]);
-        let view = |key: &str| command_view(&command("x", key), &allowed, &approved, &[]);
+        let view = |key: &str| command_view(&command("x", key), &allowed, &approved, &[], &[]);
         assert_eq!((view("KeyA").combo, view("KeyA").problem), (false, None));
         assert_eq!(view("KeyD").problem.as_deref(), Some("D isn't allowed on this PC"));
         assert!(view("Control+Shift+KeyE").approved);
@@ -750,9 +928,17 @@ mod tests {
     #[test]
     fn a_macro_command_needs_the_macro_on_this_pc() {
         let spin = CommandInfo { macro_name: Some("spin".into()), ..command("x", "") };
-        assert_eq!(command_view(&spin, &[], &[], &keys(&["spin"])).problem, None);
-        assert_eq!(command_view(&spin, &[], &[], &[]).problem.as_deref(), Some("no macro called spin on this PC"));
-        assert_eq!(command_view(&spin, &[], &[], &[]).label, "Macro: spin");
+        assert_eq!(command_view(&spin, &[], &[], &keys(&["spin"]), &[]).problem, None);
+        assert_eq!(command_view(&spin, &[], &[], &[], &[]).problem.as_deref(), Some("no macro called spin on this PC"));
+        assert_eq!(command_view(&spin, &[], &[], &[], &[]).label, "Macro: spin");
+    }
+
+    #[test]
+    fn a_game_action_command_needs_the_action_on_this_pc() {
+        let rain = CommandInfo { game_action: Some("rain".into()), ..command("x", "") };
+        assert_eq!(command_view(&rain, &[], &[], &[], &keys(&["rain"])).problem, None);
+        assert_eq!(command_view(&rain, &[], &[], &[], &[]).problem.as_deref(), Some("no game action called rain on this PC"));
+        assert_eq!(command_view(&rain, &[], &[], &[], &[]).label, "Action: rain");
     }
 
     #[test]

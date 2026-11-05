@@ -379,6 +379,13 @@
       "when": 1793804629763,
       "tag": "0053_screen_alert_scale",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1793858366152,
+      "tag": "0054_command_game_actions",
+      "breakpoints": true
     }
   ]
 }

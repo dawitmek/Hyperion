@@ -23,6 +23,8 @@ pub struct Config {
     pub auto_update: Option<bool>,
     /// A version the host chose "Not now" for, so it isn't offered again until they check by hand.
     pub skipped_version: Option<String>,
+    /// The Minecraft Java server game actions go to, over RCON.
+    pub minecraft_java: Option<crate::minecraft::Settings>,
 }
 
 impl Config {

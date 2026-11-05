@@ -336,7 +336,7 @@ describe('live pipeline (simulated source)', () => {
     expect((await companion.nextAside()).commands.map((c: { keyword: string }) => c.keyword)).toEqual(['w', 'a', 's', 'd', 'jump', 'run']);
     expect(await companion.nextAside()).toMatchObject({ type: 'theme' });
     await api(cookie, 'POST', '/api/commands', { keyword: 'emote', key: 'Control+Shift+KeyE', holdMs: 100, cooldownMs: 0 });
-    expect((await companion.nextAside()).commands.at(-1)).toEqual({ keyword: 'emote', key: 'Control+Shift+KeyE', enabled: true, macro: null });
+    expect((await companion.nextAside()).commands.at(-1)).toEqual({ keyword: 'emote', key: 'Control+Shift+KeyE', enabled: true, macro: null, gameAction: null });
     const emote = (await api(cookie, 'GET', '/api/commands')).json().find((c: { keyword: string }) => c.keyword === 'emote');
     await api(cookie, 'PATCH', `/api/commands/${emote.id}`, { enabled: false });
     expect((await companion.nextAside()).commands.at(-1)).toMatchObject({ keyword: 'emote', enabled: false });
@@ -489,6 +489,33 @@ describe('modes, gifts and leaderboard (simulated source)', () => {
     expect(found.events).toHaveLength(1);
     expect(found.events[0]).toMatchObject({ viewer: 'owl_123', data: { name: 'Night Owl' } });
     expect((await api(cookie, 'GET', '/api/analytics/streams/latest')).json().summary).toMatchObject({ topPlayer: 'owl_123', topPlayerName: 'Night Owl' });
+  });
+
+  it("runs a PC's game actions by name, with the viewer's name and gift count", async () => {
+    const { cookie, companion } = await liveHost();
+    const post = (body: object) => api(cookie, 'POST', '/api/commands', { holdMs: 100, cooldownMs: 0, ...body });
+
+    // Like macros: the PC reports names, and only while it's connected.
+    companion.send({ type: 'gameActions', names: ['creeper', 7] });
+    await companion.drain();
+    expect((await api(cookie, 'GET', '/api/commands/game-actions')).json()).toEqual(['creeper']);
+
+    const created = await post({ keyword: 'boom', key: '', gameAction: 'creeper' });
+    expect(created.statusCode).toBe(201);
+    expect((await post({ keyword: 'both', key: '', gameAction: 'creeper', macro: 'spin' })).statusCode).toBe(400);
+    await companion.nextAside(); // the list on connect
+    await companion.nextAside(); // the theme
+    expect((await companion.nextAside()).commands.at(-1)).toMatchObject({ keyword: 'boom', key: '', gameAction: 'creeper' });
+
+    await api(cookie, 'POST', '/api/actions', { name: 'Rose creepers', trigger: 'gift', giftName: 'Rose', keyCommandId: created.json().id });
+    await api(cookie, 'POST', '/api/live/simulate', { viewer: 'alice', gift: 'Rose', count: 3 });
+    expect((await companion.next()).action).toMatchObject({ key: '', gameAction: 'creeper', viewer: 'alice', count: 3 });
+    await api(cookie, 'POST', '/api/live/simulate', { viewer: 'bob', text: 'boom' });
+    expect((await companion.next()).action).toMatchObject({ gameAction: 'creeper', viewer: 'bob', count: 1 });
+
+    companion.socket.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect((await api(cookie, 'GET', '/api/commands/game-actions')).json()).toEqual([]);
   });
 
   it("presses a gift action's key once per gift and counts gifts on the leaderboard", async () => {

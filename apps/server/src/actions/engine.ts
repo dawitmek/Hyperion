@@ -74,7 +74,7 @@ export type ActionOutput =
     }
   | { type: 'effect'; effect: ScreenEffect; amount: number; speed: number; color: string | null; screen: string | null }
   | { type: 'tts'; viewer: string; text: string; spoken: string }
-  | { type: 'key'; keyword: string; viewer: string; repeats: number }
+  | { type: 'key'; keyword: string; viewer: string; repeats: number; count: number } // count: the gift's, else 1
   | { type: 'points'; viewer: string; amount: number };
 
 // Read on every call, so dashboard edits apply mid-stream.
@@ -313,7 +313,7 @@ export function createActions(ctx: ActionContext) {
     if (effect && action.effect) out.push({ type: 'effect', effect: pickEffect(action.effect, ctx.random), amount: action.effectAmount, speed: action.effectSpeed, color: action.effectColor, screen: action.screenId });
     if (action.keyword) {
       const repeats = action.repeatWithCount && event.kind === 'gift' ? Math.min(Math.max(event.count, 1), MAX_KEY_REPEATS) : 1;
-      out.push({ type: 'key', keyword: action.keyword, viewer, repeats });
+      out.push({ type: 'key', keyword: action.keyword, viewer, repeats, count: event.kind === 'gift' ? event.count : 1 });
     }
     if (ctx.config.points && action.points > 0) out.push({ type: 'points', viewer, amount: action.points });
     return out;

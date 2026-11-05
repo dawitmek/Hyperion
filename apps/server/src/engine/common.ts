@@ -23,6 +23,7 @@ const toAction = (ctx: EngineContext, command: EngineCommand): KeyAction => ({
   key: command.key,
   holdMs: command.holdMs,
   ...(command.macro && { macro: command.macro }),
+  ...(command.gameAction && { gameAction: command.gameAction }),
 });
 
 // What a command runs, with each start time: a chain's steps, skipping any since deleted or turned off.
@@ -34,7 +35,7 @@ function presses(ctx: EngineContext, command: EngineCommand) {
   });
 }
 
-// How long a command takes, so repeats of it don't overlap. A macro's length is only known to the companion.
+// How long a command takes, so repeats of it don't overlap. A macro's or game action's length is only known to the companion.
 export function spanOf(ctx: EngineContext, command: EngineCommand) {
   return Math.max(0, ...presses(ctx, command).map((p) => p.delayMs + p.command.holdMs));
 }

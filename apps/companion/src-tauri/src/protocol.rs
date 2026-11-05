@@ -10,6 +10,8 @@ pub struct CommandInfo {
     pub enabled: bool,
     #[serde(default, rename = "macro")]
     pub macro_name: Option<String>, // runs this macro instead of pressing a key
+    #[serde(default, rename = "gameAction")]
+    pub game_action: Option<String>, // or this game action
 }
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -22,6 +24,12 @@ pub struct KeyAction {
     pub hold_ms: u64,
     #[serde(default, rename = "macro")]
     pub macro_name: Option<String>,
+    #[serde(default)]
+    pub game_action: Option<String>,
+    #[serde(default)]
+    pub viewer: Option<String>, // who set it off, for a game action's {viewer}
+    #[serde(default)]
+    pub count: Option<u32>, // how many gifts, for {count} and "times the gift count"
 }
 
 #[derive(Deserialize, Debug)]
@@ -58,6 +66,8 @@ pub enum CompanionMessage<'a> {
     Ack { id: &'a str, status: &'a str, #[serde(skip_serializing_if = "Option::is_none")] reason: Option<&'a str> },
     // The names of the macros on this PC, so the dashboard can offer them. The macros themselves stay here.
     Macros { names: Vec<String> },
+    // The game actions set up on this PC, by name. Like macros, their commands stay here.
+    GameActions { names: Vec<String> },
 }
 
 #[cfg(test)]
@@ -86,6 +96,16 @@ mod tests {
         assert!(matches!(action, ServerMessage::Action { ref action } if action.macro_name.as_deref() == Some("spin")));
         let key: ServerMessage = serde_json::from_str(r#"{"type":"action","action":{"id":"1","key":"KeyA","holdMs":300}}"#).unwrap();
         assert!(matches!(key, ServerMessage::Action { ref action } if action.macro_name.is_none()));
+    }
+
+    #[test]
+    fn parses_game_actions() {
+        let action: ServerMessage =
+            serde_json::from_str(r#"{"type":"action","action":{"id":"1","key":"","holdMs":0,"gameAction":"rain","viewer":"Ann","count":5}}"#).unwrap();
+        assert!(matches!(action, ServerMessage::Action { ref action }
+            if action.game_action.as_deref() == Some("rain") && action.viewer.as_deref() == Some("Ann") && action.count == Some(5)));
+        let names = serde_json::to_string(&super::CompanionMessage::GameActions { names: vec!["rain".into()] }).unwrap();
+        assert_eq!(names, r#"{"type":"gameActions","names":["rain"]}"#);
     }
 
     #[test]

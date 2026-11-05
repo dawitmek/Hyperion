@@ -90,8 +90,9 @@ export const commands = pgTable(
     hostId: uuid('host_id').notNull().references(() => hosts.id, { onDelete: 'cascade' }),
     profileId: uuid('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }),
     keyword: text('keyword').notNull(), // stored lowercase
-    key: text('key').notNull(), // empty for a macro or a chain
+    key: text('key').notNull(), // empty for a macro, a game action or a chain
     macro: text('macro'), // the name of a macro recorded on the companion
+    gameAction: text('game_action'), // the name of a game action set up on the companion
     chain: jsonb('chain').$type<ChainStep[]>(), // other commands to run instead of a key
     holdMs: integer('hold_ms').notNull(),
     cooldownMs: integer('cooldown_ms').notNull(),

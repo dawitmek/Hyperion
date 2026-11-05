@@ -2,9 +2,11 @@ mod config;
 mod connection;
 mod controller;
 mod device;
+mod game_actions;
 mod input;
 mod keys;
 mod macros;
+mod minecraft;
 mod protocol;
 mod tiktok;
 mod updater;
@@ -139,6 +141,32 @@ fn try_macro(ctl: Ctl, name: String) {
 }
 
 #[tauri::command]
+fn save_game_action(ctl: Ctl, action: game_actions::GameAction, editing: Option<String>) -> Result<(), String> {
+    ctl.save_game_action(action, editing)
+}
+
+#[tauri::command]
+fn delete_game_action(ctl: Ctl, name: String) -> Result<(), String> {
+    ctl.delete_game_action(&name)
+}
+
+#[tauri::command]
+fn try_game_action(ctl: Ctl, name: String) {
+    ctl.try_game_action(&name);
+}
+
+/// A blank or missing password keeps the saved one, which never comes back to the window.
+#[tauri::command]
+fn set_minecraft(ctl: Ctl, host: String, port: u16, password: Option<String>, player: String) -> Result<(), String> {
+    ctl.set_minecraft(&host, port, password, &player)
+}
+
+#[tauri::command]
+async fn test_minecraft(ctl: Ctl<'_>) -> Result<String, String> {
+    ctl.inner().clone().test_minecraft().await
+}
+
+#[tauri::command]
 fn request_permission() {
     input::request_permission();
 }
@@ -233,6 +261,11 @@ pub fn run() {
             cancel_recording,
             delete_macro,
             try_macro,
+            save_game_action,
+            delete_game_action,
+            try_game_action,
+            set_minecraft,
+            test_minecraft,
             tiktok_sign_in,
             tiktok_status,
             set_auto_update,

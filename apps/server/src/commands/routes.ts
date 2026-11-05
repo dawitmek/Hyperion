@@ -6,12 +6,13 @@ import { requireHost } from '../auth/session.js';
 import { isUniqueViolation } from '../db/client.js';
 import { activeProfile, sendCommandsToCompanions } from '../profiles/active.js';
 
-type CommandBody = { keyword: string; key: string; macro?: string | null; chain?: ChainStep[] | null; holdMs: number; cooldownMs: number; enabled?: boolean; minLevel?: number; cost?: number };
+type CommandBody = { keyword: string; key: string; macro?: string | null; gameAction?: string | null; chain?: ChainStep[] | null; holdMs: number; cooldownMs: number; enabled?: boolean; minLevel?: number; cost?: number };
 
 const fields = {
   keyword: { type: 'string', pattern: '^\\S{1,32}$' },
-  key: { type: 'string', maxLength: 64 }, // a key or combination; keyProblem() checks it. Empty with a macro or chain
+  key: { type: 'string', maxLength: 64 }, // a key or combination; keyProblem() checks it. Empty with a macro, game action or chain
   macro: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
+  gameAction: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
   chain: {
     type: ['array', 'null'],
     maxItems: MAX_CHAIN_STEPS,
@@ -36,10 +37,10 @@ const reservedKeyword = (keyword: string | undefined) =>
       ? `"${POINTS_CHECK}" is reserved for checking points`
       : null;
 
-// A command does exactly one thing: a key, a macro or a chain.
-const kindProblem = ({ key, macro, chain }: Pick<CommandBody, 'key' | 'macro' | 'chain'>) => {
-  const kinds = [key !== '', !!macro, !!chain].filter(Boolean).length;
-  if (kinds !== 1) return 'A command presses a key, runs a macro or runs a chain, one of them';
+// A command does exactly one thing: a key, a macro, a game action or a chain.
+const kindProblem = ({ key, macro, gameAction, chain }: Pick<CommandBody, 'key' | 'macro' | 'gameAction' | 'chain'>) => {
+  const kinds = [key !== '', !!macro, !!gameAction, !!chain].filter(Boolean).length;
+  if (kinds !== 1) return 'A command presses a key, runs a macro, runs a game action or runs a chain, one of them';
   return key ? keyProblem(key) : null;
 };
 
@@ -64,6 +65,8 @@ export async function commandRoutes(app: FastifyInstance) {
 
   // The macros recorded on the host's PCs that are connected now.
   app.get('/macros', async (req) => app.hub.macrosOf(req.hostId));
+  // And the game actions set up on them.
+  app.get('/game-actions', async (req) => app.hub.gameActionsOf(req.hostId));
 
   // Commands of the active profile; switching profiles switches the list.
   app.get('/', async (req) => {

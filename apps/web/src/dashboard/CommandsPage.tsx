@@ -15,9 +15,9 @@ export function CommandsPage({ host, refreshHost }: PageProps) {
   );
 }
 
-type Editable = Pick<Command, 'keyword' | 'key' | 'macro' | 'chain' | 'holdMs' | 'cooldownMs' | 'minLevel' | 'cost'> & { id?: string };
+type Editable = Pick<Command, 'keyword' | 'key' | 'macro' | 'gameAction' | 'chain' | 'holdMs' | 'cooldownMs' | 'minLevel' | 'cost'> & { id?: string };
 
-const emptyCommand: Editable = { keyword: '', key: 'KeyA', macro: null, chain: null, holdMs: 300, cooldownMs: 1000, minLevel: 1, cost: 0 };
+const emptyCommand: Editable = { keyword: '', key: 'KeyA', macro: null, gameAction: null, chain: null, holdMs: 300, cooldownMs: 1000, minLevel: 1, cost: 0 };
 
 type View = 'deck' | 'list';
 const VIEW_KEY = 'hyperion.commands-view';
@@ -44,6 +44,8 @@ function CommandsCard({ host }: { host: Host }) {
   useEffect(() => void load(), [load]);
   const [macros, setMacros] = useState<string[]>([]);
   useEffect(() => void api<string[]>('GET', '/commands/macros').then(setMacros), []);
+  const [gameActions, setGameActions] = useState<string[]>([]);
+  useEffect(() => void api<string[]>('GET', '/commands/game-actions').then(setGameActions), []);
 
   const update = (id: string, patch: Partial<Command>) => guard(() => api('PATCH', `/commands/${id}`, patch).then(load))();
   const remove = (id: string) => guard(() => api('DELETE', `/commands/${id}`).then(() => (setOpen(null), load())))();
@@ -106,14 +108,14 @@ function CommandsCard({ host }: { host: Host }) {
           autoFocus
         />
       </label>
-      <CommandEditor command={draft} commands={commands} macros={macros} gated={gated} points={host.points} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} />
+      <CommandEditor command={draft} commands={commands} macros={macros} gameActions={gameActions} gated={gated} points={host.points} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} />
       {notice}
       <button className="btn btn-primary">Add command</button>
     </form>
   );
   const details = (c: Command) => (
     <>
-      <CommandEditor key={c.id} command={c} commands={commands} macros={macros} gated={gated} points={host.points} onChange={(patch) => update(c.id, patch)} />
+      <CommandEditor key={c.id} command={c} commands={commands} macros={macros} gameActions={gameActions} gated={gated} points={host.points} onChange={(patch) => update(c.id, patch)} />
       {notice}
       <div className="row">
         <ConfirmButton
@@ -231,9 +233,10 @@ function PanelTitle({ title, onClose }: { title: string; onClose: () => void }) 
   );
 }
 
-// The list's version of a tile: a command's key, its macro, or its steps in the order they start.
+// The list's version of a tile: a command's key, its macro or game action, or its steps in the order they start.
 function CommandSummary({ command, commands }: { command: Command; commands: Command[] }) {
   if (command.macro) return <span className="step-chip">{command.macro}</span>;
+  if (command.gameAction) return <span className="step-chip">{command.gameAction}</span>;
   if (!command.chain) return <kbd className="kbd">{keyLabel(command.key)}</kbd>;
   if (command.chain.length === 0) return <span className="muted small">No steps yet</span>;
   const times = [...new Set(command.chain.map((s) => s.delayMs))].sort((a, b) => a - b);
@@ -261,9 +264,10 @@ function CommandSummary({ command, commands }: { command: Command; commands: Com
   );
 }
 
-// What a command does, at a glance: its key, its macro, or a small picture of its chain's timing.
+// What a command does, at a glance: its key, its macro or game action, or a small picture of its chain's timing.
 function TileFace({ command, commands }: { command: Command; commands: Command[] }) {
   if (command.macro) return <span className="step-chip">{command.macro}</span>;
+  if (command.gameAction) return <span className="step-chip">{command.gameAction}</span>;
   if (!command.chain) return <kbd className="kbd">{keyLabel(command.key)}</kbd>;
   const steps = command.chain.map((s) => {
     const step = commands.find((c) => c.enabled && !c.chain && c.keyword === s.keyword);
@@ -286,14 +290,16 @@ function TileFace({ command, commands }: { command: Command; commands: Command[]
   );
 }
 
-type Does = 'key' | 'macro' | 'chain';
-const kindOf = (command: Pick<Command, 'macro' | 'chain'>): Does => (command.chain ? 'chain' : command.macro ? 'macro' : 'key');
+type Does = 'key' | 'macro' | 'gameAction' | 'chain';
+const kindOf = (command: Pick<Command, 'macro' | 'gameAction' | 'chain'>): Does =>
+  command.chain ? 'chain' : command.macro ? 'macro' : command.gameAction ? 'gameAction' : 'key';
 
 // Everything about a command but its keyword. The same for a saved command, which saves as it changes, and a new one.
 function CommandEditor({
   command,
   commands,
   macros,
+  gameActions,
   gated,
   points,
   onChange,
@@ -301,20 +307,28 @@ function CommandEditor({
   command: Editable;
   commands: Command[];
   macros: string[];
+  gameActions: string[];
   gated: boolean;
   points: boolean;
   onChange: (patch: Partial<Command>) => void;
 }) {
   const name = command.keyword || 'the new command';
   const kind = kindOf(command);
-  // The saved macro stays listed while the PC holding it is offline.
+  // The saved macro or game action stays listed while the PC holding it is offline.
   const names = command.macro && !macros.includes(command.macro) ? [command.macro, ...macros] : macros;
-  const kinds: [Does, string][] = [['key', 'Press a key'], ...(names.length > 0 ? ([['macro', 'Run a macro']] as [Does, string][]) : []), ['chain', 'Run a chain']];
+  const actionNames = command.gameAction && !gameActions.includes(command.gameAction) ? [command.gameAction, ...gameActions] : gameActions;
+  const kinds: [Does, string][] = [
+    ['key', 'Press a key'],
+    ...(names.length > 0 ? ([['macro', 'Run a macro']] as [Does, string][]) : []),
+    ...(actionNames.length > 0 ? ([['gameAction', 'Run a game action']] as [Does, string][]) : []),
+    ['chain', 'Run a chain'],
+  ];
   const change = (next: Does) => {
     if (next === kind) return;
-    if (next === 'key') onChange({ key: 'KeyA', macro: null, chain: null });
-    if (next === 'macro') onChange({ key: '', macro: names[0]!, chain: null });
-    if (next === 'chain') onChange({ key: '', macro: null, chain: [] });
+    if (next === 'key') onChange({ key: 'KeyA', macro: null, gameAction: null, chain: null });
+    if (next === 'macro') onChange({ key: '', macro: names[0]!, gameAction: null, chain: null });
+    if (next === 'gameAction') onChange({ key: '', macro: null, gameAction: actionNames[0]!, chain: null });
+    if (next === 'chain') onChange({ key: '', macro: null, gameAction: null, chain: [] });
   };
   return (
     <div
@@ -328,7 +342,9 @@ function CommandEditor({
       }}
     >
       <Seg label={`What ${name} does`} value={kind} options={kinds} onChange={change} />
-      {names.length === 0 && <p className="muted small command-tip">Record a macro in the companion to run it from a command.</p>}
+      {names.length === 0 && actionNames.length === 0 && (
+        <p className="muted small command-tip">Record a macro or set up a Minecraft game action in the companion to run it from a command.</p>
+      )}
       {kind === 'key' && (
         <div className="command-key">
           <KeyCapture value={command.key} label={`Key for ${name}`} onChange={(key) => onChange({ key })} />
@@ -343,6 +359,20 @@ function CommandEditor({
               <option key={n} value={n}>
                 {n}
                 {macros.includes(n) ? '' : ' (PC offline)'}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {kind === 'gameAction' && (
+        <label className="field command-keyword-field">
+          Game action
+          <span className="hint">Its commands are set up in the companion. A gift's count and the viewer's name fill its blanks.</span>
+          <select className="input" value={command.gameAction!} onChange={(e) => onChange({ gameAction: e.target.value })}>
+            {actionNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
+                {gameActions.includes(n) ? '' : ' (PC offline)'}
               </option>
             ))}
           </select>

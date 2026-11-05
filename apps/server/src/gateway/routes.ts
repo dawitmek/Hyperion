@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { RawData, WebSocket } from 'ws';
 import { eq } from 'drizzle-orm';
-import { MAX_MACROS, PROTOCOL_VERSION, type CompanionToServer, type OverlayToServer, type ServerToCompanion } from '@hyperion/shared';
+import { MAX_GAME_ACTIONS, MAX_MACROS, PROTOCOL_VERSION, type CompanionToServer, type OverlayToServer, type ServerToCompanion } from '@hyperion/shared';
 import { companions, hosts, overlayScreens } from '../db/schema.js';
 import { toScreen } from '../screens/routes.js';
 import { sha256 } from '../crypto.js';
@@ -52,6 +52,9 @@ export async function gatewayRoutes(app: FastifyInstance) {
         }
         if (message.type === 'macros' && Array.isArray(message.names)) {
           hub.setMacros(companion.id, message.names.filter((n) => typeof n === 'string').slice(0, MAX_MACROS));
+        }
+        if (message.type === 'gameActions' && Array.isArray(message.names)) {
+          hub.setGameActions(companion.id, message.names.filter((n) => typeof n === 'string').slice(0, MAX_GAME_ACTIONS));
         }
       } catch {
         // Ignore malformed messages from an authenticated companion.

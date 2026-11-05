@@ -5,6 +5,7 @@ import type { ServerToCompanion, ServerToOverlay } from '@hyperion/shared';
 export class Hub {
   private companions = new Map<string, Map<string, WebSocket>>(); // hostId -> companionId -> socket
   private macros = new Map<string, string[]>(); // companionId -> names of the macros on that PC, while connected
+  private gameActions = new Map<string, string[]>(); // companionId -> names of its game actions, while connected
   // hostId -> socket -> its screen, and whether it's the dashboard watching rather than a real overlay
   private overlays = new Map<string, Map<WebSocket, { screenId: string; dashboard: boolean }>>();
 
@@ -17,6 +18,7 @@ export class Hub {
       if (sockets.get(companionId) === socket) {
         sockets.delete(companionId);
         this.macros.delete(companionId);
+        this.gameActions.delete(companionId);
       }
     });
   }
@@ -28,6 +30,15 @@ export class Hub {
   macrosOf(hostId: string) {
     const ids = [...(this.companions.get(hostId)?.keys() ?? [])];
     return [...new Set(ids.flatMap((id) => this.macros.get(id) ?? []))].sort();
+  }
+
+  setGameActions(companionId: string, names: string[]) {
+    this.gameActions.set(companionId, names);
+  }
+
+  gameActionsOf(hostId: string) {
+    const ids = [...(this.companions.get(hostId)?.keys() ?? [])];
+    return [...new Set(ids.flatMap((id) => this.gameActions.get(id) ?? []))].sort();
   }
 
   addOverlay(hostId: string, screenId: string, socket: WebSocket, dashboard = false) {

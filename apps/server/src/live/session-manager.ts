@@ -335,7 +335,7 @@ export class SessionManager {
 
   private perform(hostId: string, session: LiveSession, outputs: ActionOutput[]) {
     for (const output of outputs) {
-      if (output.type === 'key') this.run(hostId, session, keyPresses(session.ctx, output.keyword, output.viewer, output.repeats));
+      if (output.type === 'key') this.run(hostId, session, keyPresses(session.ctx, output.keyword, output.viewer, output.repeats, output.count));
       else if (output.type === 'points') this.stats.record(hostId, output.viewer, { points: output.amount });
       else if (output.type === 'effect') this.hub.sendToOverlays(hostId, effectMessage(output));
       // speak() never throws, but a broken chain would silence every later alert, so guard anyway.
@@ -403,7 +403,11 @@ export class SessionManager {
 
   private fire(hostId: string, session: LiveSession, decision: Decision) {
     const send = (action: Decision['action']) => {
-      if (action.key || action.macro) this.hub.sendToCompanions(hostId, { type: 'action', action });
+      // A game action fills its blanks with the viewer's name and the gift count.
+      if (action.gameAction) {
+        const blanks = { viewer: this.stats.nameOf(hostId, decision.viewer), count: decision.count ?? 1 };
+        this.hub.sendToCompanions(hostId, { type: 'action', action: { ...action, ...blanks } });
+      } else if (action.key || action.macro) this.hub.sendToCompanions(hostId, { type: 'action', action });
     };
     send(decision.action);
     for (const { action, delayMs } of decision.then ?? []) {

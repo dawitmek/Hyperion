@@ -230,6 +230,16 @@ describe('macros and chains', () => {
     expect(engine.handle(comment('a', 'dance'))[0]!.action).toMatchObject({ key: '', macro: 'dance move' });
   });
 
+  it('asks the companion for a game action by name, with the gift count for its blanks', () => {
+    const rain = { ...left, keyword: 'rain', key: '', gameAction: 'creeper rain' };
+    const { engine, ctx } = setup('anarchy', { commands: [rain] });
+    expect(engine.handle(comment('a', 'rain'))[0]!.action).toMatchObject({ key: '', gameAction: 'creeper rain' });
+    expect(keyPresses(ctx, 'rain', 'alice', 2, 7).map((d) => [d.action.gameAction, d.count])).toEqual([
+      ['creeper rain', 7],
+      ['creeper rain', 7],
+    ]);
+  });
+
   it('runs a chain from one comment, each step at its time', () => {
     const { engine } = setup('anarchy', { commands: [run, hop, leap] });
     const [decision, ...others] = engine.handle(comment('a', 'leap'));

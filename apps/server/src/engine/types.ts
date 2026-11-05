@@ -2,8 +2,9 @@ import type { ChainStep, KeyAction, ModeState, ViewerEvent } from '@hyperion/sha
 
 export interface EngineCommand {
   keyword: string; // lowercase
-  key: string; // empty for a macro or chain
+  key: string; // empty for a macro, game action or chain
   macro?: string | null;
+  gameAction?: string | null;
   chain?: ChainStep[] | null;
   holdMs: number;
   cooldownMs: number;
@@ -40,6 +41,7 @@ export interface Decision {
   keyword: string;
   viewer: string; // shown on the overlay
   credit: string[]; // viewer ids whose command count goes up, and who pay its cost
+  count?: number; // the gift's count, when an action fired it, for a game action's {count}
   cost: number; // points each credited viewer pays
   delayMs?: number;
 }

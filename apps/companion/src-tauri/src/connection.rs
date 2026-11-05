@@ -78,11 +78,16 @@ async fn session(
     tx.send(Message::text(hello)).await.map_err(|e| Retry(e.to_string()))?;
 
     let send_macros = |names: Vec<String>| serde_json::to_string(&CompanionMessage::Macros { names }).unwrap();
+    let send_actions = |names: Vec<String>| serde_json::to_string(&CompanionMessage::GameActions { names }).unwrap();
     loop {
         let message = tokio::select! {
             message = rx.next() => message,
             _ = controller.macros_changed.notified() => {
                 tx.send(Message::text(send_macros(controller.macro_names()))).await.map_err(|e| Retry(e.to_string()))?;
+                continue;
+            }
+            _ = controller.game_actions_changed.notified() => {
+                tx.send(Message::text(send_actions(controller.game_action_names()))).await.map_err(|e| Retry(e.to_string()))?;
                 continue;
             }
         };
@@ -93,6 +98,7 @@ async fn session(
                     *backoff = Duration::from_secs(1);
                     controller.set_connection("connected");
                     tx.send(Message::text(send_macros(controller.macro_names()))).await.map_err(|e| Retry(e.to_string()))?;
+                    tx.send(Message::text(send_actions(controller.game_action_names()))).await.map_err(|e| Retry(e.to_string()))?;
                 }
                 Ok(ServerMessage::Profile { name, game_process }) => {
                     let _ = controller.apply_profile(name, game_process);
@@ -105,9 +111,10 @@ async fn session(
                 }
                 Ok(ServerMessage::Error { reason }) => controller.set_connection(format!("server error: {reason}")),
                 Ok(ServerMessage::Action { action }) => {
-                    let result = match &action.macro_name {
-                        Some(name) => controller.run_macro(name),
-                        None => controller.perform(&action.key, action.hold_ms),
+                    let result = match (&action.game_action, &action.macro_name) {
+                        (Some(name), _) => controller.run_game_action(name, action.viewer.as_deref().unwrap_or(""), action.count.unwrap_or(1)),
+                        (None, Some(name)) => controller.run_macro(name),
+                        (None, None) => controller.perform(&action.key, action.hold_ms),
                     };
                     let ack = CompanionMessage::Ack {
                         id: &action.id,

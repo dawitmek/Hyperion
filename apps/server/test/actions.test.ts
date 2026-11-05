@@ -126,7 +126,7 @@ describe('actions', () => {
     ]);
     const lion = engine.handle(gift('Lion', 2));
     expect(texts(lion)).toEqual(['LION x2']);
-    expect(lion).toContainEqual({ type: 'key', keyword: 'jump', viewer: 'alice', repeats: 1 });
+    expect(lion).toContainEqual({ type: 'key', keyword: 'jump', viewer: 'alice', repeats: 1, count: 2 });
     expect(lion).toContainEqual({ type: 'points', viewer: 'alice', amount: 5 });
     expect(texts(engine.handle(gift('Rose')))).toEqual(['any Rose']);
   });
@@ -136,7 +136,7 @@ describe('actions', () => {
     expect(engine.handle(gift('Rose', 50))).toEqual([]);
     const big = engine.handle(gift('Rose', 99, 2));
     expect(texts(big)).toEqual(['big 198 198']);
-    expect(big).toContainEqual({ type: 'key', keyword: 'jump', viewer: 'alice', repeats: MAX_KEY_REPEATS });
+    expect(big).toContainEqual({ type: 'key', keyword: 'jump', viewer: 'alice', repeats: MAX_KEY_REPEATS, count: 99 });
   });
 
   it("fires viewer_likes actions on one viewer's own likes, not the stream's", () => {

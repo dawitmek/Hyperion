@@ -21,12 +21,12 @@ const modes: Record<Mode, (ctx: EngineContext) => Engine> = {
 
 // An action's key press. It skips crowd-mode cooldowns, the rate limit, level requirements and point costs:
 // the action's own trigger, audience and cooldowns decide, and a gift has already paid for it.
-export function keyPresses(ctx: EngineContext, keyword: string, viewer: string, repeats: number): Decision[] {
+export function keyPresses(ctx: EngineContext, keyword: string, viewer: string, repeats: number, count = 1): Decision[] {
   const command = ctx.config.commands.find((c) => c.enabled && c.keyword === keyword);
   if (!command) return [];
   // Spaced out so repeats are separate presses rather than one long hold.
   return Array.from({ length: repeats }, (_, i) =>
-    ({ ...decide(ctx, command, viewer, [], i === 0 ? undefined : i * (spanOf(ctx, command) + REPEAT_GAP_MS)), cost: 0 }),
+    ({ ...decide(ctx, command, viewer, [], i === 0 ? undefined : i * (spanOf(ctx, command) + REPEAT_GAP_MS)), cost: 0, count }),
   );
 }
 

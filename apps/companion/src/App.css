@@ -135,6 +135,13 @@ body { background: var(--aurora), var(--ground); background-repeat: no-repeat; m
 .macro-buttons { display: flex; gap: 6px; margin-left: auto; }
 .notice.recording { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
+/* Game actions */
+.minecraft-setup { gap: 10px; padding: 12px; border-radius: calc(12px * var(--radius-scale, 1)); background: var(--panel2); }
+.minecraft-setup .spacer { flex: 1; }
+.macro-list li > .muted { min-width: 0; overflow-wrap: anywhere; }
+.action-editor { padding-top: 14px; border-top: 1px solid var(--line); }
+.action-editor textarea { min-height: 96px; font: 500 13px ui-monospace, 'SF Mono', Consolas, monospace; resize: vertical; }
+
 /* Updates: the notice under the header and the version line at the bottom. */
 .update-notice { display: flex; flex-direction: column; gap: 8px; }
 .update-notice .btn { margin-top: 0; }

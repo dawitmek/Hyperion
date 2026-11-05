@@ -33,6 +33,9 @@ interface Snapshot {
   recording: string | null;
   recordingStarted: boolean;
   stopRecordingHotkey: string;
+  gameActions: GameAction[];
+  minecraftJava: MinecraftView | null;
+  minecraftDefaultPort: number;
   pendingApprovals: number;
   theme: string | null; // the account's dashboard theme, which this window follows
   themeStyle: string | null;
@@ -69,13 +72,30 @@ interface MacroView {
   steps: number;
 }
 
+// Commands sent straight into a game, set up and kept on this PC.
+interface GameAction {
+  name: string;
+  game: "minecraftJava";
+  commands: string[];
+  repeat: number;
+  delayMs: number;
+}
+
+// The Minecraft server game actions go to. The password stays on the Rust side.
+interface MinecraftView {
+  host: string;
+  port: number;
+  player: string | null;
+  hasPassword: boolean;
+}
+
 interface GameWindow {
   title: string;
   process: string;
   icon: string | null; // PNG data URL
 }
 
-type Run = (command: string, args?: Record<string, unknown>) => Promise<void>;
+type Run = (command: string, args?: Record<string, unknown>) => Promise<boolean>; // whether it worked
 
 // Key codes as people know them: KeyA -> A, ArrowLeft -> ←, Digit1 -> 1, Control+Shift+KeyE -> Ctrl+Shift+E.
 function keyLabel(code: string): string {
@@ -97,8 +117,8 @@ export default function App() {
   // Runs a Rust command and shows its error, if any.
   const run: Run = (command, args) =>
     invoke(command, args)
-      .then(() => setError(null))
-      .catch((e) => setError(String(e)));
+      .then(() => (setError(null), true))
+      .catch((e) => (setError(String(e)), false));
 
   // The dashboard's look (see @hyperion/theme), as the server last sent it: theme, style, and light or dark.
   useEffect(() => {
@@ -541,6 +561,7 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
 
       <Commands state={state} run={run} />
       <Macros state={state} run={run} />
+      <GameActions state={state} run={run} />
 
       <TiktokVoices serverUrl={state.serverUrl} />
 
@@ -911,6 +932,246 @@ function Macros({ state, run }: { state: Snapshot; run: Run }) {
       )}
       {state.macrosSupported && <p className="muted small">Some online games treat recorded input as cheating. Check the game's rules first.</p>}
     </section>
+  );
+}
+
+// Commands Hyperion sends straight into Minecraft over RCON, set up and kept here. The dashboard can only ask for one by
+// name, and a viewer's name only fills a blank in a command written here.
+function GameActions({ state, run }: { state: Snapshot; run: Run }) {
+  const [draft, setDraft] = useState<(GameAction & { editing: string | null }) | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const ready = state.minecraftJava?.hasPassword ?? false;
+  const blank = (): GameAction & { editing: string | null } => ({ editing: null, name: "", game: "minecraftJava", commands: [], repeat: 1, delayMs: 0 });
+
+  return (
+    <section className="card stack" aria-labelledby="game-actions-title">
+      <SectionHead id="game-actions-title" icon="play" hue="green" title="Game actions">
+        Commands sent straight into Minecraft Java, like summoning a creeper or giving an item, run from a command on the
+        dashboard. They're set up and kept on this PC, and stop if you pause.
+      </SectionHead>
+      <MinecraftSetup state={state} run={run} />
+      {state.gameActions.length > 0 && (
+        <ul className="macro-list">
+          {state.gameActions.map((a) => (
+            <li key={a.name}>
+              <strong className="command-word">{a.name}</strong>
+              <span className="muted small">{actionSummary(a)}</span>
+              <span className="macro-buttons">
+                <button className="btn btn-sm" disabled={!ready} title={ready ? "Runs now, as a viewer called Tester" : "Set up Minecraft first"} onClick={() => run("try_game_action", { name: a.name })}>
+                  Try
+                </button>
+                <button className="btn btn-sm" onClick={() => setDraft({ ...a, editing: a.name })}>
+                  Edit
+                </button>
+                {deleting === a.name ? (
+                  <button className="btn btn-sm btn-danger" onClick={() => run("delete_game_action", { name: a.name }).then(() => setDeleting(null))}>
+                    Delete it
+                  </button>
+                ) : (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setDeleting(a.name)}>
+                    Delete
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {draft ? (
+        <ActionEditor draft={draft} setDraft={setDraft} run={run} />
+      ) : (
+        <div className="row">
+          <button className="btn" onClick={() => setDraft(blank())}>
+            New game action
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// "2 commands, 5 times, 0.5 s apart"
+function actionSummary(a: GameAction) {
+  const parts = [a.commands.length === 1 ? a.commands[0]! : `${a.commands.length} commands`];
+  if (a.repeat > 1) parts.push(`${a.repeat} times${a.delayMs > 0 ? `, ${a.delayMs / 1000} s apart` : ""}`);
+  return parts.join(", ");
+}
+
+function ActionEditor({
+  draft,
+  setDraft,
+  run,
+}: {
+  draft: GameAction & { editing: string | null };
+  setDraft: (d: (GameAction & { editing: string | null }) | null) => void;
+  run: Run;
+}) {
+  const [commands, setCommands] = useState(draft.commands.join("\n"));
+  const [saving, setSaving] = useState(false);
+  const { editing, ...action } = draft;
+  return (
+    <form
+      className="stack action-editor"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setSaving(true);
+        // A refused action keeps the editor open, with the reason shown at the top.
+        run("save_game_action", { action: { ...action, commands: commands.split("\n") }, editing })
+          .then((saved) => saved && setDraft(null))
+          .finally(() => setSaving(false));
+      }}
+    >
+      <h3 className="command-group-title">{editing ? `Edit ${editing}` : "New game action"}</h3>
+      <label className="field">
+        Name
+        <input value={draft.name} maxLength={64} required placeholder="creeper" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+      </label>
+      <label className="field">
+        Commands, one per line
+        <textarea
+          rows={4}
+          value={commands}
+          spellCheck={false}
+          placeholder={"execute at {player} run summon creeper ~ ~ ~\nsay {viewer} sent a creeper!"}
+          onChange={(e) => setCommands(e.target.value)}
+        />
+        <span className="hint">
+          Blanks filled in for you: {"{viewer}"} (who sent it), {"{count}"} (how many gifts) and {"{player}"} (your Minecraft
+          name). Commands run as the server, so use <code>execute at {"{player}"} run …</code> for anything near you.
+        </span>
+      </label>
+      <div className="pair-fields">
+        <label className="field">
+          Repeat
+          <input type="number" min={1} max={100} value={draft.repeat} onChange={(e) => setDraft({ ...draft, repeat: Number(e.target.value) })} />
+        </label>
+        <label className="field">
+          Seconds between repeats
+          <input
+            type="number"
+            min={0}
+            max={10}
+            step={0.1}
+            value={draft.delayMs / 1000}
+            onChange={(e) => setDraft({ ...draft, delayMs: Math.round(Number(e.target.value) * 1000) })}
+          />
+        </label>
+      </div>
+      <div className="row">
+        <button className="btn btn-primary" disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={() => setDraft(null)}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// Where the Minecraft server is. Game actions use its RCON, which only servers have, so the host plays on one.
+function MinecraftSetup({ state, run }: { state: Snapshot; run: Run }) {
+  const saved = state.minecraftJava;
+  const [open, setOpen] = useState(!saved);
+  const [host, setHost] = useState(saved?.host ?? "localhost");
+  const [port, setPort] = useState(saved?.port ?? state.minecraftDefaultPort);
+  const [password, setPassword] = useState("");
+  const [player, setPlayer] = useState(saved?.player ?? "");
+  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const check = () => {
+    setTesting(true);
+    setTest(null);
+    invoke<string>("test_minecraft")
+      .then((online) => setTest({ ok: true, text: `Connected. ${online}` }))
+      .catch((e) => setTest({ ok: false, text: String(e) }))
+      .finally(() => setTesting(false));
+  };
+
+  return (
+    <div className="stack minecraft-setup">
+      <div className="row">
+        <strong>Minecraft Java</strong>
+        {saved?.hasPassword ? (
+          <span className="muted small">
+            {saved.host}:{saved.port}
+            {saved.player ? `, playing as ${saved.player}` : ""}
+          </span>
+        ) : (
+          <span className="tag amber">Not set up</span>
+        )}
+        <span className="spacer" />
+        {saved?.hasPassword && (
+          <button className="btn btn-sm" disabled={testing} onClick={check}>
+            {testing ? "Testing…" : "Test connection"}
+          </button>
+        )}
+        {!open && (
+          <button className="btn btn-sm btn-ghost" onClick={() => setOpen(true)}>
+            Change
+          </button>
+        )}
+      </div>
+      {test && (
+        <p className={`notice ${test.ok ? "info" : "error"}`} role="status">
+          {test.text}
+        </p>
+      )}
+      {open && (
+        <form
+          className="stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            run("set_minecraft", { host, port, password: password || null, player }).then((saved) => {
+              if (saved) {
+                setOpen(false);
+                setPassword("");
+              }
+            });
+          }}
+        >
+          <p className="muted small">
+            Game actions go through RCON, which Minecraft servers have and singleplayer doesn't, so play on a server, on this PC
+            or hosted. In its <code>server.properties</code> set <code>enable-rcon=true</code>, an <code>rcon.password</code> and{" "}
+            <code>rcon.port</code>, then restart it.
+          </p>
+          <div className="pair-fields">
+            <label className="field">
+              Server address
+              <input value={host} required onChange={(e) => setHost(e.target.value)} />
+            </label>
+            <label className="field">
+              RCON port
+              <input type="number" min={1} max={65535} value={port} required onChange={(e) => setPort(Number(e.target.value))} />
+            </label>
+            <label className="field">
+              RCON password
+              <input
+                type="password"
+                value={password}
+                autoComplete="off"
+                required={!saved?.hasPassword}
+                placeholder={saved?.hasPassword ? "Saved. Type to change it" : ""}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+            <label className="field">
+              Your Minecraft name
+              <input value={player} maxLength={16} placeholder="For {player}" onChange={(e) => setPlayer(e.target.value)} />
+            </label>
+          </div>
+          <div className="row">
+            <button className="btn btn-primary">Save</button>
+            {saved && (
+              <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+    </div>
   );
 }
 

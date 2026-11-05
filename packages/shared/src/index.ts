@@ -166,9 +166,12 @@ export interface RoomStats {
 // A key press the server asks the companion to perform. The companion enforces its own whitelist.
 export interface KeyAction {
   id: string;
-  key: string; // e.g. "KeyA", "Space" (KeyboardEvent.code names); empty for a macro
+  key: string; // e.g. "KeyA", "Space" (KeyboardEvent.code names); empty for a macro or game action
   holdMs: number;
   macro?: string; // instead of a key: the name of a macro recorded on the companion
+  gameAction?: string; // or of a game action set up on it, with who set it off and how many gifts, for its blanks
+  viewer?: string;
+  count?: number;
 }
 
 // A command that runs other commands: each step starts delayMs after the chain does, so 0 and 0 run together.
@@ -179,6 +182,7 @@ export interface ChainStep {
 }
 export const MAX_CHAIN_STEPS = 8;
 export const MAX_MACROS = 100; // on one PC
+export const MAX_GAME_ACTIONS = 100; // on one PC
 export const MAX_CHAIN_DELAY_MS = 10_000;
 
 // Companion <-> server, over /ws/companion.
@@ -187,7 +191,9 @@ export type CompanionToServer =
   | { type: 'hello'; token: string; protocol: number; hostname?: string; platform?: string }
   | { type: 'ack'; id: string; status: 'done' | 'rejected'; reason?: string }
   // The macros recorded on this PC, by name: they stay on the PC, so a server can only ask for one, never write one.
-  | { type: 'macros'; names: string[] };
+  | { type: 'macros'; names: string[] }
+  // Likewise the game actions set up on it: commands it sends into a game such as Minecraft.
+  | { type: 'gameActions'; names: string[] };
 
 // `profile` tells the companion which game to target (null: keep the host's own choice).
 // Older companions ignore message types they don't know, so this needs no protocol bump.
@@ -198,7 +204,7 @@ export type ServerToCompanion =
   | { type: 'profile'; name: string; gameProcess: string | null }
   // The active profile's commands, so the companion can show them and ask for its own OK on key combinations.
   // Sent on connect and whenever commands or the active profile change.
-  | { type: 'commands'; commands: { keyword: string; key: string; enabled: boolean; macro: string | null }[] }
+  | { type: 'commands'; commands: { keyword: string; key: string; enabled: boolean; macro: string | null; gameAction: string | null }[] }
   // The host's dashboard theme, which the companion follows. Sent on connect and when the host changes it.
   | { type: 'theme'; theme: UiTheme; style: UiThemeStyle; mode: UiMode };
 

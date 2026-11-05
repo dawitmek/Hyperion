@@ -128,6 +128,7 @@ export interface Command {
   keyword: string;
   key: string;
   macro: string | null;
+  gameAction: string | null;
   chain: ChainStep[] | null;
   holdMs: number;
   cooldownMs: number;
