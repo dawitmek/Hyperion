@@ -3,10 +3,14 @@ import { and, desc, eq } from 'drizzle-orm';
 import { streams } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { streamerKey } from '../leaderboard/stats.js';
-import { streamActivity, streamDetail, streamSummaries, viewerActivity, viewerProfile } from './queries.js';
+import { streamActivity, streamDetail, streamSummaries, streamViewers, viewerActivity, viewerProfile } from './queries.js';
 
 const VIEWER_KINDS = ['comment', 'gift', 'like', 'follow', 'share', 'join', 'subscribe', 'emote'];
 const HISTORY_KINDS = [...VIEWER_KINDS, 'command'];
+// A stream's activity can also show the commands chat asked for but didn't get, when looking into one command.
+const STREAM_KINDS = [...HISTORY_KINDS, 'refused'];
+// The most viewers a stream's report lists.
+const STREAM_VIEWERS = 500;
 const kindList = (kinds: string[]) => ({ type: 'string', pattern: `^(${kinds.join('|')})(,(${kinds.join('|')}))*$` });
 const UUID = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 // A live stream's report reads every event it has, and each open Live page asks for it every 10 s. It's built at
@@ -56,7 +60,9 @@ export async function analyticsRoutes(app: FastifyInstance) {
     { schema: { params: viewerParams, querystring: { type: 'object', additionalProperties: false, properties: { account } } } },
     async (req) => {
       await app.live.flushRecording(req.hostId);
-      return viewerProfile(db, req.hostId, req.params.viewer, req.query.account ? streamerKey(req.query.account) : await app.stats.streamerOf(req.hostId), req.query.account);
+      const profile = await viewerProfile(db, req.hostId, req.params.viewer, req.query.account ? streamerKey(req.query.account) : await app.stats.streamerOf(req.hostId), req.query.account);
+      // A viewer on the stream right now may have a newer picture than the saved one, or none saved yet.
+      return { ...profile, avatar: app.stats.avatarOf(req.hostId, req.params.viewer) ?? profile.avatar };
     },
   );
 
@@ -103,8 +109,23 @@ export async function analyticsRoutes(app: FastifyInstance) {
     },
   );
 
-  // What viewers did during a stream: a page of it, newest first, or what's new since `after`.
-  app.get<{ Querystring: { stream?: string; before?: number; after?: number; kinds?: string; viewer?: string; limit?: number } }>(
+  // Everyone who took part in a stream, and what they did.
+  app.get<{ Params: { id: string } }>(
+    '/streams/:id/viewers',
+    { schema: { params: { type: 'object', properties: { id: streamParam } } } },
+    async (req, reply) => {
+      const id = await resolve(req.hostId, req.params.id);
+      if (!id) return notFound(reply);
+      if (id === app.live.currentStreamId(req.hostId)) await app.live.flushRecording(req.hostId);
+      return streamViewers(db, req.hostId, id, STREAM_VIEWERS);
+    },
+  );
+
+  // What viewers did during a stream: a page of it, newest first, or what's new since `after`. `from` and `to` (ms) keep
+  // to a stretch of it; `viewerId` to exactly one viewer (`viewer` searches), `keyword` to one command, `gift` to one gift.
+  app.get<{
+    Querystring: { stream?: string; before?: number; after?: number; from?: number; to?: number; kinds?: string; viewer?: string; viewerId?: string; keyword?: string; gift?: string; limit?: number };
+  }>(
     '/activity',
     {
       schema: {
@@ -115,8 +136,13 @@ export async function analyticsRoutes(app: FastifyInstance) {
             stream: streamParam,
             before: { type: 'integer', minimum: 0 },
             after: { type: 'integer', minimum: 0 },
-            kinds: kindList(VIEWER_KINDS),
+            from: { type: 'integer', minimum: 0 },
+            to: { type: 'integer', minimum: 0 },
+            kinds: kindList(STREAM_KINDS),
             viewer: { type: 'string', maxLength: 64 },
+            viewerId: { type: 'string', minLength: 1, maxLength: 64 },
+            keyword: { type: 'string', minLength: 1, maxLength: 64 },
+            gift: { type: 'string', minLength: 1, maxLength: 100 },
             limit: { type: 'integer', minimum: 1, maximum: 200 },
           },
         },
@@ -129,8 +155,13 @@ export async function analyticsRoutes(app: FastifyInstance) {
       const events = await streamActivity(db, id, {
         before: req.query.before,
         after: req.query.after,
+        from: req.query.from,
+        to: req.query.to,
         kinds: req.query.kinds?.split(',') ?? VIEWER_KINDS,
         viewer: req.query.viewer?.trim() || undefined,
+        viewerId: req.query.viewerId,
+        keyword: req.query.keyword,
+        gift: req.query.gift,
         limit: req.query.limit ?? 100,
       });
       return {

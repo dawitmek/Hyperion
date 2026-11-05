@@ -495,11 +495,12 @@ describe('modes, gifts and leaderboard (simulated source)', () => {
     const { cookie, companion, say } = await liveHost();
     const commands = (await api(cookie, 'GET', '/api/commands')).json();
     const jump = commands.find((c: any) => c.keyword === 'jump');
-    const created = await api(cookie, 'POST', '/api/actions', { name: 'Rose jumps', trigger: 'gift', giftName: 'Rose', keyCommandId: jump.id, repeatWithCount: true });
+    // A coin amount is only for any gift: one gift is that gift, whatever it's worth.
+    const created = await api(cookie, 'POST', '/api/actions', { name: 'Rose jumps', trigger: 'gift', giftName: 'Rose', minDiamonds: 100, keyCommandId: jump.id, repeatWithCount: true });
     expect(created.statusCode).toBe(201);
     // A key press puts the action in its command's profile.
     const profile = (await api(cookie, 'GET', '/api/profiles')).json()[0];
-    expect(created.json()).toMatchObject({ giftName: 'rose', profileId: profile.id });
+    expect(created.json()).toMatchObject({ giftName: 'rose', minDiamonds: null, profileId: profile.id });
 
     await api(cookie, 'POST', '/api/live/simulate', { viewer: 'alice', gift: 'Rose', count: 2 });
     expect(await companion.next()).toMatchObject({ action: { key: 'Space' } });
@@ -509,8 +510,8 @@ describe('modes, gifts and leaderboard (simulated source)', () => {
 
     await app.live.flushStats();
     expect((await api(cookie, 'GET', '/api/leaderboard')).json()).toEqual([
-      { viewer: 'alice', commands: 0, gifts: 2, xp: 2, points: 0, avatar: null, name: null }, // 1 diamond per simulated gift
-      { viewer: 'bob', commands: 1, gifts: 0, xp: 1, points: 0, avatar: null, name: null },
+      { viewer: 'alice', commands: 0, gifts: 2, coins: 2, xp: 2, points: 0, avatar: null, name: null }, // 1 diamond per simulated gift
+      { viewer: 'bob', commands: 1, gifts: 0, coins: 0, xp: 1, points: 0, avatar: null, name: null },
     ]);
     const me = (await api(cookie, 'GET', '/api/auth/me')).json();
     const overlay = connect(`/ws/overlay?token=${me.overlayToken}`);
@@ -630,7 +631,7 @@ describe('viewer progression', () => {
     await api(cookie, 'POST', '/api/live/simulate', { viewer: 'alice', text: 'a' });
     expect(await companion.next()).toMatchObject({ type: 'action', action: { key: 'KeyA' } });
     await app.live.flushStats();
-    expect((await api(cookie, 'GET', '/api/leaderboard')).json()).toEqual([{ viewer: 'alice', commands: 2, gifts: 1, xp: 12, points: 0, avatar: null, name: null }]);
+    expect((await api(cookie, 'GET', '/api/leaderboard')).json()).toEqual([{ viewer: 'alice', commands: 2, gifts: 1, coins: 10, xp: 12, points: 0, avatar: null, name: null }]);
   });
 });
 
@@ -854,12 +855,19 @@ describe('looks', () => {
     expect(await companion.nextAside()).toEqual({ type: 'theme', theme: 'solar-dusk', style: 'colors', mode: 'dark' });
     expect((await api(cookie, 'GET', '/api/auth/me')).json()).toMatchObject({ uiTheme: 'solar-dusk', uiThemeStyle: 'colors', uiMode: 'dark' });
     expect((await api(cookie, 'PATCH', '/api/settings', { uiMode: 'dim' })).statusCode).toBe(400);
+    // The default theme as it first was.
+    await api(cookie, 'PATCH', '/api/settings', { uiTheme: 'legacy' });
+    expect(await companion.nextAside()).toEqual({ type: 'theme', theme: 'legacy', style: 'colors', mode: 'dark' });
 
     expect((await api(cookie, 'GET', '/api/auth/me')).json().liveLayout).toBeNull();
     const liveLayout = { main: ['feed'], side: ['players', 'commands'] };
     await api(cookie, 'PATCH', '/api/settings', { liveLayout });
     expect((await api(cookie, 'GET', '/api/auth/me')).json()).toMatchObject({ liveLayout });
     expect((await api(cookie, 'PATCH', '/api/settings', { liveLayout: { main: ['nope'], side: [] } })).statusCode).toBe(400);
+    // The recap after a stream is on until turned off.
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().streamRecap).toBe(true);
+    await api(cookie, 'PATCH', '/api/settings', { streamRecap: false });
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().streamRecap).toBe(false);
     expect((await api(cookie, 'PATCH', '/api/settings', { liveLayout: { main: ['feed', 'feed'], side: [] } })).statusCode).toBe(400);
     await api(cookie, 'PATCH', '/api/settings', { liveLayout: null });
     expect((await api(cookie, 'GET', '/api/auth/me')).json().liveLayout).toBeNull();
@@ -950,6 +958,29 @@ describe('stream activity and analytics', () => {
     const older = (await api(cookie, 'GET', `/api/analytics/activity?before=${activity.events[1].id}&limit=2`)).json();
     expect(older.events.map((e: { kind: string }) => e.kind)).toEqual(['gift', 'comment']);
 
+    // Drilling into one command (fired and refused), one gift, and a stretch of time.
+    const command = (await api(cookie, 'GET', '/api/analytics/activity?kinds=command,refused&keyword=a')).json();
+    expect(command.events.map((e: { kind: string; viewer: string }) => `${e.kind}:${e.viewer}`)).toEqual(['refused:alice', 'command:alice']);
+    const rose = (await api(cookie, 'GET', '/api/analytics/activity?kinds=gift&gift=Rose')).json();
+    expect(rose.events).toHaveLength(1);
+    expect((await api(cookie, 'GET', '/api/analytics/activity?kinds=gift&gift=Galaxy')).json().events).toEqual([]);
+    const giftAt = activity.events[2].at;
+    const around = (await api(cookie, 'GET', `/api/analytics/activity?from=${giftAt}&to=${giftAt + 1}`)).json();
+    // Events a moment apart can share a millisecond, so this checks the window rather than an exact list.
+    expect(around.events.map((e: { kind: string }) => e.kind)).toContain('gift');
+    expect(around.events.every((e: { at: number }) => e.at >= giftAt && e.at < giftAt + 1)).toBe(true);
+    expect(around.events.length).toBeLessThan(activity.events.length);
+
+    // Everyone who took part, biggest gifter first.
+    const viewers = (await api(cookie, 'GET', `/api/analytics/streams/${activity.stream.id}/viewers`)).json();
+    expect(viewers.map((v: { viewer: string }) => v.viewer)).toEqual(['bob', 'alice', 'carol']);
+    expect(viewers[0]).toMatchObject({ gifts: 3, coins: 3, followed: true, commands: 0 });
+    expect(viewers[1]).toMatchObject({ comments: 3, commands: 1, coins: 0, followed: false });
+    expect(viewers[2]).toMatchObject({ likes: 15 });
+    const bobs = (await api(cookie, 'GET', '/api/analytics/activity?viewerId=bob')).json();
+    expect(bobs.events.map((e: { kind: string }) => e.kind)).toEqual(['follow', 'gift']);
+    expect((await api(cookie, 'GET', '/api/analytics/activity?viewerId=bo')).json().events).toEqual([]);
+
     const detail = (await api(cookie, 'GET', '/api/analytics/streams/latest')).json();
     const gifts = (await api(cookie, 'GET', '/api/actions/gifts')).json() as Gift[];
     expect(gifts.length).toBeGreaterThan(100); // TikTok's catalog
@@ -1038,11 +1069,11 @@ describe('media and actions', () => {
     const list = async (cookie: string) => (await api(cookie, 'GET', '/api/media')).json() as MediaItem[];
     const shared = await list(a.cookie);
     expect(shared.map((m) => m.name)).toEqual(BUILT_IN_MEDIA.map((m) => m.name).sort());
-    expect(shared.every((m) => m.builtIn && m.kind === 'image')).toBe(true);
+    expect(shared.every((m) => m.builtIn && m.kind === BUILT_IN_MEDIA.find((b) => b.name === m.name)!.kind)).toBe(true);
     expect((await list(b.cookie)).map((m) => m.id)).toEqual(shared.map((m) => m.id));
     expect((await app.db.execute(sql`select count(*)::int as n from media`))[0]!.n).toBe(BUILT_IN_MEDIA.length); // one copy each
 
-    const dance = shared[0]!;
+    const dance = shared.find((m) => m.name === 'Dance')!;
     expect((await app.inject({ method: 'GET', url: `/media/${dance.id}` })).headers['content-type']).toBe('image/gif');
     const action = (await api(a.cookie, 'POST', '/api/actions', { name: 'Hi', trigger: 'follow', mediaId: dance.id })).json();
     expect(action.mediaId).toBe(dance.id);
@@ -1056,6 +1087,27 @@ describe('media and actions', () => {
 
     expect((await api(a.cookie, 'DELETE', '/api/media/hidden')).statusCode).toBe(204);
     expect(await list(a.cookie)).toHaveLength(BUILT_IN_MEDIA.length);
+
+    // A built-in sound file: its own volume, and removing it lets go of it as an action's sound.
+    const chad = shared.find((m) => m.name === 'Giga Chad')!;
+    expect(chad.kind).toBe('audio');
+    const loud = (await api(a.cookie, 'POST', '/api/actions', { name: 'Chad', trigger: 'follow', text: 'hi', sound: null, soundMediaId: chad.id })).json();
+    expect((await api(a.cookie, 'PATCH', '/api/settings', { soundVolumes: { [chad.id]: 30 } })).statusCode).toBe(200);
+    await api(a.cookie, 'PATCH', '/api/settings', { soundVolumes: { 'not-a-sound': 50, chime: 80 } }); // unknown ones are dropped
+    const me = (await api(a.cookie, 'GET', '/api/auth/me')).json();
+    expect(me.soundVolumes).toEqual({ [chad.id]: 30, chime: 80 });
+    const overlay = connect(`/ws/overlay?token=${me.overlayToken}`);
+    await overlay.drain(100);
+    await api(a.cookie, 'POST', `/api/actions/${loud.id}/test`);
+    expect((await overlay.drain()).find((m) => m.type === 'alert')).toMatchObject({ soundFile: chad.id, soundFileVolume: 30 });
+    await api(a.cookie, 'DELETE', `/api/media/${chad.id}`);
+    await api(a.cookie, 'DELETE', `/api/media/${dance.id}`);
+    expect((await api(a.cookie, 'GET', '/api/actions')).json().find((x: { id: string }) => x.id === loud.id).soundMediaId).toBeNull();
+    // Bringing back only sounds leaves the removed picture removed.
+    await api(a.cookie, 'DELETE', '/api/media/hidden?kind=audio');
+    const ids = (await list(a.cookie)).map((m) => m.id);
+    expect(ids).toContain(chad.id);
+    expect(ids).not.toContain(dance.id);
   });
 
   it('uploads files, serves them publicly, and refuses anything that is not a picture, video or sound', async () => {
@@ -1073,6 +1125,27 @@ describe('media and actions', () => {
     expect((await api(cookie, 'GET', '/api/media')).json()).toHaveLength(1);
     expect((await api(cookie, 'DELETE', `/api/media/${ding.id}`)).statusCode).toBe(204);
     expect((await app.inject({ method: 'GET', url: `/media/${ding.id}` })).statusCode).toBe(404);
+  });
+
+  it('turns built-in sounds up or down, and removes them from actions', async () => {
+    const { cookie } = await signUp();
+    const me = (await api(cookie, 'GET', '/api/auth/me')).json();
+    expect(me).toMatchObject({ hiddenSounds: [], soundVolumes: {} });
+    expect((await api(cookie, 'PATCH', '/api/settings', { soundVolumes: { chime: 101 } })).statusCode).toBe(400);
+    expect((await api(cookie, 'PATCH', '/api/settings', { hiddenSounds: ['boom'] })).statusCode).toBe(400);
+    const follow = (await api(cookie, 'GET', '/api/actions')).json().find((a: any) => a.sound === 'chime');
+
+    await api(cookie, 'PATCH', '/api/settings', { soundVolumes: { chime: 40 } });
+    const overlay = connect(`/ws/overlay?token=${me.overlayToken}`);
+    await overlay.drain(100);
+    await api(cookie, 'POST', `/api/actions/${follow.id}/test`);
+    expect((await overlay.drain()).find((m) => m.type === 'alert')).toMatchObject({ sound: 'chime', soundVolume: 40 });
+
+    await api(cookie, 'PATCH', '/api/settings', { hiddenSounds: ['chime'] });
+    expect((await api(cookie, 'GET', '/api/auth/me')).json()).toMatchObject({ hiddenSounds: ['chime'], soundVolumes: { chime: 40 } });
+    expect((await api(cookie, 'GET', '/api/actions')).json().find((a: any) => a.id === follow.id).sound).toBeNull();
+    await api(cookie, 'PATCH', '/api/settings', { hiddenSounds: [] });
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().hiddenSounds).toEqual([]);
   });
 
   it('runs actions with files, audiences, points and new TikTok events while live', async () => {
@@ -1234,10 +1307,19 @@ describe('widgets and goals', () => {
     const widgets = [
       { type: 'goals', spot: 'top' },
       { type: 'level_ups', spot: 'right' },
-      { type: 'firework', spot: 'top', minDiamonds: 100, effect: 'confetti', effectSpeed: 200 },
+      { type: 'coin_jar', spot: 'top-left', minDiamonds: 100 },
     ];
     expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { widgets })).json().widgets).toEqual(widgets);
+    // A coin jar can start over with a bigger target once it's full, and do without its shine.
+    const jar = [{ type: 'coin_jar', spot: 'bottom-right', minDiamonds: 500, raise: { kind: 'plus', by: 250 }, shine: false }];
+    expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { widgets: jar })).json().widgets).toEqual(jar);
+    expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { widgets: [{ ...jar[0], raise: { kind: 'times', by: 1 } }] })).statusCode).toBe(400);
+    expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { widgets: [{ ...jar[0], shine: true }] })).statusCode).toBe(400);
     expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { widgets: [{ type: 'clock', spot: 'top' }] })).statusCode).toBe(400);
+    // A widget can be resized, apart from its look.
+    const sized = [{ type: 'chat', spot: 'bottom-right', size: 150 }];
+    expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { widgets: sized })).json().widgets).toEqual(sized);
+    expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { widgets: [{ ...sized[0], size: 300 }] })).statusCode).toBe(400);
     // A widget can be placed by hand, anywhere on the screen.
     const placed = [{ type: 'chat', spot: 'bottom-right', pos: { x: 12.5, y: 60 } }];
     expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { widgets: placed })).json().widgets).toEqual(placed);
@@ -1247,7 +1329,7 @@ describe('widgets and goals', () => {
     const likes = (await api(cookie, 'POST', '/api/goals', { name: ' Likes ', metric: 'likes', target: 100 })).json();
     expect(likes).toMatchObject({ name: 'Likes', metric: 'likes', target: 100, enabled: true });
     // A new goal gets a widget of its own on the main screen.
-    expect((await api(cookie, 'GET', '/api/screens')).json()[0].widgets).toEqual([...widgets, { type: 'goals', spot: 'top', goalId: likes.id }]);
+    expect((await api(cookie, 'GET', '/api/screens')).json()[0].widgets).toEqual([...widgets, { type: 'goals', spot: 'left', goalId: likes.id }]);
     expect((await api(cookie, 'POST', '/api/goals', { name: 'x', metric: 'hugs', target: 1 })).statusCode).toBe(400);
     const raise = { kind: 'times', by: 1.5 };
     expect((await api(cookie, 'PATCH', `/api/goals/${likes.id}`, { raise })).json()).toMatchObject({ raise });
@@ -1256,6 +1338,16 @@ describe('widgets and goals', () => {
     expect((await api(cookie, 'PATCH', `/api/goals/${likes.id}`, { raise: null })).json()).toMatchObject({ raise: null });
     expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { leaderboardSize: 10 })).json().leaderboardSize).toBe(10);
     expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { leaderboardSize: 16 })).statusCode).toBe(400);
+    // A screen's alerts can be resized.
+    expect(main.alertScale).toBe(100);
+    expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { alertScale: 150 })).json().alertScale).toBe(150);
+    expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { alertScale: 300 })).statusCode).toBe(400);
+    await api(cookie, 'PATCH', `/api/screens/${main.id}`, { alertScale: 100 });
+    // A screen can be laid out for a portrait stream, as phones show it.
+    expect(main.layout).toBe('desktop');
+    expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { layout: 'phone' })).json().layout).toBe('phone');
+    expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { layout: 'tablet' })).statusCode).toBe(400);
+    await api(cookie, 'PATCH', `/api/screens/${main.id}`, { layout: 'desktop' });
     const linkStyles = { chat: WIDGET_PRESETS[0]!.style };
     expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { linkStyles })).json().linkStyles).toEqual(linkStyles);
     expect((await api(cookie, 'PATCH', `/api/screens/${main.id}`, { linkStyles: { chat: { ...WIDGET_PRESETS[0]!.style, font: 'nope' } } })).statusCode).toBe(400);

@@ -133,9 +133,11 @@ export async function actionRoutes(app: FastifyInstance) {
   // Trigger-specific fields only mean something for their trigger; anything else is cleared. Files, commands and
   // profiles must be the host's own. A key press puts the action in its command's profile.
   async function check(hostId: string, a: Omit<Row, 'id' | 'hostId' | 'position'>): Promise<Problem | Partial<Row>> {
+    const giftName = a.trigger === 'gift' ? a.giftName?.trim().toLowerCase() || null : null;
     const fixed: Partial<Row> = {
-      giftName: a.trigger === 'gift' ? a.giftName?.trim().toLowerCase() || null : null,
-      minDiamonds: a.trigger === 'gift' ? a.minDiamonds : null,
+      giftName,
+      minDiamonds: a.trigger === 'gift' && !giftName ? a.minDiamonds : null, // one gift is that gift, whatever it's worth
+
       likeStep: a.trigger === 'likes' || a.trigger === 'viewer_likes' ? a.likeStep : null,
       likeGrowth: a.trigger === 'likes' || a.trigger === 'viewer_likes' ? a.likeGrowth : null,
       command: a.trigger === 'command' ? a.command?.trim().toLowerCase() || null : null,
@@ -323,7 +325,9 @@ export async function actionRoutes(app: FastifyInstance) {
         action: action.id,
         text,
         sound: action.sound,
+        soundVolume: action.soundVolume,
         soundFile: action.soundMediaId,
+        soundFileVolume: action.soundFileVolume,
         media: action.media,
         speak: action.speak,
         durationMs: action.durationMs,

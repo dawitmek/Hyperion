@@ -1,0 +1,1 @@
+ALTER TABLE "hosts" ADD COLUMN "stream_recap" boolean DEFAULT true NOT NULL;

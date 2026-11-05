@@ -202,45 +202,79 @@ export interface BarRow {
   detail?: string; // extra line in the tooltip
 }
 
-// Horizontal bars, longest first, each labelled at its end.
-export function BarList({ rows, series, caption }: { rows: BarRow[]; series: Series[]; caption: string }) {
+// Horizontal bars, longest first, each labelled at its end. `onSelect` makes each row a button; `selected` picks one out.
+export function BarList({
+  rows,
+  series,
+  caption,
+  selected,
+  onSelect,
+}: {
+  rows: BarRow[];
+  series: Series[];
+  caption: string;
+  selected?: number;
+  onSelect?: (index: number) => void;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(...rows.map((r) => r.values.reduce((a, b) => a + b, 0)), 1);
 
   return (
     <figure className="chart">
       {series.length > 1 && <Legend series={series} />}
-      <ul className="bar-list" onMouseLeave={() => setHover(null)} aria-hidden="true">
+      {/* Clickable rows are buttons that say everything themselves; otherwise the table below speaks for the bars. */}
+      <ul className={`bar-list ${onSelect ? 'selectable' : ''}`} onMouseLeave={() => setHover(null)} aria-hidden={onSelect ? undefined : true} aria-label={onSelect ? caption : undefined}>
         {rows.map((r, i) => (
-          <li key={r.label} onMouseEnter={() => setHover(i)} className={hover === i ? 'hover' : ''}>
-            <span className="bar-label">
-              {r.icon}
-              {r.label}
-            </span>
-            <span className="bar-track">
+          <li key={r.label} onMouseEnter={() => setHover(i)} className={`${hover === i ? 'hover' : ''} ${selected === i ? 'selected' : ''}`} onClick={onSelect && (() => onSelect(i))}>
+            {onSelect ? (
+              <button
+                type="button"
+                className="bar-label"
+                aria-pressed={selected === i}
+                aria-label={`${r.label}: ${r.value}${r.detail ? `. ${r.detail}` : ''}`}
+                onClick={(e) => (e.stopPropagation(), onSelect(i))}
+              >
+                {r.icon}
+                {r.label}
+              </button>
+            ) : (
+              <span className="bar-label">
+                {r.icon}
+                {r.label}
+              </span>
+            )}
+            <span className="bar-track" aria-hidden="true">
               {r.values.map((v, s) =>
                 v > 0 ? <i key={s} className={`slot-${series[s]!.slot}`} style={{ width: `${(v / max) * 100}%` }} /> : null,
               )}
             </span>
-            <span className="bar-value">{r.value}</span>
-            {hover === i && r.detail && <span className="chart-tip bar-tip">{r.detail}</span>}
+            <span className="bar-value" aria-hidden="true">
+              {r.value}
+            </span>
+            {hover === i && r.detail && (
+              <span className="chart-tip bar-tip" aria-hidden="true">
+                {r.detail}
+              </span>
+            )}
           </li>
         ))}
       </ul>
-      <table className="sr-only">
-        <caption>{caption}</caption>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.label}>
-              <th>{r.label}</th>
-              <td>
-                {r.value}
-                {r.detail ? `. ${r.detail}` : ''}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {!onSelect && (
+        <table className="sr-only">
+          <caption>{caption}</caption>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.label}>
+                <th>{r.label}</th>
+                <td>
+                  {r.value}
+                  {r.detail ? `. ${r.detail}` : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </figure>
   );
 }

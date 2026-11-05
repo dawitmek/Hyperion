@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Reac
 import { levelForXp, MODES, type LeaderboardEntry, type LiveCard, type ModeState, type StreamStats } from '@hyperion/shared';
 import { api, type Command, type LiveStatus } from '../api';
 import { Link } from '../router';
-import { Card, ErrorNotice, keyLabel, Seg, useError, ViewerAvatar } from '../ui';
+import { Card, ErrorNotice, keyLabel, Seg, Spinner, useError, ViewerAvatar } from '../ui';
 import { Icon, type IconName } from '../icons';
 import type { PageProps } from './Dashboard';
 import type { Activity, ActivityKind } from './live-feed';
@@ -35,7 +35,7 @@ function liveCard(id: LiveCard, props: PageProps, editing: boolean): ReactNode {
     case 'feed':
       return <ActivityFeed status={props.status} />;
     case 'stream':
-      if (props.status.live) return <ThisStream />;
+      if (props.status.live) return <ThisStream stats={props.feed.stats} />;
       return editing ? <p className="empty">Shows while you're live.</p> : null;
     case 'mode':
       return <ModeCard {...props} />;
@@ -61,6 +61,7 @@ function StreamTile({ id, stats }: { id: Exclude<LiveCard, 'commands' | 'feed' |
     likes: { icon: 'heart', hue: 'red', value: stats?.likes },
     follows: { icon: 'follower', hue: 'pink', value: stats?.follows },
     shares: { icon: 'share', hue: 'violet', value: stats?.shares },
+    subscriptions: { icon: 'star', hue: 'orange', value: stats?.subscriptions },
     'top-gift': { icon: 'trophy', hue: 'orange', value: stats?.topGift?.viewer, note: stats?.topGift && `${stats.topGift.gift}, ${stats.topGift.diamonds.toLocaleString()} coins` },
     'last-follower': { icon: 'follower', hue: 'pink', value: stats?.lastFollower ?? undefined },
   } satisfies Record<typeof id, { icon: IconName; hue: string; value: number | string | undefined; note?: string | null }>;
@@ -72,7 +73,7 @@ function StreamTile({ id, stats }: { id: Exclude<LiveCard, 'commands' | 'feed' |
   );
 }
 
-function useNow(intervalMs: number) {
+export function useNow(intervalMs: number) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), intervalMs);
@@ -81,7 +82,7 @@ function useNow(intervalMs: number) {
   return now;
 }
 
-function elapsed(ms: number) {
+export function elapsed(ms: number) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600);
   const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
@@ -170,7 +171,7 @@ function StatusTiles({ host, status, setStatus, feed }: PageProps) {
         </div>
       </div>
 
-      <div className="tile-actions">
+      <div className="deck-tile-actions">
         {status.live ? (
           <button className="btn btn-danger btn-lg" onClick={stop}>
             {status.source === 'simulated' ? 'Stop test' : 'Stop'}
@@ -361,6 +362,7 @@ function CommandsOverview({ host, refreshHost, feed }: PageProps) {
           Edit commands
         </Link>
       </div>
+      {!commands && <Spinner label="Loading commands" />}
       {commands && enabled.length === 0 && (
         <p className="empty">
           No commands are on, so chat can't press anything. <Link href="/dashboard/commands">Add a command</Link>
@@ -654,15 +656,72 @@ function TestConsole() {
 }
 
 // Charts for the stream that's on now; past streams are on the Analytics page.
-function ThisStream() {
+// The stream's numbers so far. `stats` comes over the live feed, so those update the moment something happens; chat and
+// key presses come from the stream's report, every few seconds.
+const DETAILS_KEY = 'hyperion-this-stream-details';
+const readDetails = () => {
+  try {
+    return localStorage.getItem(DETAILS_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+// The headline numbers and chat chart; the rest of the numbers and command usage behind Show details, remembered.
+function ThisStream({ stats }: { stats: StreamStats | null }) {
   const detail = useStreamDetail('latest', true);
+  const now = useNow(5000);
+  const [more, setMore] = useState(readDetails);
+  const toggleMore = () => {
+    setMore(!more);
+    try {
+      localStorage.setItem(DETAILS_KEY, more ? '0' : '1');
+    } catch {
+      // not remembered, that's all
+    }
+  };
+  if (detail === undefined) {
+    return (
+      <Card title="This stream" description="Updates as it happens. Past streams are on the Analytics page.">
+        <Spinner />
+      </Card>
+    );
+  }
   if (!detail) return null;
+  const s = detail.summary;
+  const minutes = Math.max(1, (now - s.startedAt) / 60_000);
+  const n = (value: number | undefined) => (value === undefined ? '—' : value.toLocaleString());
+  // A rate means little in the first few minutes, so it waits until there's enough to go on.
+  const rate = (value: number | undefined) => (value === undefined || minutes < 3 ? undefined : `${(value / minutes).toFixed(value / minutes < 10 ? 1 : 0)} a minute`);
   return (
-    <Card title="This stream" description="Updates every few seconds. Past streams are on the Analytics page.">
+    <Card title="This stream" description="Updates as it happens. Past streams are on the Analytics page.">
+      <div className="stat-tiles live-metrics">
+        <Stat icon="eye" hue="sky" label="Viewers now" value={n(stats?.viewers)} note={stats ? `peak ${n(stats.peakViewers)}` : undefined} />
+        <Stat icon="follower" hue="pink" label="New followers" value={n(stats?.follows)} note={stats?.lastFollower ? `latest ${stats.lastFollower}` : undefined} />
+        <Stat icon="heart" hue="red" label="Likes" value={n(stats?.likes)} note={rate(stats?.likes)} />
+        <Stat icon="coin" hue="teal" label="Coins" value={n(stats?.diamonds)} note={stats ? `${n(stats.gifts)} gift${stats.gifts === 1 ? '' : 's'}` : undefined} />
+        {more && (
+          <>
+            <Stat icon="share" hue="violet" label="Shares" value={n(stats?.shares)} />
+            <Stat icon="star" hue="orange" label="Subscriptions" value={n(stats?.subscriptions)} />
+            <Stat icon="crowd" hue="indigo" label="Interactors" value={n(stats?.interactors ?? s.participants)} note={`${n(s.newParticipants)} new`} />
+            <Stat icon="chat" hue="sky" label="Chat messages" value={n(s.comments)} note={rate(s.comments)} />
+            <Stat icon="commands" hue="violet" label="Key presses" value={n(s.commands)} note={s.topCommand ? `mostly ${s.topCommand}` : rate(s.commands)} />
+          </>
+        )}
+      </div>
       <h3>Chat over the stream</h3>
       <ActivityChart detail={detail} />
-      <h3>Commands</h3>
-      <CommandUsage detail={detail} />
+      {more && (
+        <>
+          <h3>Commands</h3>
+          <CommandUsage detail={detail} />
+        </>
+      )}
+      <button className="btn btn-ghost btn-sm details-toggle" aria-expanded={more} onClick={toggleMore}>
+        {more ? 'Show less' : 'Show details'}
+        <Icon name="chevron" size={14} />
+      </button>
     </Card>
   );
 }

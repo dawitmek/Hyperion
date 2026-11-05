@@ -104,6 +104,15 @@ export function ErrorNotice({ error }: { error: string | null }) {
   ) : null;
 }
 
+// Shown while something loads. It fades in after a moment, so a quick load never flashes it.
+export function Spinner({ label = 'Loading', page }: { label?: string; page?: boolean }) {
+  return (
+    <div className={`spinner ${page ? 'spinner-page' : ''}`} role="status" aria-label={label}>
+      <span />
+    </div>
+  );
+}
+
 export function Card({
   title,
   description,
@@ -211,6 +220,106 @@ export function NumberCell({
         void save(() => onSave(n));
       }}
     />
+  );
+}
+
+// A step that suits the number: tens in the hundreds, hundreds in the thousands. Going down uses the number below, so
+// 1,000 steps down to 990 rather than 900.
+const niceStep = (n: number) => Math.max(1, 10 ** (Math.floor(Math.log10(Math.max(1, n))) - 1));
+const shortAmount = (n: number) => (n >= 1000 && n % 1000 === 0 ? `${n / 1000}k` : n.toLocaleString());
+
+// A whole number with − and + either side of it, its unit inside the box, and one-click amounts underneath. The
+// buttons and arrow keys step by an amount that suits the number; typing saves on Enter or leaving the box.
+export function AmountField({
+  value,
+  min,
+  max,
+  unit,
+  label,
+  presets,
+  onSave,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  unit?: string;
+  label: string;
+  presets?: number[];
+  onSave: (n: number) => void;
+}) {
+  const [typing, setTyping] = useState<string | null>(null);
+  const focused = useRef(false); // just now, by a click: its mouseup would put the caret in and drop the selection
+  const undo = useRef(false); // Escape: leave without saving what was typed
+  const clamp = (n: number) => Math.min(max, Math.max(min, n));
+  const up = () => {
+    const step = niceStep(value);
+    onSave(clamp(Math.floor(value / step) * step + step));
+  };
+  const down = () => {
+    const step = niceStep(value - 1);
+    onSave(clamp(Math.ceil(value / step) * step - step));
+  };
+  const commit = () => {
+    if (undo.current) return (undo.current = false), setTyping(null);
+    if (typing === null) return;
+    const n = Number(typing.replace(/[,\s]/g, ''));
+    setTyping(null);
+    if (typing.trim() && Number.isFinite(n)) onSave(clamp(Math.round(n)));
+  };
+  return (
+    <div className="amount-field">
+      <div className="amount-box">
+        <button type="button" aria-label={`Less ${label.toLowerCase()}`} disabled={value <= min} onClick={down}>
+          −
+        </button>
+        <label className="amount-value">
+          <input
+            type="text"
+            inputMode="numeric"
+            aria-label={label}
+            value={typing ?? value.toLocaleString()}
+            size={Math.max(3, (typing ?? value.toLocaleString()).length)}
+            // Typing replaces the number rather than adding to it.
+            onFocus={(e) => (setTyping(String(value)), (focused.current = true), requestAnimationFrame(() => e.target.select()))}
+            onMouseUp={(e) => {
+              if (!focused.current) return;
+              focused.current = false;
+              e.preventDefault();
+              e.currentTarget.select();
+            }}
+            onChange={(e) => setTyping(e.target.value)}
+            onBlur={() => ((focused.current = false), commit())}
+            onKeyDown={(e) => {
+              focused.current = false;
+              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Escape') {
+                e.preventDefault(); // undoes the typing, not the window it's in
+                undo.current = true;
+                e.currentTarget.blur();
+              }
+              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                setTyping(null);
+                (e.key === 'ArrowUp' ? up : down)();
+              }
+            }}
+          />
+          {unit && <span>{unit}</span>}
+        </label>
+        <button type="button" aria-label={`More ${label.toLowerCase()}`} disabled={value >= max} onClick={up}>
+          +
+        </button>
+      </div>
+      {presets && (
+        <div className="amount-presets" role="group" aria-label={`${label} presets`}>
+          {presets.map((n) => (
+            <button key={n} type="button" className={`chip ${n === value ? 'on' : ''}`} aria-pressed={n === value} onClick={() => onSave(n)}>
+              {shortAmount(n)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -109,8 +109,11 @@ export interface Host {
   uiThemeStyle: UiThemeStyle;
   uiMode: UiMode;
   liveLayout: LiveLayout | null; // the Live page's cards; null: DEFAULT_LIVE_LAYOUT
+  streamRecap: boolean; // sum up a stream when it ends
   alertStyle: AlertStyle | null; // the look of alerts whose action has none; null: DEFAULT_ALERT_STYLE
   alertStyle2: AlertStyle | null; // a second look actions can share; null: same as alertStyle
+  hiddenSounds: AlertSound[]; // built-in sounds the host removed
+  soundVolumes: Record<string, number>; // percent, by built-in sound or built-in file id; missing: 100
   // Active profile
   profileId: string;
   profileName: string;

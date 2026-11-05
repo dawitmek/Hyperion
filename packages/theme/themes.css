@@ -6,6 +6,31 @@
 @import '@fontsource-variable/dm-sans';
 @import '@fontsource-variable/plus-jakarta-sans';
 
+/* Legacy: the default theme as it first was, with plain black and white where it now takes its indigo: the main
+   button, lines and tracks, the sidebar, and dark mode's backgrounds. Everything else is the default's. */
+:root[data-theme='legacy'] {
+  --line: rgba(15, 16, 30, 0.08);
+  --line-strong: rgba(15, 16, 30, 0.16);
+  --meter: #dcdee6;
+  --solid-bg: #0b0c12;
+  --solid-ink: #ffffff;
+  --sb-bg: #07080c;
+  --sb-muted: #9aa0b4;
+  --sb-line: rgba(255, 255, 255, 0.08);
+  --sb-hover: rgba(255, 255, 255, 0.05);
+  --sb-active: rgba(255, 255, 255, 0.07);
+}
+:root:where([data-mode='dark'])[data-theme='legacy'] {
+  --ground: #07080c;
+  --panel: #0d0f15;
+  --panel2: #141720;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --meter: #262a36;
+  --solid-bg: #ffffff;
+  --solid-ink: #0b0c10;
+}
+
 /* Solar Dusk: warm parchment and amber in light mode, stone and orange in dark. */
 :root[data-theme='solar-dusk'] {
   --ground: #fdfbf7;

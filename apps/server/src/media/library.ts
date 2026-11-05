@@ -19,10 +19,10 @@ const idOf = (file: string) => {
 // files arrive by themselves and ones it dropped go.
 export async function seedLibrary(db: Db) {
   const ids: string[] = [];
-  for (const { file, name } of BUILT_IN_MEDIA) {
+  for (const { file, name, kind } of BUILT_IN_MEDIA) {
     const data = await readFile(fileURLToPath(new URL(file, folder)));
     const type = sniff(data);
-    if (!type) throw new Error(`Built-in file ${file} isn't a type overlays can show`);
+    if (type?.kind !== kind) throw new Error(`Built-in file ${file} isn't the ${kind} it's listed as`);
     const row = { name, ...type, size: data.length, data };
     const id = idOf(file);
     ids.push(id);

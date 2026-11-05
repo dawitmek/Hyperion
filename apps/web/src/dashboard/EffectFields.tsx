@@ -6,7 +6,7 @@ import { EFFECT_LABELS, ScreenEffects } from '../effects';
 import { GiftBus } from '../overlay-widgets';
 import { Seg } from '../ui';
 
-export function EffectOptions() {
+function EffectOptions() {
   return (
     <>
       {SCREEN_EFFECTS.map((effect) => (
@@ -19,7 +19,7 @@ export function EffectOptions() {
   );
 }
 
-export const speedLabel = (speed: number) => `${speed / 100}×`;
+const speedLabel = (speed: number) => `${speed / 100}×`;
 const SPEEDS = EFFECT_SPEEDS.map((speed) => [String(speed), speedLabel(speed)] as const);
 
 const COLORS = [

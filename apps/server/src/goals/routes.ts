@@ -1,16 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { GOAL_METRICS, MAX_WIDGETS, type Goal, type GoalMetric, type GoalRaise } from '@hyperion/shared';
+import { GOAL_METRICS, GOAL_WIDGET_SPOT, MAX_WIDGETS, type Goal, type GoalMetric, type GoalRaise } from '@hyperion/shared';
 import { goals, overlayScreens } from '../db/schema.js';
-import { toScreen } from '../screens/routes.js';
+import { raiseSchema, toScreen } from '../screens/routes.js';
 import { requireHost } from '../auth/session.js';
-
-const raiseBy = (kind: GoalRaise['kind'], by: object) => ({
-  type: 'object',
-  additionalProperties: false,
-  required: ['kind', 'by'],
-  properties: { kind: { const: kind }, by },
-});
 
 type Body = { name: string; metric: GoalMetric; target: number; enabled?: boolean; raise?: GoalRaise | null };
 const fields = {
@@ -18,14 +11,7 @@ const fields = {
   metric: { enum: GOAL_METRICS },
   target: { type: 'integer', minimum: 1, maximum: 100_000_000 },
   enabled: { type: 'boolean' },
-  raise: {
-    anyOf: [
-      { type: 'null' },
-      raiseBy('times', { type: 'number', exclusiveMinimum: 1, maximum: 100 }),
-      raiseBy('plus', { type: 'integer', minimum: 1, maximum: 100_000_000 }),
-      raiseBy('to', { type: 'integer', minimum: 1, maximum: 100_000_000 }),
-    ],
-  },
+  raise: { anyOf: [{ type: 'null' }, ...raiseSchema.anyOf] },
 } as const;
 const idParam = { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } as const;
 const MAX_GOALS = 10;
@@ -51,7 +37,7 @@ export async function goalRoutes(app: FastifyInstance) {
       // Each goal gets a widget of its own on the main screen, to place on its own; grouping them is opt-in.
       const [main] = await db.select().from(overlayScreens).where(and(eq(overlayScreens.hostId, req.hostId), eq(overlayScreens.main, true)));
       if (main && main.widgets.length < MAX_WIDGETS) {
-        const widgets = [...main.widgets, { type: 'goals' as const, spot: 'top' as const, goalId: created!.id }];
+        const widgets = [...main.widgets, { type: 'goals' as const, spot: GOAL_WIDGET_SPOT, goalId: created!.id }];
         const [updated] = await db.update(overlayScreens).set({ widgets }).where(eq(overlayScreens.id, main.id)).returning();
         app.hub.sendToScreen(req.hostId, main.id, { type: 'screen', screen: toScreen(updated!) });
       }

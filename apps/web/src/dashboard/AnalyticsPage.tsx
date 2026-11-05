@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { StreamDetail, StreamSummary } from '@hyperion/shared';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { StreamDetail, StreamSummary, StreamViewer } from '@hyperion/shared';
 import { api, type LiveStatus } from '../api';
-import { Card } from '../ui';
+import { Card, Spinner, ViewerAvatar } from '../ui';
 import { Icon, type IconName } from '../icons';
+import { Link, navigate, usePath } from '../router';
 import { BarList, ColumnChart, Sparkline, type Series } from './charts';
 import type { PageProps } from './Dashboard';
 import { ActivityChart, clock, CommandUsage, duration, useStreamDetail } from './StreamInsights';
-import { ActivityFeed } from './ActivityFeed';
+import { ActivityFeed, type ActivityFocus } from './ActivityFeed';
 import { ViewerLink } from './ViewerPanel';
 
 const TREND_STREAMS = 20;
@@ -14,18 +15,26 @@ const TREND_STREAMS = 20;
 const shortDate = (at: number) => new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' });
 const longDate = (at: number) => new Date(at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const number = (n: number) => n.toLocaleString();
+const streamPath = (id: string) => `/dashboard/analytics/${id}`;
+const VIEWER_ROWS = 10; // shown before "Show all"
+const VIEWERS_REFRESH_MS = 10_000;
 
 export function AnalyticsPage({ host, status }: PageProps) {
+  const path = usePath();
+  const opened = /^\/dashboard\/analytics\/([0-9a-f-]{36})\/?$/.exec(path)?.[1]; // one stream's own page
   const [streams, setStreams] = useState<StreamSummary[] | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
   const [account, setAccount] = useState<string | null>(null); // '' is every TikTok account; null is the one in settings
   useEffect(() => {
     const load = () => api<StreamSummary[]>('GET', '/analytics/streams').then(setStreams);
     void load();
     // A stream that starts or ends changes the list.
   }, [status.live]);
+  // An opened stream's report is asked for alongside the list, not after it. Whether it's live, so kept refreshed, is
+  // only known once the list is in.
+  const detail = useStreamDetail(opened, opened !== undefined && streams?.find((s) => s.id === opened)?.endedAt === null);
 
-  if (!streams) return null;
+  if (!streams) return <Spinner />;
+  if (opened) return <StreamPage id={opened} streams={streams} detail={detail} status={status} />;
   if (streams.length === 0) {
     return (
       <Card title="No streams yet" description="Your TikTok streams show up here once you go live. Test mode isn't counted.">
@@ -38,13 +47,12 @@ export function AnalyticsPage({ host, status }: PageProps) {
   const mine = accounts.find((a) => a.toLowerCase() === host.tiktokUsername?.toLowerCase()) ?? '';
   const picked = account ?? mine;
   const shown = picked ? streams.filter((s) => s.tiktokUsername === picked) : streams;
-  const current = shown.find((s) => s.id === selected) ?? shown[0];
   return (
     <div className="stack">
       {accounts.length > 1 && (
         <label className="row account-picker">
           <span className="muted">TikTok account</span>
-          <select className="input" value={picked} onChange={(e) => (setAccount(e.target.value), setSelected(null))}>
+          <select className="input" value={picked} onChange={(e) => setAccount(e.target.value)}>
             <option value="">All accounts</option>
             {accounts.map((a) => (
               <option key={a} value={a}>
@@ -54,14 +62,52 @@ export function AnalyticsPage({ host, status }: PageProps) {
           </select>
         </label>
       )}
-      {current && (
+      {shown.length > 0 && (
         <>
           <Overview streams={shown} />
-          <Trends streams={shown} selected={current.id} onSelect={setSelected} />
-          <StreamList streams={shown} showAccount={accounts.length > 1 && !picked} selected={current.id} onSelect={setSelected} />
-          <StreamReport key={current.id} summary={current} previous={shown[shown.indexOf(current) + 1]} status={status} />
+          <Trends streams={shown} onSelect={(id) => navigate(streamPath(id))} />
+          <StreamList streams={shown} showAccount={accounts.length > 1 && !picked} />
         </>
       )}
+    </div>
+  );
+}
+
+// One stream's full report, on a page of its own, with a way back and to the streams either side on the same account.
+function StreamPage({ id, streams, detail, status }: { id: string; streams: StreamSummary[]; detail: StreamDetail | null | undefined; status: LiveStatus }) {
+  const summary = streams.find((s) => s.id === id);
+  if (!summary) {
+    return (
+      <Card title="Stream not found" description="It may have been a test session, which isn't kept here, or it belongs to another account.">
+        <Link href="/dashboard/analytics" className="btn">
+          Back to all streams
+        </Link>
+      </Card>
+    );
+  }
+  const same = streams.filter((s) => s.tiktokUsername === summary.tiktokUsername);
+  const at = same.indexOf(summary);
+  const newer = same[at - 1];
+  const older = same[at + 1];
+  return (
+    <div className="stack">
+      <nav className="stream-nav" aria-label="Streams">
+        <Link href="/dashboard/analytics" className="btn btn-ghost btn-sm">
+          <span aria-hidden="true">‹</span> All streams
+        </Link>
+        <span className="spacer" />
+        {older && (
+          <Link href={streamPath(older.id)} className="btn btn-sm" title={longDate(older.startedAt)}>
+            <span aria-hidden="true">‹</span> Older stream
+          </Link>
+        )}
+        {newer && (
+          <Link href={streamPath(newer.id)} className="btn btn-sm" title={longDate(newer.startedAt)}>
+            Newer stream <span aria-hidden="true">›</span>
+          </Link>
+        )}
+      </nav>
+      <StreamReport key={id} detail={detail} previous={older} status={status} />
     </div>
   );
 }
@@ -109,7 +155,7 @@ function Overview({ streams }: { streams: StreamSummary[] }) {
 }
 
 // Across streams: who watched and who interacted (new and returning), and diamonds received. Oldest on the left; clicking a column opens that stream.
-function Trends({ streams, selected, onSelect }: { streams: StreamSummary[]; selected: string; onSelect: (id: string) => void }) {
+function Trends({ streams, selected, onSelect }: { streams: StreamSummary[]; selected?: string; onSelect: (id: string) => void }) {
   const recent = streams.slice(0, TREND_STREAMS).reverse();
   const every = Math.max(1, Math.ceil(recent.length / 6));
   const last = recent.length - 1;
@@ -179,30 +225,10 @@ function Trends({ streams, selected, onSelect }: { streams: StreamSummary[]; sel
   );
 }
 
-function StreamList({
-  streams,
-  showAccount,
-  selected,
-  onSelect,
-}: {
-  streams: StreamSummary[];
-  showAccount: boolean;
-  selected: string;
-  onSelect: (id: string) => void;
-}) {
-  // A stream picked from a chart may be scrolled out of the list. This moves the list only, never the page.
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const list = box.current!.getBoundingClientRect();
-    const head = box.current!.querySelector('thead')!.getBoundingClientRect().height;
-    const row = box.current!.querySelector('tr.selected')?.getBoundingClientRect();
-    if (!row) return;
-    if (row.top < list.top + head) box.current!.scrollTop -= list.top + head - row.top;
-    else if (row.bottom > list.bottom) box.current!.scrollTop += row.bottom - list.bottom;
-  }, [selected]);
+function StreamList({ streams, showAccount }: { streams: StreamSummary[]; showAccount: boolean }) {
   return (
-    <Card title="Streams" description="Pick one for its details below.">
-      <div className="table-wrap stream-scroll" ref={box}>
+    <Card title="Streams" description="Open one for its full report: who took part, its busiest moments, and everything that happened. Bars on the charts above open theirs too.">
+      <div className="table-wrap stream-scroll">
         <table className="table stream-table">
           <thead>
             <tr>
@@ -221,11 +247,12 @@ function StreamList({
           </thead>
           <tbody>
             {streams.map((s) => (
-              <tr key={s.id} className={s.id === selected ? 'selected' : ''} onClick={() => onSelect(s.id)}>
+              <tr key={s.id} onClick={() => navigate(streamPath(s.id))}>
                 <td>
-                  <button className="link-button" onClick={() => onSelect(s.id)} aria-pressed={s.id === selected}>
+                  {/* The row opens it too; the link is for keyboards, new tabs and copying. */}
+                  <Link href={streamPath(s.id)} className="link-button" onClick={(e) => e.stopPropagation()}>
                     {longDate(s.startedAt)}
-                  </button>
+                  </Link>
                   {s.endedAt === null && <span className="tag red">Live</span>}
                 </td>
                 {showAccount && <td>{s.tiktokUsername ? `@${s.tiktokUsername}` : '—'}</td>}
@@ -247,8 +274,11 @@ function StreamList({
   );
 }
 
-function StreamReport({ summary, previous, status }: { summary: StreamSummary; previous?: StreamSummary; status: LiveStatus }) {
-  const detail = useStreamDetail(summary.id, summary.endedAt === null);
+function StreamReport({ detail, previous, status }: { detail: StreamDetail | null | undefined; previous?: StreamSummary; status: LiveStatus }) {
+  // What's being looked into in the activity list; picking it again puts everything back.
+  const [focus, setFocus] = useState<ActivityFocus | null>(null);
+  const toggle = (next: ActivityFocus) => setFocus((now) => (now && JSON.stringify(now) === JSON.stringify(next) ? null : next));
+  if (detail === undefined) return <Spinner />;
   if (!detail) return null;
   const s = detail.summary;
   // A stream that's still going would look like a drop, so it isn't compared yet.
@@ -269,25 +299,31 @@ function StreamReport({ summary, previous, status }: { summary: StreamSummary; p
           <Stat icon="trophy" hue="orange" label="Top player" value={s.topPlayer ? <ViewerLink name={s.topPlayer} label={s.topPlayerName} /> : '—'} />
         </div>
         <h3>Chat over the stream</h3>
-        <ActivityChart detail={detail} />
+        <p className="muted small">Click a point to see what happened then.</p>
+        <ActivityChart
+          detail={detail}
+          selected={focus?.keyword || focus?.gift || focus?.viewer ? undefined : focus?.from}
+          onSelect={(s) => toggle({ label: s.label, from: s.from, to: s.to })}
+        />
       </Card>
       <div className="analytics-grid">
-        <Card title="Commands" description="How often each fired, and how often chat asked but it didn't.">
-          <CommandUsage detail={detail} />
+        <Card title="Commands" description="How often each fired, and how often chat asked but it didn't. Click one to see who used it.">
+          <CommandUsage detail={detail} selected={focus?.keyword} onSelect={(keyword) => toggle({ label: `the ${keyword} command`, keyword })} />
         </Card>
-        <Card title="Peak moments" description="The busiest two minutes, worth checking for clips.">
-          <Peaks detail={detail} />
+        <Card title="Peak moments" description="The busiest two minutes, worth checking for clips. Click one to see what happened.">
+          <Peaks detail={detail} focus={focus} onSelect={toggle} />
         </Card>
       </div>
+      <StreamViewers id={s.id} live={s.endedAt === null} focus={focus} onSelect={toggle} />
       <div className="analytics-grid">
-        <Card title="Gifts" description="What viewers sent, by total coins.">
-          <Gifts detail={detail} />
+        <Card title="Gifts" description="What viewers sent, by total coins. Click one to see who sent it.">
+          <Gifts detail={detail} selected={focus?.gift} onSelect={(gift) => toggle({ label: `${gift} gifts`, gift })} />
         </Card>
         <Card title="Crowd modes" description="Votes in democracy, and the line in queue mode.">
           <Modes detail={detail} />
         </Card>
       </div>
-      <ActivityFeed status={status} stream={s.id} storageKey="hyperion-report-activity-open" />
+      <ActivityFeed status={status} stream={s.id} storageKey="hyperion-report-activity-open" focus={focus} onClearFocus={() => setFocus(null)} />
     </>
   );
 }
@@ -343,7 +379,101 @@ function Delta({ now, before }: { now: number; before: number }) {
   );
 }
 
-function Peaks({ detail }: { detail: StreamDetail }) {
+type ViewerSort = 'coins' | 'commands' | 'comments' | 'likes';
+const VIEWER_COLUMNS: { key: ViewerSort; label: string }[] = [
+  { key: 'coins', label: 'Coins' },
+  { key: 'commands', label: 'Key presses' },
+  { key: 'comments', label: 'Chat' },
+  { key: 'likes', label: 'Likes' },
+];
+
+// Everyone who took part in the stream, biggest gifters first. A name opens their profile; Activity shows what they
+// did in this stream, in the list below.
+function StreamViewers({ id, live, focus, onSelect }: { id: string; live: boolean; focus: ActivityFocus | null; onSelect: (focus: ActivityFocus) => void }) {
+  const [viewers, setViewers] = useState<StreamViewer[] | null>(null);
+  const [sort, setSort] = useState<ViewerSort>('coins');
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    const load = () => api<StreamViewer[]>('GET', `/analytics/streams/${id}/viewers`).then(setViewers);
+    void load();
+    if (!live) return;
+    const timer = setInterval(load, VIEWERS_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [id, live]);
+  if (!viewers) return <Spinner label="Loading viewers" />;
+
+  // Ties keep the server's order, so the biggest gifter stays ahead of an equal player.
+  const sorted = viewers.map((v, i) => ({ v, i })).sort((a, b) => b.v[sort] - a.v[sort] || a.i - b.i).map(({ v }) => v);
+  const rows = all ? sorted : sorted.slice(0, VIEWER_ROWS);
+  return (
+    <Card
+      title="Viewers"
+      description={`${number(viewers.length)}${viewers.length >= 500 ? '+' : ''} seen in this stream. Click a name for their profile, or Activity for what they did in this stream.`}
+    >
+      {viewers.length === 0 ? (
+        <p className="empty">Nobody did anything this stream.</p>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table className="table stream-viewers">
+              <thead>
+                <tr>
+                  <th>Viewer</th>
+                  {VIEWER_COLUMNS.map((c) => (
+                    <th key={c.key} className="num" aria-sort={sort === c.key ? 'descending' : undefined}>
+                      <button type="button" className={`sort-button ${sort === c.key ? 'on' : ''}`} onClick={() => setSort(c.key)}>
+                        {c.label}
+                        {sort === c.key && <span aria-hidden="true"> ↓</span>}
+                      </button>
+                    </th>
+                  ))}
+                  <th>
+                    <span className="sr-only">Activity</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((v) => (
+                  <tr key={v.viewer} className={focus?.viewer === v.viewer ? 'selected' : ''}>
+                    <td>
+                      <span className="stream-viewer">
+                        <ViewerAvatar name={v.name ?? v.viewer} src={v.avatar} />
+                        <ViewerLink name={v.viewer} label={v.name} />
+                        {v.followed && <span className="tag violet">Followed</span>}
+                      </span>
+                    </td>
+                    {VIEWER_COLUMNS.map((c) => (
+                      <td key={c.key} className="num">
+                        {v[c.key] === 0 ? <span className="muted">–</span> : number(v[c.key])}
+                      </td>
+                    ))}
+                    <td className="num">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        aria-pressed={focus?.viewer === v.viewer}
+                        onClick={() => onSelect({ label: `${v.name ?? v.viewer}'s activity`, viewer: v.viewer })}
+                      >
+                        Activity
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {sorted.length > VIEWER_ROWS && (
+            <button className="btn btn-ghost" onClick={() => setAll(!all)}>
+              {all ? 'Show fewer' : `Show all ${number(sorted.length)}`}
+            </button>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function Peaks({ detail, focus, onSelect }: { detail: StreamDetail; focus: ActivityFocus | null; onSelect: (focus: ActivityFocus) => void }) {
   if (detail.peaks.length === 0) return <p className="empty">Nothing happened yet.</p>;
   const start = detail.summary.startedAt;
   const offset = (at: number) => clock(Math.round((at - start) / 60_000));
@@ -352,17 +482,24 @@ function Peaks({ detail }: { detail: StreamDetail }) {
     <ol className="peak-list">
       {detail.peaks.map((p, i) => (
         <li key={p.start}>
-          <span className={`tag ${i === 0 ? 'orange' : ''} peak-rank`}>{i === 0 ? <Icon name="flame" size={14} /> : i + 1}</span>
-          <span className="peak-when">
-            <strong>
-              {offset(p.start)} to {offset(p.end)}
-            </strong>
-            <span className="muted small">into the stream, {new Date(p.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-          </span>
-          <span className="peak-events">{number(p.events)} events</span>
-          <span className="peak-meter" aria-hidden="true">
-            <i className="slot-1" style={{ width: `${(p.events / busiest) * 100}%` }} />
-          </span>
+          <button
+            type="button"
+            className="peak-button"
+            aria-pressed={focus?.from === p.start && focus?.to === p.end}
+            onClick={() => onSelect({ label: `${offset(p.start)} to ${offset(p.end)} into the stream`, from: p.start, to: p.end })}
+          >
+            <span className={`tag ${i === 0 ? 'orange' : ''} peak-rank`}>{i === 0 ? <Icon name="flame" size={14} /> : i + 1}</span>
+            <span className="peak-when">
+              <strong>
+                {offset(p.start)} to {offset(p.end)}
+              </strong>
+              <span className="muted small">into the stream, {new Date(p.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+            </span>
+            <span className="peak-events">{number(p.events)} events</span>
+            <span className="peak-meter" aria-hidden="true">
+              <i className="slot-1" style={{ width: `${(p.events / busiest) * 100}%` }} />
+            </span>
+          </button>
         </li>
       ))}
     </ol>
@@ -379,15 +516,19 @@ function GiftImage({ src }: { src: string | null }) {
   );
 }
 
-function Gifts({ detail }: { detail: StreamDetail }) {
+function Gifts({ detail, selected, onSelect }: { detail: StreamDetail; selected?: string; onSelect: (gift: string) => void }) {
   const { byGift, perHour } = detail.gifts;
   if (byGift.length === 0) return <p className="empty">No gifts this stream.</p>;
+  const top = byGift.slice(0, 8);
+  const picked = top.findIndex((g) => g.gift === selected);
   return (
     <div className="stack">
       <BarList
         caption="Coins by gift"
         series={[{ name: 'Coins', slot: 3 }]}
-        rows={byGift.slice(0, 8).map((g) => ({ label: g.gift, icon: <GiftImage src={g.image} />, values: [g.diamonds], value: `${number(g.diamonds)} (${number(g.count)} sent)` }))}
+        rows={top.map((g) => ({ label: g.gift, icon: <GiftImage src={g.image} />, values: [g.diamonds], value: `${number(g.diamonds)} (${number(g.count)} sent)` }))}
+        selected={picked < 0 ? undefined : picked}
+        onSelect={(i) => onSelect(top[i]!.gift)}
       />
       {perHour.length > 1 && (
         <>

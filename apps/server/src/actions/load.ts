@@ -9,7 +9,7 @@ const mediaFile = aliasedTable(media, 'media_file');
 // The host's actions that apply with this profile, as the engine needs them.
 export async function loadActionRules(db: Db, hostId: string, profileId: string, actionId?: string): Promise<ActionRule[]> {
   const rows = await db
-    .select({ action: actions, keyword: commands.keyword, mediaKind: mediaFile.kind, defaultStyle: hosts.alertStyle, secondStyle: hosts.alertStyle2 })
+    .select({ action: actions, keyword: commands.keyword, mediaKind: mediaFile.kind, defaultStyle: hosts.alertStyle, secondStyle: hosts.alertStyle2, soundVolumes: hosts.soundVolumes })
     .from(actions)
     .innerJoin(hosts, eq(hosts.id, actions.hostId))
     .leftJoin(commands, and(eq(commands.id, actions.keyCommandId), eq(commands.profileId, profileId)))
@@ -22,7 +22,7 @@ export async function loadActionRules(db: Db, hostId: string, profileId: string,
       ),
     )
     .orderBy(actions.position);
-  return rows.map(({ action: a, keyword, mediaKind, defaultStyle, secondStyle }) => ({
+  return rows.map(({ action: a, keyword, mediaKind, defaultStyle, secondStyle, soundVolumes }) => ({
     id: a.id,
     trigger: a.trigger,
     giftName: a.giftName,
@@ -38,6 +38,8 @@ export async function loadActionRules(db: Db, hostId: string, profileId: string,
     random: a.random,
     text: a.text,
     sound: a.sound,
+    soundVolume: (a.sound && soundVolumes[a.sound]) ?? 100,
+    soundFileVolume: (a.soundMediaId ? soundVolumes[a.soundMediaId] : undefined) ?? 100,
     soundMediaId: a.soundMediaId,
     media: a.mediaId && mediaKind ? { id: a.mediaId, kind: mediaKind } : null,
     speak: a.speak,

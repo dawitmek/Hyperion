@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { StreamEvent, StreamSummary } from '@hyperion/shared';
 import { api, type LiveStatus } from '../api';
 import { Icon } from '../icons';
+import { Spinner } from '../ui';
 import { ViewerLink } from './ViewerPanel';
 
 export type Kind = StreamEvent['kind'];
@@ -24,6 +25,18 @@ export const KIND_TAGS: Partial<Record<StreamEvent['kind'], { label: string; hue
 );
 const PAGE = 100;
 const POLL_MS = 2000;
+// Shown only when looking into one command: the presses, and the times chat asked but didn't get it.
+const COMMAND_TAGS: Partial<Record<Kind, { label: string; hue: string }>> = { command: { label: 'Key press', hue: 'indigo' }, refused: { label: 'Refused', hue: '' } };
+
+// Part of a stream to look into, from its report: a stretch of time, one command, one gift or one viewer.
+export interface ActivityFocus {
+  label: string; // what it is, in words
+  from?: number;
+  to?: number;
+  keyword?: string;
+  gift?: string;
+  viewer?: string; // exactly this viewer's id
+}
 
 interface Page {
   stream: { id: string; source: 'tiktok' | 'simulated'; startedAt: number; live: boolean } | null;
@@ -53,6 +66,10 @@ export function describeEvent(e: StreamEvent): string {
     }
     case 'emote':
       return 'sent a sticker';
+    case 'command':
+      return `pressed ${String(e.data.keyword)}${e.data.via === 'vote' ? ' (vote)' : ''}`;
+    case 'refused':
+      return `asked for ${String(e.data.keyword)}, not pressed (${String(e.data.reason)})`;
     default:
       return '';
   }
@@ -110,17 +127,26 @@ export function ActivityFeed({
   stream: fixed,
   storageKey = 'hyperion-activity-open',
   window: own,
+  focus,
+  onClearFocus,
 }: {
   status: LiveStatus;
   stream?: string;
   storageKey?: string;
   window?: boolean;
+  focus?: ActivityFocus | null;
+  onClearFocus?: () => void;
 }) {
   const [stored, setOpen] = useState(() => readOpen(storageKey));
-  const open = own || stored;
+  const open = own || stored || !!focus;
+  const section = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState(fixed ?? 'latest');
   const [pastStreams, setPastStreams] = useState<StreamSummary[]>([]);
-  const [kinds, setKinds] = useState<Kind[]>(FILTERS.map((f) => f.kind));
+  const [chosenKinds, setKinds] = useState<Kind[]>(FILTERS.map((f) => f.kind));
+  // One command shows its presses and refusals, and one gift only gifts; the kind chips are for everything else.
+  const fixedKinds: Kind[] | null = focus?.keyword ? ['command', 'refused'] : focus?.gift ? ['gift'] : null;
+  const kinds = fixedKinds ?? chosenKinds;
+  const focusKey = JSON.stringify(focus ?? null);
   const [search, setSearch] = useState('');
   const [viewer, setViewer] = useState(''); // search, applied after typing pauses
   const [page, setPage] = useState<Page | null>(null);
@@ -132,6 +158,7 @@ export function ActivityFeed({
   const [held, setHeld] = useState<Page['events']>([]);
 
   const toggle = () => {
+    if (open && focus) onClearFocus?.(); // or it would stay open for it
     setOpen(!open);
     try {
       localStorage.setItem(storageKey, open ? '0' : '1');
@@ -145,8 +172,19 @@ export function ActivityFeed({
     return () => clearTimeout(timer);
   }, [search]);
 
+  const focusQuery = focus
+    ? Object.entries({ from: focus.from, to: focus.to, keyword: focus.keyword, gift: focus.gift, viewerId: focus.viewer })
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => `&${k}=${encodeURIComponent(String(v))}`)
+        .join('')
+    : '';
   const query = (extra: string) =>
-    `/analytics/activity?kinds=${kinds.join(',')}${viewer ? `&viewer=${encodeURIComponent(viewer)}` : ''}${extra}`;
+    `/analytics/activity?kinds=${kinds.join(',')}${viewer ? `&viewer=${encodeURIComponent(viewer)}` : ''}${focusQuery}${extra}`;
+
+  // Looking into something brings the list into view.
+  useEffect(() => {
+    if (focus) section.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focusKey]);
 
   useEffect(() => setSelected(fixed ?? 'latest'), [fixed]);
   // Earlier streams for the picker.
@@ -168,7 +206,7 @@ export function ActivityFeed({
     return () => {
       cancelled = true;
     };
-  }, [open, selected, kinds, viewer, status.live, status.startedAt]);
+  }, [open, selected, kinds.join(), viewer, focusKey, status.live, status.startedAt]);
 
   // While live, what's new every couple of seconds.
   useEffect(() => {
@@ -183,7 +221,7 @@ export function ActivityFeed({
       });
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [open, page?.stream?.id, page?.stream?.live, kinds, viewer]);
+  }, [open, page?.stream?.id, page?.stream?.live, kinds.join(), viewer, focusKey]);
 
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
@@ -209,7 +247,7 @@ export function ActivityFeed({
   const stream = page?.stream;
 
   return (
-    <section className={`card activity-feed ${own ? 'in-window' : ''}`} aria-labelledby="full-activity">
+    <section ref={section} className={`card activity-feed ${own ? 'in-window' : ''}`} aria-labelledby="full-activity">
       {own ? (
         <h2 id="full-activity">Full activity</h2>
       ) : (
@@ -235,8 +273,19 @@ export function ActivityFeed({
       )}
       {open && (
         <div id="full-activity-body" className="stack activity-body">
+          {focus && (
+            <div className="activity-focus" role="status">
+              <Icon name="search" size={14} />
+              <span>
+                Showing <strong>{focus.label}</strong>
+              </span>
+              <button className="btn btn-ghost btn-sm" onClick={onClearFocus}>
+                Show everything
+              </button>
+            </div>
+          )}
           <div className="activity-filters">
-            <KindChips coded filters={FILTERS} kinds={kinds} onChange={setKinds} />
+            {!fixedKinds && <KindChips coded filters={FILTERS} kinds={chosenKinds} onChange={setKinds} />}
             <input className="input activity-search" type="search" placeholder="Search viewers" aria-label="Search viewers by name or ID" value={search} onChange={(e) => setSearch(e.target.value)} />
             {!fixed && pastStreams.length > 0 && (
               <select className="input activity-stream" aria-label="Stream" value={selected} onChange={(e) => setSelected(e.target.value)}>
@@ -272,20 +321,22 @@ export function ActivityFeed({
           )}
           {kinds.length === 0 ? (
             <p className="empty">Pick at least one kind of activity to show.</p>
-          ) : !page ? null : !stream ? (
+          ) : !page ? (
+            <Spinner label="Loading activity" />
+          ) : !stream ? (
             <p className="empty">Activity shows up here once you go live or start test mode.</p>
           ) : page.events.length === 0 ? (
-            <p className="empty">{viewer ? `Nothing from viewers matching “${viewer}”.` : 'Nothing yet.'}</p>
+            <p className="empty">{viewer ? `Nothing from viewers matching “${viewer}”.` : focus ? 'Nothing here.' : 'Nothing yet.'}</p>
           ) : (
             <ol className="activity-list">
               {page.events.map((e) => {
-                const filter = FILTERS.find((f) => f.kind === e.kind);
+                const tag = KIND_TAGS[e.kind] ?? COMMAND_TAGS[e.kind];
                 return (
                   <li key={e.id}>
                     <time className="muted" dateTime={new Date(e.at).toISOString()}>
                       {new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </time>
-                    <span className={`tag ${filter?.tag ?? ''}`}>{filter?.label.replace(/s$/, '') ?? e.kind}</span>
+                    <span className={`tag ${tag?.hue ?? ''}`}>{tag?.label ?? e.kind}</span>
                     <span className="activity-text">
                       {e.viewer && <ViewerLink name={e.viewer} label={e.data.name as string | undefined} />} <span className={e.kind === 'comment' ? '' : 'muted'}>{describeEvent(e)}</span>
                     </span>

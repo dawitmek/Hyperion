@@ -1,10 +1,14 @@
 # Self-hosted Hyperion: the server (with dashboard and overlay) plus Postgres, and optionally Caddy for HTTPS.
 # Step-by-step guide: docs/SELF_HOSTING.md. In short, put POSTGRES_PASSWORD and SECRETS_KEY in .env, plus DOMAIN and
-# COMPOSE_PROFILES=https for automatic HTTPS, then:
+# COMPOSE_PROFILES=https for automatic HTTPS, then either use the published image:
+#   docker compose -f docker/compose.yml --env-file .env pull && docker compose -f docker/compose.yml --env-file .env up -d
+# or build it from this checkout:
 #   docker compose -f docker/compose.yml --env-file .env up -d --build
 name: hyperion-selfhost
 services:
   hyperion:
+    # Pulled from GitHub's registry, or built from this checkout with --build. HYPERION_VERSION pins a release.
+    image: ghcr.io/dawitmek/hyperion:${HYPERION_VERSION:-latest}
     build: ..
     restart: unless-stopped
     depends_on:

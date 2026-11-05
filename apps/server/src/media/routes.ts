@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
-import { MAX_MEDIA_BYTES, MAX_MEDIA_TOTAL_BYTES, type MediaItem } from '@hyperion/shared';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { MAX_MEDIA_BYTES, MAX_MEDIA_TOTAL_BYTES, type MediaItem, type MediaKind } from '@hyperion/shared';
 import { actions, hiddenMedia, media } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { sniff } from './sniff.js';
@@ -41,11 +41,18 @@ export async function mediaRoutes(app: FastifyInstance) {
     ).map(toItem),
   );
 
-  // Brings back every built-in file this host removed.
-  app.delete('/hidden', async (req, reply) => {
-    await db.delete(hiddenMedia).where(eq(hiddenMedia.hostId, req.hostId));
-    return reply.code(204).send();
-  });
+  // Brings back the built-in files this host removed: every one, or only pictures or sounds.
+  app.delete<{ Querystring: { kind?: MediaKind } }>(
+    '/hidden',
+    { schema: { querystring: { type: 'object', properties: { kind: { enum: ['image', 'video', 'audio'] } } } } },
+    async (req, reply) => {
+      const { kind } = req.query;
+      await db
+        .delete(hiddenMedia)
+        .where(and(eq(hiddenMedia.hostId, req.hostId), kind ? inArray(hiddenMedia.mediaId, db.select({ id: media.id }).from(media).where(eq(media.kind, kind))) : undefined));
+      return reply.code(204).send();
+    },
+  );
 
   app.post<{ Querystring: { name: string }; Body: Buffer }>(
     '/',
@@ -91,6 +98,7 @@ export async function mediaRoutes(app: FastifyInstance) {
       if (!shared) return reply.code(404).send({ error: 'File not found' });
       await db.insert(hiddenMedia).values({ hostId: req.hostId, mediaId: shared.id }).onConflictDoNothing();
       await db.update(actions).set({ mediaId: null }).where(and(eq(actions.hostId, req.hostId), eq(actions.mediaId, shared.id)));
+      await db.update(actions).set({ soundMediaId: null }).where(and(eq(actions.hostId, req.hostId), eq(actions.soundMediaId, shared.id)));
     }
     await app.live.reload(req.hostId);
     return reply.code(204).send();

@@ -1,19 +1,17 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { type ActionEffect, EFFECT_SPEEDS, ALERT_POSITIONS, DEFAULT_MESSAGE, MAX_MESSAGE_LENGTH, GOAL_METRICS, WIDGET_PRESETS, WIDGET_STYLE_LIMITS, widgetKey, MAX_LEADERBOARD_SIZE, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, WIDGET_SPOTS, WIDGET_TYPES, type AlertStyle, type GoalMetric, type GoalRaise, type ScreenWidget, type StreamStats, type WidgetSpot, type WidgetStyle, type WidgetType } from '@hyperion/shared';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react';
+import { GOAL_WIDGET_SPOT, ALERT_POSITIONS, DEFAULT_MESSAGE, MAX_MESSAGE_LENGTH, GOAL_METRICS, WIDGET_PRESETS, WIDGET_STYLE_LIMITS, widgetKey, MAX_LEADERBOARD_SIZE, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, SCREEN_LAYOUTS, WIDGET_SPOTS, WIDGET_TYPES, type AlertStyle, type GoalMetric, type GoalRaise, type ScreenLayout, type ScreenWidget, type StreamStats, type WidgetSpot, type WidgetStyle, type WidgetType } from '@hyperion/shared';
 import { api, type AlertPosition, type Goal, type Screen } from '../api';
 import { alertLook } from '../alert-style';
 import { FontPicker } from './FontPicker';
-import { alertPlace, linkedWidget, useClearOfWidgets } from '../Overlay';
-import { dragAlert } from './alert-drag';
+import { alertPlace, LAYOUT_CANVAS, LAYOUT_SAFE, linkedWidget, useClearOfWidgets } from '../Overlay';
+import { alertHandleCorner, dragAlert, dragAlertSize, dragResize } from './alert-drag';
 import { ColorField } from './AlertLookEditor';
-import { Card, ConfirmButton, ErrorNotice, HueIcon, NumberCell, Scrubber, Seg, TextCell, useError, type Hue } from '../ui';
+import { SpotPad, type PadSpot } from './SpotPad';
+import { AmountField, Card, Switch, ConfirmButton, ErrorNotice, HueIcon, NumberCell, Scrubber, TextCell, useError, type Hue } from '../ui';
 import { Icon, type IconName } from '../icons';
-import { EFFECT_LABELS, ScreenEffects } from '../effects';
-import { EffectOptions, speedLabel } from './EffectFields';
-import { DEFAULT_FIREWORK_DIAMONDS, giftAnimation, GiftBus, usePreview, Widget, type ChatLine } from '../overlay-widgets';
+import { DEFAULT_JAR_DIAMONDS, GiftBus, usePreview, Widget, type ChatLine } from '../overlay-widgets';
 import type { PageProps } from './Dashboard';
 
-const effectName = (effect: ActionEffect) => (effect === 'random' ? 'Random animation' : EFFECT_LABELS[effect]);
 
 const POSITION_LABELS: Record<AlertPosition, string> = { top: 'Top', middle: 'Middle', bottom: 'Bottom' };
 
@@ -84,16 +82,15 @@ export function OverlayPage({ host, refreshHost }: PageProps) {
 // Colored by what they show: gifts amber, followers sky, chat indigo, numbers teal, goals violet.
 const WIDGETS: Record<WidgetType, { label: string; help: string; spot: WidgetSpot; icon: IconName; hue: Hue }> = {
   goals: { label: 'Goals (grouped)', help: "Goals together in one panel, except ones with a widget of their own.", spot: 'top', icon: 'target', hue: 'violet' },
-  top_gift: { label: 'Top gift', help: "The stream's most valuable gift and who sent it.", spot: 'top-right', icon: 'trophy', hue: 'amber' },
+  top_gift: { label: 'Top gift', help: "The stream's most valuable gift and who sent it.", spot: 'top', icon: 'trophy', hue: 'amber' },
   top_streak: { label: 'Longest streak', help: 'The biggest gift combo so far.', spot: 'top-right', icon: 'flame', hue: 'orange' },
-  last_follower: { label: 'Latest follower', help: 'Who followed last.', spot: 'bottom-right', icon: 'follower', hue: 'sky' },
+  last_follower: { label: 'Latest follower', help: 'Who followed last.', spot: 'bottom-left', icon: 'follower', hue: 'sky' },
   last_gifter: { label: 'Latest gift', help: 'Who sent the last gift, and what.', spot: 'bottom-right', icon: 'gift', hue: 'amber' },
-  stats: { label: 'Stream stats', help: 'Viewers, likes, follows and coins this stream.', spot: 'top', icon: 'analytics', hue: 'teal' },
+  stats: { label: 'Stream stats', help: 'Viewers, likes, follows and coins this stream.', spot: 'bottom', icon: 'analytics', hue: 'teal' },
   chat: { label: 'Chat', help: 'The last few chat messages.', spot: 'bottom-right', icon: 'chat', hue: 'indigo' },
-  coin_jar: { label: 'Coin jar', help: 'Gifts drop coins into a jar that fills toward a target.', spot: 'bottom-right', icon: 'coin', hue: 'amber' },
-  level_ups: { label: 'Level-ups', help: 'Level-up shout-outs in a spot of their own, instead of in the command feed.', spot: 'left', icon: 'star', hue: 'orange' },
+  coin_jar: { label: 'Coin jar', help: 'Gifts drop coins into a jar that fills toward a target.', spot: 'top-left', icon: 'coin', hue: 'amber' },
+  level_ups: { label: 'Level-ups', help: 'Level-up shout-outs in a spot of their own, instead of in the command feed.', spot: 'bottom-left', icon: 'star', hue: 'orange' },
   message: { label: 'Custom message', help: 'Your own text on the screen, like how to play.', spot: 'bottom-left', icon: 'chat', hue: 'indigo' },
-  firework: { label: 'Gift screen animation', help: 'A screen animation for big gifts.', spot: 'top', icon: 'sparkle', hue: 'pink' },
 };
 const SPOT_LABELS: Record<WidgetSpot, string> = {
   'top-left': 'Top left',
@@ -105,6 +102,15 @@ const SPOT_LABELS: Record<WidgetSpot, string> = {
   bottom: 'Bottom',
   'bottom-right': 'Bottom right',
 };
+
+// The spots on the position pad, where each sits on the screen.
+const WIDGET_PAD: PadSpot<WidgetSpot>[] = WIDGET_SPOTS.map((spot) => ({
+  id: spot,
+  x: spot.endsWith('left') ? 0 : spot.endsWith('right') ? 1 : 0.5,
+  y: spot.startsWith('top') ? 0 : spot.startsWith('bottom') ? 1 : 0.5,
+  label: SPOT_LABELS[spot],
+}));
+const ALERT_PAD: PadSpot<AlertPosition>[] = ALERT_POSITIONS.map((p) => ({ id: p, x: 0.5, y: p === 'top' ? 0 : p === 'middle' ? 0.5 : 1, label: POSITION_LABELS[p] }));
 
 // A tiny map of the screen with the widget's spot lit; every spot for one that covers the whole screen.
 // A widget placed by hand shows as a dot where it sits.
@@ -136,50 +142,38 @@ function moveToSpot(widgets: ScreenWidget[], i: number, spot: WidgetSpot): Scree
   return [...widgets.filter((_, j) => j !== i), { ...widget, spot }];
 }
 
-const HOVER_MS = 200;
-const HOVER_HEIGHT = 200; // .widget-hover's height
-
-// A small live preview by a widget's row, under it unless that runs off the window. The mouse can't reach it.
-function HoverPreview({ widget, row }: { widget: ScreenWidget; row: DOMRect }) {
-  const [bus] = useState(() => new GiftBus());
-  const { stats, chat } = usePreview(true, bus);
-  const below = row.bottom + HOVER_HEIGHT + 8 < innerHeight;
-  return (
-    <div className="widget-hover" aria-hidden="true" style={{ top: below ? row.bottom + 4 : row.top - HOVER_HEIGHT - 4, right: innerWidth - row.right }}>
-      <PreviewStage widget={widget} feed={{ stats, chat, bus }} compact />
-    </div>
-  );
+// The point of a widget that stays put as it grows, across and down it: its spot's corner or edge, or its top-left
+// corner once placed by hand.
+function anchorOf(w: ScreenWidget): [number, number] {
+  if (w.pos) return [0, 0];
+  return [w.spot.endsWith('left') ? 0 : w.spot.endsWith('right') ? 1 : 0.5, w.spot.startsWith('top') ? 0 : w.spot.startsWith('bottom') ? 1 : 0.5];
+}
+// Its resize handle: the corner away from that point.
+function handleCorner(w: ScreenWidget) {
+  const [ax, ay] = anchorOf(w);
+  return `${ay > 0.5 ? 't' : 'b'}${ax > 0.5 ? 'l' : 'r'}`;
 }
 
 // Where a widget is, for its row in the list.
 function widgetPlace(w: ScreenWidget) {
-  if (w.type === 'firework') return `${effectName(w.effect ?? 'fireworks')}, from ${giftAnimation(w).min.toLocaleString()} coins`;
   return w.pos ? 'Custom position' : SPOT_LABELS[w.spot];
 }
 
-type AlertSpot = Pick<Screen, 'alertPosition' | 'alertPos'>;
+type AlertSpot = Pick<Screen, 'alertPosition' | 'alertPos' | 'alertScale'>;
 
-function WidgetsEditor({ widgets, goals, scale, alertSpot, alertStyle, onSave }: { widgets: ScreenWidget[]; goals: Goal[]; scale: number; alertSpot: AlertSpot | null; alertStyle: AlertStyle | null; onSave: (widgets: ScreenWidget[], alertSpot?: AlertSpot) => void }) {
+function WidgetsEditor({ widgets, goals, scale, layout, alertSpot, alertStyle, onSave }: { widgets: ScreenWidget[]; goals: Goal[]; scale: number; layout: ScreenLayout; alertSpot: AlertSpot | null; alertStyle: AlertStyle | null; onSave: (widgets: ScreenWidget[], alertSpot?: AlertSpot) => void }) {
   const [positioning, setPositioning] = useState<number | 'all' | null>(null); // one widget, or every one
-  const [hovered, setHovered] = useState<{ widget: ScreenWidget; row: DOMRect } | null>(null);
-  const hoverTimer = useRef<number | undefined>(undefined);
-  const endHover = () => (clearTimeout(hoverTimer.current), setHovered(null));
-  // A moment's wait, so moving the mouse across the list doesn't flash a preview for every row.
-  const startHover = (widget: ScreenWidget, row: HTMLElement) => {
-    clearTimeout(hoverTimer.current);
-    hoverTimer.current = window.setTimeout(() => setHovered({ widget, row: row.getBoundingClientRect() }), HOVER_MS);
-  };
-  useEffect(() => {
-    if (!hovered) return;
-    addEventListener('scroll', endHover, true); // it's placed by the row, which has moved
-    return () => removeEventListener('scroll', endHover, true);
-  }, [hovered]);
-  useEffect(() => () => clearTimeout(hoverTimer.current), []);
+  // One set of sample viewers and gifts for every card's preview.
+  const [bus] = useState(() => new GiftBus());
+  const { stats, chat } = usePreview(widgets.length > 0, bus);
+  const own = new Set(widgets.map((w) => w.goalId).filter(Boolean));
+  // The grouped goals widget leaves out goals with a widget of their own, as on stream.
+  const feedFor = (w: ScreenWidget): PreviewFeed => ({ stats: w.type === 'goals' && !w.goalId && stats ? { ...stats, goals: stats.goals.filter((g) => !own.has(g.id)) } : stats, chat, bus });
   const used = new Set(widgets.map(widgetKey));
   const types = WIDGET_TYPES.filter((t) => !used.has(t));
   const ownGoals = goals.filter((g) => !used.has(`goal:${g.id}`));
   const options: WidgetChoice[] = [...types.map((type) => ({ type })), ...ownGoals.map((g) => ({ type: 'goals' as const, goalId: g.id }))];
-  const add = (w: WidgetChoice) => onSave([...widgets, { ...w, spot: w.goalId ? 'top' : WIDGETS[w.type].spot }]);
+  const add = (w: WidgetChoice) => onSave([...widgets, { ...w, spot: w.goalId ? GOAL_WIDGET_SPOT : WIDGETS[w.type].spot }]);
 
   return (
     <div className="stack">
@@ -187,7 +181,7 @@ function WidgetsEditor({ widgets, goals, scale, alertSpot, alertStyle, onSave }:
         <h3>
           Widgets {widgets.length > 0 && <span className="tag">{widgets.length}</span>}
         </h3>
-        {(alertSpot || widgets.some((w) => w.type !== 'firework')) && (
+        {(alertSpot || widgets.length > 0) && (
           <>
             <span className="spacer" />
             <button className="btn btn-sm" onClick={() => setPositioning('all')} title="See your widgets and alerts on one screen and drag them into place">
@@ -200,31 +194,30 @@ function WidgetsEditor({ widgets, goals, scale, alertSpot, alertStyle, onSave }:
       {widgets.length === 0 ? (
         <p className="muted small">None yet. They show while you're live or in test mode, in the spot you pick. Widgets in the same spot stack.</p>
       ) : (
-        <ul className="list">
+        <ul className={`widget-grid ${layout}`}>
           {widgets.map((w, i) => {
             const info = widgetInfo(w, goals);
             return (
               <li key={widgetKey(w)}>
-                <button
-                  className="widget-row"
-                  onClick={() => (endHover(), setPositioning(i))}
-                  onPointerEnter={(e) => e.pointerType === 'mouse' && startHover(w, e.currentTarget)}
-                  onPointerLeave={endHover}
-                  aria-label={`Edit ${info.label}`}
-                >
-                  <HueIcon name={info.icon} hue={info.hue} />
-                  <strong className="widget-row-name">{info.label}</strong>
-                  <span className="muted small">{widgetPlace(w)}</span>
-                  {w.style && (
-                    <span className="widget-row-look muted small">
-                      <i style={{ background: w.style.accent }} aria-hidden="true" />
-                      Custom look
+                <button className="widget-card" onClick={() => setPositioning(i)} aria-label={`Edit ${info.label}, ${widgetPlace(w)}`}>
+                  <span className="widget-card-stage" aria-hidden="true">
+                    <PreviewStage widget={w} feed={feedFor(w)} compact />
+                  </span>
+                  <span className="widget-card-foot">
+                    <HueIcon name={info.icon} hue={info.hue} size="sm" />
+                    <span className="widget-name">
+                      <strong>{info.label}</strong>
+                      <span className="muted small">
+                        {widgetPlace(w)}
+                        {w.style && (
+                          <span className="widget-card-look">
+                            <i style={{ background: w.style.accent }} aria-hidden="true" />
+                            Custom look
+                          </span>
+                        )}
+                      </span>
                     </span>
-                  )}
-                  <span className="spacer" />
-                  <SpotMap spot={w.type === 'firework' ? null : w.spot} pos={w.type === 'firework' ? undefined : w.pos} hue={info.hue} />
-                  <span className="widget-row-go" aria-hidden="true">
-                    <Icon name="chevron" />
+                    <SpotMap spot={w.spot} pos={w.pos} hue={info.hue} />
                   </span>
                 </button>
               </li>
@@ -232,7 +225,6 @@ function WidgetsEditor({ widgets, goals, scale, alertSpot, alertStyle, onSave }:
           })}
         </ul>
       )}
-      {hovered && <HoverPreview widget={hovered.widget} row={hovered.row} />}
       {options.length > 0 && widgets.length < MAX_WIDGETS && <WidgetPicker options={options} goals={goals} onAdd={add} />}
       {(positioning === 'all' || (positioning !== null && widgets[positioning])) && (
         <PositionDialog
@@ -240,6 +232,7 @@ function WidgetsEditor({ widgets, goals, scale, alertSpot, alertStyle, onSave }:
           index={positioning === 'all' ? null : positioning}
           goals={goals}
           scale={scale}
+          layout={layout}
           alertSpot={alertSpot}
           alertStyle={alertStyle}
           onSave={onSave}
@@ -318,7 +311,7 @@ function WidgetLinksCard({ main, goals, reload }: { main: Screen; goals: Goal[];
   return (
     <Card
       title="Widget links"
-      description="Each widget on its own, as a browser source of its own, without a whole screen. Customize gives a link its own look. Size and the coin jar and fireworks amounts follow your Main screen. Previews use sample viewers and gifts. Keep the links private."
+      description="Each widget on its own, as a browser source of its own, without a whole screen. Customize gives a link its own look. Size and the coin jar's settings follow your Main screen. Previews use sample viewers and gifts. Keep the links private."
     >
       <input
         className="input"
@@ -352,11 +345,9 @@ function WidgetLinksCard({ main, goals, reload }: { main: Screen; goals: Goal[];
                   <strong>{info.label}</strong>
                   <span className="muted small">{help(w)}</span>
                 </span>
-                {w.type !== 'firework' && (
-                  <button className="btn btn-ghost btn-sm" aria-label={`Customize ${info.label} link`} onClick={() => setStyling(w)}>
-                    Customize
-                  </button>
-                )}
+                <button className="btn btn-ghost btn-sm" aria-label={`Customize ${info.label} link`} onClick={() => setStyling(w)}>
+                  Customize
+                </button>
                 <button className="btn btn-sm" onClick={() => navigator.clipboard.writeText(link(w)).then(() => setCopied(key))}>
                   {copied === key ? 'Copied' : 'Copy link'}
                 </button>
@@ -383,7 +374,6 @@ export function FadedWidgets({ widgets, feed }: { widgets: ScreenWidget[]; feed:
   const spots = Object.fromEntries(WIDGET_SPOTS.map((s) => [s, [] as ReactNode[]])) as Record<WidgetSpot, ReactNode[]>;
   const placed: ReactNode[] = [];
   widgets.forEach((w, i) => {
-    if (w.type === 'firework') return;
     const stats = w.type === 'goals' && !w.goalId && feed.stats ? { ...feed.stats, goals: feed.stats.goals.filter((g) => !own.has(g.id)) } : feed.stats;
     const el = (
       <div key={i} className="pos-other">
@@ -405,20 +395,37 @@ export function FadedWidgets({ widgets, feed }: { widgets: ScreenWidget[]; feed:
   );
 }
 
-// The screen as a 1920 by 1080 canvas, drawn smaller to fit. Widgets keep their real size against it.
-export const CANVAS = { width: 1920, height: 1080 };
+// The screen as its layout's canvas (see LAYOUT_CANVAS), drawn smaller to fit the stage. Widgets keep their real size
+// against it. A phone screen's stage is kept to a height that fits the window.
+export const stageProps = (layout: ScreenLayout) => ({ className: `pos-stage ${layout}`, style: { aspectRatio: `${LAYOUT_CANVAS[layout].width} / ${LAYOUT_CANVAS[layout].height}` } });
+export function canvasStyle(layout: ScreenLayout, fit: number): CSSProperties {
+  const { width, height } = LAYOUT_CANVAS[layout];
+  return { width, height, transform: `scale(${fit})`, '--canvas-w': `${width}px`, '--canvas-h': `${height}px`, '--stage-fit': fit } as CSSProperties;
+}
+// Canvas pixels to stage pixels, kept up to date as the stage resizes.
+export function useStageFit(stage: RefObject<HTMLDivElement | null>, layout: ScreenLayout) {
+  const [fit, setFit] = useState(0.4);
+  useLayoutEffect(() => {
+    const measure = () => stage.current && setFit(stage.current.clientWidth / LAYOUT_CANVAS[layout].width);
+    measure();
+    const resize = new ResizeObserver(measure);
+    resize.observe(stage.current!);
+    return () => resize.disconnect();
+  }, [stage, layout]);
+  return fit;
+}
 
 const ALERT_KEY = 'alerts'; // the sample alert, picked like a widget
 const SAMPLE_ALERT = 'nightowl sent 5× Rose!'; // as wide as a real one: a wider alert has more widgets to clear
 
 // With no index, every widget on the screen and its alerts: drag them anywhere, or snap the one picked to a spot. With one, everything
-// about that widget: where it goes, with the screen's others faded behind it, how it looks, and removing it. Fireworks
-// cover the whole screen, so they have no place or look of their own.
+// about that widget: where it goes, with the screen's others faded behind it, how it looks, and removing it.
 function PositionDialog({
   widgets,
   index,
   goals,
   scale,
+  layout,
   alertSpot,
   alertStyle,
   onSave,
@@ -428,6 +435,7 @@ function PositionDialog({
   index: number | null;
   goals: Goal[];
   scale: number;
+  layout: ScreenLayout;
   alertSpot: AlertSpot | null; // null when the screen doesn't show alerts
   alertStyle: AlertStyle | null;
   onSave: (widgets: ScreenWidget[], alertSpot?: AlertSpot) => void;
@@ -443,29 +451,21 @@ function PositionDialog({
   const [alertSaved, setAlertSaved] = useState(alertSpot);
   const changed = draft !== saved || alertDraft !== alertSaved;
   // By key, not place in the list: snapping to a spot moves a widget to the end.
-  const movable = (w: ScreenWidget) => (index === null ? w.type !== 'firework' : widgetKey(w) === widgetKey(opened[index]!));
+  const movable = (w: ScreenWidget) => index === null || widgetKey(w) === widgetKey(opened[index]!);
   const [picked, setPicked] = useState(() => {
-    const first = opened[index ?? opened.findIndex((w) => w.type !== 'firework')];
+    const first = opened[index ?? 0];
     return first ? widgetKey(first) : ALERT_KEY;
   });
   const info = index === null ? { label: 'Every widget', icon: 'layout' as const, hue: 'indigo' as const } : widgetInfo(opened[index]!, goals);
-  const fixedPlace = index !== null && opened[index]!.type === 'firework';
   const [tab, setTab] = useState<'position' | 'look'>('position');
   const dialog = useRef<HTMLDialogElement>(null);
   const stage = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState(0.4); // canvas pixels to stage pixels
+  const fit = useStageFit(stage, layout);
   const [bus] = useState(() => new GiftBus());
   const { stats, chat } = usePreview(true, bus);
 
   useEffect(() => {
     dialog.current?.showModal();
-  }, []);
-  useLayoutEffect(() => {
-    const measure = () => stage.current && setFit(stage.current.clientWidth / CANVAS.width);
-    measure();
-    const resize = new ResizeObserver(measure);
-    resize.observe(stage.current!);
-    return () => resize.disconnect();
   }, []);
 
   const place = (key: string, patch: Partial<ScreenWidget>) => setDraft((d) => d.map((w) => (widgetKey(w) === key ? { ...w, ...patch } : w)));
@@ -492,6 +492,18 @@ function PositionDialog({
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop);
   };
+  // The corner handle resizes the widget about the point that stays put as it grows: its spot's corner or edge, or
+  // its top-left corner once placed by hand. It grows as the pointer gets farther from that point.
+  const [resizing, setResizing] = useState<string | null>(null);
+  const startResize = (key: string, e: ReactPointerEvent<HTMLElement>) => {
+    setPicked(key);
+    setResizing(key);
+    const widget = draft.find((w) => widgetKey(w) === key)!;
+    const box = e.currentTarget.parentElement!.getBoundingClientRect();
+    const [ax, ay] = anchorOf(widget);
+    const anchor = { x: box.left + ax * box.width, y: box.top + ay * box.height };
+    dragResize(e, anchor, widget.size ?? 100, (size) => place(key, { size: size === 100 ? undefined : size }), () => setResizing(null));
+  };
   const snap = (spot: WidgetSpot) => setDraft((d) => moveToSpot(d, d.findIndex((w) => widgetKey(w) === picked), spot));
 
   const own = new Set(opened.map((w) => w.goalId).filter(Boolean));
@@ -501,11 +513,14 @@ function PositionDialog({
   const spots = Object.fromEntries(WIDGET_SPOTS.map((s) => [s, [] as ReactNode[]])) as Record<WidgetSpot, ReactNode[]>;
   const placed: ReactNode[] = [];
   draft.forEach((w) => {
-    if (w.type === 'firework') return;
     const key = widgetKey(w);
     const el = movable(w) ? (
-      <div key={key} className={`pos-target ${index === null && key !== picked ? 'unpicked' : ''}`} onPointerDown={(e) => startDrag(key, e)}>
+      <div key={key} data-key={key} className={`pos-target ${index === null && key !== picked ? 'unpicked' : ''}`} onPointerDown={(e) => startDrag(key, e)}>
         {draw(w)}
+        {key === picked && (
+          <span className={`pos-resize at-${handleCorner(w)}`} title="Drag to resize" onPointerDown={(e) => startResize(key, e)} />
+        )}
+        {key === resizing && <span className="pos-size">{w.size ?? 100}%</span>}
       </div>
     ) : (
       <div key={key} className="pos-other">
@@ -516,10 +531,34 @@ function PositionDialog({
     else spots[w.spot].push(el);
   });
   const current = draft.find((w) => widgetKey(w) === picked);
+  // The picked widget's size, as a fraction of the screen, for where the pad shows it once placed by hand.
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = stage.current?.querySelector(`[data-key="${CSS.escape(picked)}"]`);
+    if (!el || !stage.current) return setSize(null);
+    const box = el.getBoundingClientRect();
+    const screen = stage.current.getBoundingClientRect();
+    if (screen.width === 0 || box.width === 0) return; // hidden (the Look tab), or not drawn yet
+    const next = { w: box.width / screen.width, h: box.height / screen.height };
+    setSize((s) => (s && Math.abs(s.w - next.w) < 0.001 && Math.abs(s.h - next.h) < 0.001 ? s : next));
+  });
+  // The pad's dots cover where the spots are: the whole screen on desktop, and on phone the part between TikTok's
+  // buttons and chat, which the pad shades above and below in proportion.
+  const band = layout === 'phone' ? { top: LAYOUT_SAFE.phone.top, bottom: 1 - LAYOUT_SAFE.phone.bottom } : { top: 0, bottom: 1 };
+  // How far across the room it has, from `from` to `to`, something `length` long starting at `at` is: pushed to an
+  // edge, it's on that edge's dots, the way a spot's widgets sit. Past an edge (under TikTok's buttons or chat), it's
+  // out past the dots by as much, into the shading.
+  const along = (at: number, from: number, to: number, length: number) => {
+    if (at < from) return (at - from) / (to - from);
+    if (at + length > to) return 1 + (at + length - to) / (to - from);
+    return to - from - length > 0.001 ? (at - from) / (to - from - length) : 0.5;
+  };
+  const widgetKnob = (pos: { x: number; y: number }) => size && { x: along(pos.x / 100, 0, 1, size.w), y: along(pos.y / 100, band.top, band.bottom, size.h) };
+  // An alert's place is its middle.
+  const alertKnob = (pos: { x: number; y: number }) => ({ x: pos.x / 100, y: (pos.y / 100 - band.top) / (band.bottom - band.top) });
   const alertLooks = alertLook(alertStyle);
   const alertBox = useRef<HTMLDivElement>(null);
-  const clear = useClearOfWidgets(alertBox, index === null && alertDraft && !alertDraft.alertPos ? alertDraft.alertPosition : null, scale / 100, 1, [draft, fit]);
-  const alertMoved = Object.keys(clear).length > 0;
+  const clear = useClearOfWidgets(alertBox, index === null && alertDraft && !alertDraft.alertPos ? alertDraft.alertPosition : null, scale / 100, (alertDraft?.alertScale ?? 100) / 100, [draft, fit]);
   const single = index !== null;
   const remove = () => {
     onSave(saved.filter((w) => widgetKey(w) !== picked));
@@ -527,26 +566,24 @@ function PositionDialog({
   };
 
   return (
-    <dialog ref={dialog} className="pos-dialog" onClose={onClose} aria-labelledby="pos-title">
+    <dialog ref={dialog} className={`pos-dialog ${layout}`} onClose={onClose} aria-labelledby="pos-title">
       <div className="pos-head">
         <HueIcon name={info.icon} hue={info.hue} />
         <div>
           <h2 id="pos-title">{info.label}</h2>
           <p className="muted small">
-            {fixedPlace
-              ? 'Gift animations cover the whole screen. Sample gifts set them off.'
-              : index === null
-                ? `Drag any widget${alertDraft ? ' or the sample alert' : ''} anywhere. The one you moved last is picked: snap it to a spot below. Sample viewers and gifts.`
-                : tab === 'position'
-                  ? 'Drag the widget anywhere, or snap it to a spot. Your other widgets show faded. Sample viewers and gifts.'
-                  : 'Pick a preset, or any colors you like. Sample viewers and gifts.'}
+            {index === null
+              ? `Drag any widget${alertDraft ? ' or the sample alert' : ''} anywhere. The one you moved last is picked: snap it to a spot below. Sample viewers and gifts.`
+              : tab === 'position'
+                ? 'Drag the widget anywhere, or snap it to a spot. Your other widgets show faded. Sample viewers and gifts.'
+                : 'Pick a preset, or any colors you like. Sample viewers and gifts.'}
           </p>
         </div>
         <button className="btn btn-ghost btn-sm btn-icon" onClick={() => dialog.current?.close()} aria-label="Close">
           <Icon name="close" />
         </button>
       </div>
-      {single && !fixedPlace && (
+      {single && (
         <div className="widget-tabs" role="tablist" aria-label="Widget settings">
           {(
             [
@@ -567,13 +604,16 @@ function PositionDialog({
       {tab === 'look' && current && (
         <div className="widget-look-grid">
           <PreviewStage widget={current} feed={{ stats, chat, bus }} />
-          <WidgetLookControls value={current.style} onChange={(style) => setDraft((d) => d.map((w) => (widgetKey(w) === picked ? (style ? { ...w, style } : without(w)) : w)))} />
+          <WidgetLookControls
+            value={current.style}
+            size={{ value: current.size ?? 100, onChange: (size) => place(picked, { size: size === 100 ? undefined : size }) }}
+            onChange={(style) => setDraft((d) => d.map((w) => (widgetKey(w) === picked ? (style ? { ...w, style } : without(w)) : w)))}
+          />
         </div>
       )}
-      <div className="pos-stage" ref={stage} hidden={tab === 'look'} style={{ aspectRatio: `${CANVAS.width} / ${CANVAS.height}` }}>
-        <div className="pos-canvas" style={{ ...CANVAS, transform: `scale(${fit})` }}>
-          <div className={`overlay-screen ${alertDraft ? `alerts-${alertDraft.alertPosition}` : ''}`} style={{ '--overlay-scale': scale / 100 } as CSSProperties}>
-            {fixedPlace && <ScreenEffects gifts={giftAnimation(opened[index]!)} bus={bus} />}
+      <div {...stageProps(layout)} ref={stage} hidden={tab === 'look'}>
+        <div className="pos-canvas" style={canvasStyle(layout, fit)}>
+          <div className={`overlay-screen layout-${layout} ${alertDraft ? `alerts-${alertDraft.alertPosition}` : ''}`} style={{ '--overlay-scale': scale / 100 } as CSSProperties}>
             {WIDGET_SPOTS.map((s) => (
               <div key={s} className={`overlay-spot spot-${s}`}>
                 {spots[s]}
@@ -584,13 +624,24 @@ function PositionDialog({
               <div
                 ref={alertBox}
                 className={`overlay-alert alert-drag ${alertLooks.className} ${picked === ALERT_KEY ? '' : 'unpicked'}`}
-                style={{ ...alertLooks.style, ...alertPlace({ pos: alertDraft.alertPos, scale: 100 }), ...clear }}
+                style={{ ...alertLooks.style, ...alertPlace({ pos: alertDraft.alertPos, scale: alertDraft.alertScale }), ...clear }}
                 onPointerDown={(e) => {
                   setPicked(ALERT_KEY);
                   dragAlert(e, stage.current!, (alertPos) => setAlertDraft((a) => ({ ...a!, alertPos })));
                 }}
               >
                 <span>{SAMPLE_ALERT}</span>
+                {picked === ALERT_KEY && (
+                  <span
+                    className={`pos-resize alert-handle at-${alertHandleCorner(!alertDraft.alertPos && alertDraft.alertPosition === 'bottom')}`}
+                    title="Drag to resize this screen's alerts"
+                    onPointerDown={(e) => {
+                      setResizing(ALERT_KEY);
+                      dragAlertSize(e, alertDraft.alertScale, (alertScale) => setAlertDraft((a) => ({ ...a!, alertScale })), () => setResizing(null));
+                    }}
+                  />
+                )}
+                {resizing === ALERT_KEY && <span className="pos-size">{alertDraft.alertScale}%</span>}
               </div>
             )}
           </div>
@@ -599,34 +650,29 @@ function PositionDialog({
       {(current || picked === ALERT_KEY) && (
         <div className="pos-foot">
           {picked === ALERT_KEY && alertDraft && (
-            <>
-              <div className="pos-spots" role="group" aria-label="Snap alerts to a spot">
-                {ALERT_POSITIONS.map((p) => (
-                  <button key={p} type="button" className={`btn btn-sm ${!alertDraft.alertPos && alertDraft.alertPosition === p ? 'on' : ''}`} aria-pressed={!alertDraft.alertPos && alertDraft.alertPosition === p} onClick={() => setAlertDraft({ alertPosition: p, alertPos: null })}>
-                    {POSITION_LABELS[p]}
-                  </button>
-                ))}
-              </div>
-              <span className="muted small">
-                <strong>Alerts: </strong>
-                {alertDraft.alertPos ? `Custom: ${Math.round(alertDraft.alertPos.x)}% across, ${Math.round(alertDraft.alertPos.y)}% down` : `In the ${POSITION_LABELS[alertDraft.alertPosition].toLowerCase()} spot${alertMoved ? ', moved clear of your widgets' : ''}`}. Actions you placed by hand keep their own place.
-              </span>
-            </>
+            <div className="pos-place">
+              <SpotPad
+                spots={ALERT_PAD}
+                portrait={layout === 'phone'}
+                value={alertDraft.alertPosition}
+                custom={alertDraft.alertPos && alertKnob(alertDraft.alertPos)}
+                label="Snap alerts to a spot"
+                onPick={(p) => setAlertDraft((a) => ({ ...a!, alertPosition: p, alertPos: null }))}
+              />
+              <span className="muted small">Actions you placed by hand keep their own place.</span>
+            </div>
           )}
-          {current && !fixedPlace && tab === 'position' && (
-            <>
-              <div className="pos-spots" role="group" aria-label={`Snap ${widgetInfo(current, goals).label} to a spot`}>
-                {WIDGET_SPOTS.map((s) => (
-                  <button key={s} type="button" className={`btn btn-sm ${!current.pos && current.spot === s ? 'on' : ''}`} aria-pressed={!current.pos && current.spot === s} onClick={() => snap(s)}>
-                    {SPOT_LABELS[s]}
-                  </button>
-                ))}
-              </div>
-              <span className="muted small">
-                {index === null && <strong>{widgetInfo(current, goals).label}: </strong>}
-                {current.pos ? `Custom: ${Math.round(current.pos.x)}% across, ${Math.round(current.pos.y)}% down` : `In the ${SPOT_LABELS[current.spot].toLowerCase()} spot`}
-              </span>
-            </>
+          {current && tab === 'position' && (
+            <div className="pos-place">
+              <SpotPad
+                spots={WIDGET_PAD}
+                portrait={layout === 'phone'}
+                value={current.spot}
+                custom={current.pos && widgetKnob(current.pos)}
+                label={`Snap ${widgetInfo(current, goals).label} to a spot`}
+                onPick={snap}
+              />
+            </div>
           )}
           {single && current?.type === 'message' && (
             <label className="field widget-message-field">
@@ -640,59 +686,62 @@ function PositionDialog({
               />
             </label>
           )}
-          {single && current?.type === 'firework' && (
-            <>
-            <label className="row" style={{ flexWrap: 'nowrap' }}>
-              <span className="muted small">Screen animation</span>
-              <select className="input" value={current.effect ?? 'fireworks'} onChange={(e) => place(picked, { effect: e.target.value as ActionEffect })}>
-                <EffectOptions />
-              </select>
-            </label>
-            <label className="row" style={{ flexWrap: 'nowrap' }}>
-              <span className="muted small">Speed</span>
-              <select className="input" value={current.effectSpeed ?? 100} onChange={(e) => place(picked, { effectSpeed: Number(e.target.value) })}>
-                {EFFECT_SPEEDS.map((speed) => (
-                  <option key={speed} value={speed}>
-                    {speedLabel(speed)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            </>
+          {single && current?.type === 'coin_jar' && (
+            <div className="widget-settings">
+              <div className="setting">
+                <span className="setting-label">Full at</span>
+                <AmountField
+                  value={current.minDiamonds ?? DEFAULT_JAR_DIAMONDS}
+                  min={1}
+                  max={10_000_000}
+                  unit="coins"
+                  label="Coins that fill the jar"
+                  presets={[100, 500, 1000, 5000, 10_000]}
+                  onSave={(minDiamonds) => place(picked, { minDiamonds })}
+                />
+              </div>
+              <div className="setting">
+                <span className="setting-label">When full</span>
+                <RaiseCell
+                  raise={current.raise ?? null}
+                  target={current.minDiamonds ?? DEFAULT_JAR_DIAMONDS}
+                  label="What the jar does when it's full"
+                  stay="Stay full"
+                  unit="coins"
+                  onSave={(raise) => place(picked, { raise: raise ?? undefined })}
+                />
+              </div>
+              <div className="setting">
+                <span className="setting-label">Glass</span>
+                <Switch checked={current.shine !== false} onChange={(on) => place(picked, { shine: on ? undefined : false })}>
+                  Shine
+                </Switch>
+              </div>
+            </div>
           )}
-          {single && (current?.type === 'firework' || current?.type === 'coin_jar') && (
-            <label className="row" style={{ flexWrap: 'nowrap' }}>
-              <span className="muted small">{current.type === 'firework' ? 'From' : 'Full at'}</span>
-              <NumberCell
-                value={current.minDiamonds ?? (current.type === 'firework' ? DEFAULT_FIREWORK_DIAMONDS : 1000)}
-                min={1}
-                max={10_000_000}
-                label={current.type === 'firework' ? 'Animation for gifts worth at least, in coins' : 'Coins that fill the jar'}
-                onSave={(minDiamonds) => place(picked, { minDiamonds })}
-              />
-              <span className="muted small">coins</span>
-            </label>
-          )}
-          <span className="spacer" />
-          {single && (
-            <button className="btn btn-ghost btn-delete" onClick={remove}>
-              Remove widget
+          {/* On a row of their own, so the settings above can wrap however they need to. */}
+          <div className="pos-actions">
+            {single && (
+              <button className="btn btn-ghost btn-delete" onClick={remove}>
+                Remove widget
+              </button>
+            )}
+            <span className="spacer" />
+            <button className="btn btn-ghost" onClick={() => dialog.current?.close()}>
+              {changed ? 'Cancel' : 'Close'}
             </button>
-          )}
-          <button className="btn btn-ghost" onClick={() => dialog.current?.close()}>
-            {changed ? 'Cancel' : 'Close'}
-          </button>
-          <button
-            className="btn btn-primary"
-            disabled={!single && !changed} // a coin amount only reaches the draft as focus leaves it, on the way to this button
-            onClick={() => {
-              onSave(draft.map((w) => (w.type === 'message' && !w.text?.trim() ? { ...w, text: DEFAULT_MESSAGE } : w)), alertDraft !== alertSaved && alertDraft ? alertDraft : undefined);
-              if (single) dialog.current?.close();
-              else (setSaved(draft), setAlertSaved(alertDraft));
-            }}
-          >
-            {single ? 'Save' : !changed && (saved !== opened || alertSaved !== alertOpened) ? 'Saved' : 'Save positions'}
-          </button>
+            <button
+              className="btn btn-primary"
+              disabled={!single && !changed} // a coin amount only reaches the draft as focus leaves it, on the way to this button
+              onClick={() => {
+                onSave(draft.map((w) => (w.type === 'message' && !w.text?.trim() ? { ...w, text: DEFAULT_MESSAGE } : w)), alertDraft !== alertSaved && alertDraft ? alertDraft : undefined);
+                if (single) dialog.current?.close();
+                else (setSaved(draft), setAlertSaved(alertDraft));
+              }}
+            >
+              {single ? 'Save' : !changed && (saved !== opened || alertSaved !== alertOpened) ? 'Saved' : 'Save positions'}
+            </button>
+          </div>
         </div>
       )}
     </dialog>
@@ -707,26 +756,16 @@ function PreviewStage({ widget, feed, compact }: { widget: ScreenWidget; feed: P
   const goals = widget.goalId ? feed.stats?.goals.filter((g) => g.id === widget.goalId) : feed.stats?.goals;
   return (
     <div className={`widget-stage ${compact ? 'compact' : ''}`}>
-      {widget.type === 'firework' ? (
-        <ScreenEffects gifts={giftAnimation(widget)} bus={feed.bus} />
-      ) : (
-        <Widget widget={widget} stats={feed.stats} chat={feed.chat} bus={feed.bus} />
-      )}
+      <Widget widget={widget} stats={feed.stats} chat={feed.chat} bus={feed.bus} />
       {widget.type === 'goals' && goals?.length === 0 && <p className="widget-stage-empty">Add a goal in the Goals card to see it here.</p>}
-      {widget.type === 'firework' && compact && <p className="widget-stage-empty">For gifts worth {(widget.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS).toLocaleString()}+ coins</p>}
-      {!compact && (
-        <span className="widget-stage-note">
-          {widget.type === 'firework'
-            ? `Sample gifts of up to 1,500 coins. Only those worth ${(widget.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS).toLocaleString()} or more play the animation.`
-            : 'Sample viewers and gifts'}
-        </span>
-      )}
+      {!compact && <span className="widget-stage-note">Sample viewers and gifts</span>}
     </div>
   );
 }
 
 // A widget's colors, font and shape. Without a style it has its own colors; changing anything starts from the first preset.
-function WidgetLookControls({ value, onChange }: { value: WidgetStyle | undefined; onChange: (style: WidgetStyle | undefined) => void }) {
+// `size`, for a widget on a screen: its own size, kept apart from its look so resizing doesn't need custom colors.
+function WidgetLookControls({ value, size, onChange }: { value: WidgetStyle | undefined; size?: { value: number; onChange: (size: number) => void }; onChange: (style: WidgetStyle | undefined) => void }) {
   const style = value ?? WIDGET_PRESETS[0]!.style;
   const set = (patch: Partial<WidgetStyle>) => onChange({ ...style, ...patch });
   const range = (key: keyof typeof WIDGET_STYLE_LIMITS) => ({ min: WIDGET_STYLE_LIMITS[key][0], max: WIDGET_STYLE_LIMITS[key][1] });
@@ -755,7 +794,7 @@ function WidgetLookControls({ value, onChange }: { value: WidgetStyle | undefine
         </div>
         <div className="field">
           Size
-          <Scrubber value={style.size} {...range('size')} buttonStep={5} unit="%" label="Widget size" onSave={(size) => set({ size })} />
+          <Scrubber value={size?.value ?? style.size} {...range('size')} buttonStep={5} unit="%" label="Widget size" onSave={(n) => (size ? size.onChange(n) : set({ size: n }))} />
         </div>
         <div className="field">
           Corner roundness
@@ -824,19 +863,19 @@ const METRIC_ICONS: Record<GoalMetric, { icon: IconName; hue: Hue }> = {
 
 const RAISE_MULTIPLES = [1.25, 1.5, 2, 3, 5, 10];
 
-// What a goal does once it's reached.
-function RaiseCell({ goal, onSave }: { goal: Goal; onSave: (raise: GoalRaise | null) => void }) {
-  const { raise } = goal;
+// What a goal, or a coin jar, does once it's reached.
+// With `unit`, amounts get a stepper (see AmountField) rather than a plain box.
+function RaiseCell({ raise, target, label, stay = 'Stay reached', unit, onSave }: { raise: GoalRaise | null; target: number; label: string; stay?: string; unit?: string; onSave: (raise: GoalRaise | null) => void }) {
   const pick = (kind: string) => {
     if (kind === 'times') onSave({ kind, by: 2 });
-    else if (kind === 'plus') onSave({ kind, by: goal.target });
-    else if (kind === 'to') onSave({ kind, by: goal.target * 2 });
+    else if (kind === 'plus') onSave({ kind, by: target });
+    else if (kind === 'to') onSave({ kind, by: target * 2 });
     else onSave(null);
   };
   return (
     <span className="goal-raise">
-      <select className="input" value={raise?.kind ?? ''} aria-label={`What ${goal.name} does when reached`} onChange={(e) => pick(e.target.value)}>
-        <option value="">Stay reached</option>
+      <select className="input" value={raise?.kind ?? ''} aria-label={label} onChange={(e) => pick(e.target.value)}>
+        <option value="">{stay}</option>
         <option value="times">Multiply by</option>
         <option value="plus">Add</option>
         <option value="to">Move once to</option>
@@ -850,9 +889,12 @@ function RaiseCell({ goal, onSave }: { goal: Goal; onSave: (raise: GoalRaise | n
           ))}
         </select>
       )}
-      {(raise?.kind === 'plus' || raise?.kind === 'to') && (
-        <NumberCell value={raise.by} min={1} max={100_000_000} label={raise.kind === 'plus' ? 'Amount to add' : 'New target'} onSave={(by) => onSave({ kind: raise.kind, by })} />
-      )}
+      {(raise?.kind === 'plus' || raise?.kind === 'to') &&
+        (unit ? (
+          <AmountField value={raise.by} min={1} max={100_000_000} unit={unit} label={raise.kind === 'plus' ? 'Amount to add' : 'New target'} onSave={(by) => onSave({ kind: raise.kind, by })} />
+        ) : (
+          <NumberCell value={raise.by} min={1} max={100_000_000} label={raise.kind === 'plus' ? 'Amount to add' : 'New target'} onSave={(by) => onSave({ kind: raise.kind, by })} />
+        ))}
     </span>
   );
 }
@@ -912,7 +954,7 @@ function GoalsCard({ goals, reload: load }: { goals: Goal[]; reload: () => Promi
                     <NumberCell value={g.target} min={1} max={100_000_000} label="Target" onSave={(target) => update(g.id, { target })} />
                   </td>
                   <td>
-                    <RaiseCell goal={g} onSave={(raise) => update(g.id, { raise })} />
+                    <RaiseCell raise={g.raise} target={g.target} label={`What ${g.name} does when reached`} onSave={(raise) => update(g.id, { raise })} />
                   </td>
                   <td className="actions">
                     <button className="btn btn-ghost btn-sm btn-delete" onClick={guard(() => api('DELETE', `/goals/${g.id}`).then(load))}>
@@ -949,52 +991,53 @@ function GoalsCard({ goals, reload: load }: { goals: Goal[]; reload: () => Promi
 }
 
 // Where this screen's alerts show: drag a sample alert. Actions placed by hand keep their own place.
-function AlertSpotDialog({ screen, style, onDone, onClose }: { screen: Screen; style: AlertStyle | null; onDone: (pos: { x: number; y: number }) => void; onClose: () => void }) {
+function AlertSpotDialog({ screen, style, onDone, onClose }: { screen: Screen; style: AlertStyle | null; onDone: (spot: { alertPos: { x: number; y: number }; alertScale: number }) => void; onClose: () => void }) {
   const [pos, setPos] = useState(screen.alertPos ?? { x: 50, y: 50 });
+  const [size, setSize] = useState(screen.alertScale);
+  const [resizing, setResizing] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const stage = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState(0.4);
+  const fit = useStageFit(stage, screen.layout);
   const [bus] = useState(() => new GiftBus());
   const { stats, chat } = usePreview(true, bus);
   const look = alertLook(style);
   useEffect(() => dialog.current?.showModal(), []);
-  useLayoutEffect(() => {
-    const measure = () => stage.current && setFit(stage.current.clientWidth / CANVAS.width);
-    measure();
-    const resize = new ResizeObserver(measure);
-    resize.observe(stage.current!);
-    return () => resize.disconnect();
-  }, []);
   return (
-    <dialog ref={dialog} className="pos-dialog" onClose={onClose} aria-labelledby="alert-spot-title">
+    <dialog ref={dialog} className={`pos-dialog ${screen.layout}`} onClose={onClose} aria-labelledby="alert-spot-title">
       <div className="pos-head">
         <div>
           <h2 id="alert-spot-title">Where alerts appear on {screen.name}</h2>
-          <p className="muted small">Drag the sample alert anywhere. Actions you placed by hand keep their own place.</p>
+          <p className="muted small">Drag the sample alert anywhere, or its corner handle to resize this screen's alerts. Actions you placed by hand keep their own place.</p>
         </div>
         <button className="btn btn-ghost btn-sm btn-icon" onClick={() => dialog.current?.close()} aria-label="Close">
           <Icon name="close" />
         </button>
       </div>
-      <div className="pos-stage" ref={stage} style={{ aspectRatio: `${CANVAS.width} / ${CANVAS.height}` }}>
-        <div className="pos-canvas" style={{ ...CANVAS, transform: `scale(${fit})` }}>
-          <div className="overlay-screen" style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
+      <div {...stageProps(screen.layout)} ref={stage}>
+        <div className="pos-canvas" style={canvasStyle(screen.layout, fit)}>
+          <div className={`overlay-screen layout-${screen.layout}`} style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
             <FadedWidgets widgets={screen.widgets} feed={{ stats, chat, bus }} />
-            <div className={`overlay-alert alert-drag ${look.className}`} style={{ ...look.style, ...alertPlace({ pos, scale: 100 }) }} onPointerDown={(e) => dragAlert(e, stage.current!, setPos)}>
+            <div className={`overlay-alert alert-drag ${look.className}`} style={{ ...look.style, ...alertPlace({ pos, scale: size }) }} onPointerDown={(e) => dragAlert(e, stage.current!, setPos)}>
               <span>Your alert</span>
+              <span
+                className={`pos-resize alert-handle at-${alertHandleCorner(false)}`}
+                title="Drag to resize this screen's alerts"
+                onPointerDown={(e) => (setResizing(true), dragAlertSize(e, size, setSize, () => setResizing(false)))}
+              />
+              {resizing && <span className="pos-size">{size}%</span>}
             </div>
           </div>
         </div>
       </div>
       <div className="pos-foot">
         <span className="muted small">
-          Middle at {Math.round(pos.x)}% across, {Math.round(pos.y)}% down
+          Middle at {Math.round(pos.x)}% across, {Math.round(pos.y)}% down, {size}% size
         </span>
         <span className="spacer" />
         <button className="btn btn-ghost" onClick={() => dialog.current?.close()}>
           Cancel
         </button>
-        <button className="btn btn-primary" onClick={() => onDone(pos)}>
+        <button className="btn btn-primary" onClick={() => onDone({ alertPos: pos, alertScale: size })}>
           Save position
         </button>
       </div>
@@ -1002,8 +1045,47 @@ function AlertSpotDialog({ screen, style, onDone, onClose }: { screen: Screen; s
   );
 }
 
+// The screen's own overlay page in a frame the size of its browser source, drawn smaller to fit: exactly what OBS or
+// LIVE Studio shows, alerts and all, with sample numbers until you go live.
+function PreviewDialog({ screen, url, onClose }: { screen: Screen; url: string; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const source = LAYOUT_CANVAS[screen.layout]; // the browser source size it's made for
+  const [fit, setFit] = useState(0.4);
+  useEffect(() => dialog.current?.showModal(), []);
+  useLayoutEffect(() => {
+    const measure = () => stage.current && setFit(stage.current.clientWidth / source.width);
+    measure();
+    const resize = new ResizeObserver(measure);
+    resize.observe(stage.current!);
+    return () => resize.disconnect();
+  }, [source.width]);
+  return (
+    <dialog ref={dialog} className={`pos-dialog preview-dialog ${screen.layout}`} onClose={onClose} aria-labelledby="preview-title">
+      <div className="pos-head">
+        <div>
+          <h2 id="preview-title">{screen.name} preview</h2>
+          <p className="muted small">
+            As your stream shows it, at {source.width} × {source.height}. Sample numbers until you go live; alerts you test show here too.
+          </p>
+        </div>
+        <a className="btn btn-ghost btn-sm" href={url} target="_blank" rel="noreferrer">
+          Open in new tab
+        </a>
+        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => dialog.current?.close()} aria-label="Close">
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className={`pos-stage ${screen.layout}`} ref={stage} style={{ aspectRatio: `${source.width} / ${source.height}` }}>
+        <iframe className="preview-frame" src={url} title={`${screen.name} preview`} style={{ width: source.width, height: source.height, transform: `scale(${fit})` }} />
+      </div>
+    </dialog>
+  );
+}
+
 function ScreenCard({ screen, goals, alertStyle, reload, refreshHost }: { screen: Screen; goals: Goal[]; alertStyle: AlertStyle | null; reload: () => Promise<unknown>; refreshHost: () => Promise<unknown> }) {
   const [placingAlerts, setPlacingAlerts] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const url = `${location.origin}/overlay/${screen.token}`;
   const [copied, setCopied] = useState(false);
   const { error, guard } = useError();
@@ -1048,87 +1130,119 @@ function ScreenCard({ screen, goals, alertStyle, reload, refreshHost }: { screen
         <button className="btn btn-primary" onClick={() => navigator.clipboard.writeText(url).then(() => setCopied(true))}>
           {copied ? 'Copied' : 'Copy'}
         </button>
-        <a className="btn btn-try" href={`${url}?preview`} target="_blank" rel="noreferrer" title="Shows your widgets and goals with sample numbers until you go live">
-          Open preview
-        </a>
+        <button className="btn btn-try" onClick={() => setPreviewing(true)} title="Shows your widgets and goals with sample numbers until you go live">
+          Preview
+        </button>
       </div>
+      {previewing && <PreviewDialog screen={screen} url={`${url}?preview`} onClose={() => setPreviewing(false)} />}
       <div className="form-grid">
         <label className="field">
           Name
           <TextCell value={screen.name} required label="Screen name" onSave={(name) => save({ name })} />
         </label>
         <div className="field">
-          Alerts appear at the
-          <div className="alert-spots" role="radiogroup" aria-label="Alert position">
-            {[...ALERT_POSITIONS, 'custom' as const].map((p) => {
-              const on = (screen.alertPos ? 'custom' : screen.alertPosition) === p;
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  className={`alert-spot ${p}`}
-                  onClick={() => (p === 'custom' ? setPlacingAlerts(true) : save({ alertPosition: p, alertPos: null }))}
-                >
-                  <span className="alert-spot-map" aria-hidden="true">
-                    <i />
-                  </span>
-                  {p === 'custom' ? 'Custom' : POSITION_LABELS[p]}
-                </button>
-              );
-            })}
+          Made for
+          <span className="hint">{LAYOUTS[screen.layout]}</span>
+          <div className="layout-pick" role="radiogroup" aria-label="Made for">
+            {SCREEN_LAYOUTS.map((layout) => (
+              <button key={layout} type="button" role="radio" aria-checked={screen.layout === layout} className={`layout-option ${LAYOUT_LOOKS[layout].hue}`} onClick={() => save({ layout })}>
+                <Icon name={layout} size={18} />
+                {LAYOUT_LOOKS[layout].label}
+              </button>
+            ))}
           </div>
-          {screen.alertPos && (
-            <button type="button" className="link-button small" onClick={() => setPlacingAlerts(true)}>
-              Move it
-            </button>
-          )}
-          {placingAlerts && <AlertSpotDialog screen={screen} style={alertStyle} onDone={(alertPos) => (save({ alertPos }), setPlacingAlerts(false))} onClose={() => setPlacingAlerts(false)} />}
         </div>
         <div className="field">
           Size
-          <span className="hint">Of everything on this screen. 100% is normal.</span>
+          <span className="hint">Of everything on this screen.</span>
           <Scrubber value={screen.scale} min={50} max={200} buttonStep={5} unit="%" label="Size" onSave={(scale) => save({ scale })} />
         </div>
-        {screen.leaderboard && (
-          <div className="field">
-            Leaderboard players
-            <span className="hint">How many it lists, once that many have played.</span>
-            <Scrubber value={screen.leaderboardSize} min={MIN_LEADERBOARD_SIZE} max={MAX_LEADERBOARD_SIZE} buttonStep={1} label="Leaderboard players" onSave={(leaderboardSize) => save({ leaderboardSize })} />
-          </div>
-        )}
       </div>
-      <div className="screen-switches">
-        {SCREEN_PARTS.map((part) => (
-          <PartToggle key={part.part} {...part} checked={screen[part.part]} onChange={(on) => save({ [part.part]: on })} />
-        ))}
+      <div className="stack">
+        <h3>What it shows</h3>
+        <ul className="screen-parts">
+          {SCREEN_PARTS.map(({ part, label, hint, icon, hue }) => (
+            <li key={part} className={`screen-part ${screen[part] ? 'on' : ''}`}>
+              <label className="screen-part-head">
+                <HueIcon name={icon} hue={hue} />
+                <span className="screen-part-text">
+                  <strong>{label}</strong>
+                  <small>{hint}</small>
+                </span>
+                <span className="switch">
+                  <input type="checkbox" checked={screen[part]} onChange={(e) => save({ [part]: e.target.checked })} />
+                </span>
+              </label>
+              {/* A part's own settings, while it's on. */}
+              {part === 'alerts' && screen.alerts && (
+                <div className="screen-part-settings">
+                  <div className="setting">
+                    <span className="setting-label">Appear at</span>
+                    <div className="alert-spots" role="radiogroup" aria-label="Alert position">
+                      {[...ALERT_POSITIONS, 'custom' as const].map((p) => {
+                        const on = (screen.alertPos ? 'custom' : screen.alertPosition) === p;
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            role="radio"
+                            aria-checked={on}
+                            className={`alert-spot ${p}`}
+                            onClick={() => (p === 'custom' ? setPlacingAlerts(true) : save({ alertPosition: p, alertPos: null }))}
+                          >
+                            <span className="alert-spot-map" aria-hidden="true">
+                              <i />
+                            </span>
+                            {p === 'custom' ? 'Custom' : POSITION_LABELS[p]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {screen.alertPos && (
+                      <button type="button" className="link-button small" onClick={() => setPlacingAlerts(true)}>
+                        Move it
+                      </button>
+                    )}
+                    {placingAlerts && <AlertSpotDialog screen={screen} style={alertStyle} onDone={(spot) => (save(spot), setPlacingAlerts(false))} onClose={() => setPlacingAlerts(false)} />}
+                  </div>
+                  <div className="setting">
+                    <span className="setting-label">Size</span>
+                    <Scrubber value={screen.alertScale} min={50} max={200} buttonStep={5} unit="%" label="Alert size" onSave={(alertScale) => save({ alertScale })} />
+                    <span className="muted small">Each action&apos;s own size goes on top.</span>
+                  </div>
+                </div>
+              )}
+              {part === 'leaderboard' && screen.leaderboard && (
+                <div className="screen-part-settings">
+                  <div className="setting">
+                    <span className="setting-label">Players</span>
+                    <Scrubber value={screen.leaderboardSize} min={MIN_LEADERBOARD_SIZE} max={MAX_LEADERBOARD_SIZE} buttonStep={1} label="Leaderboard players" onSave={(leaderboardSize) => save({ leaderboardSize })} />
+                    <span className="muted small">How many it lists, once that many have played.</span>
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
       </div>
-      <WidgetsEditor widgets={screen.widgets} goals={goals} scale={screen.scale} alertSpot={screen.alerts ? { alertPosition: screen.alertPosition, alertPos: screen.alertPos } : null} alertStyle={alertStyle} onSave={(widgets, alertSpot) => save({ widgets, ...alertSpot })} />
+      <WidgetsEditor widgets={screen.widgets} goals={goals} scale={screen.scale} layout={screen.layout} alertSpot={screen.alerts ? { alertPosition: screen.alertPosition, alertPos: screen.alertPos, alertScale: screen.alertScale } : null} alertStyle={alertStyle} onSave={(widgets, alertSpot) => save({ widgets, ...alertSpot })} />
     </Card>
   );
 }
 
+// What each layout is for, and the browser source size it's made for.
+const LAYOUTS: Record<ScreenLayout, string> = {
+  desktop: 'Landscape. Browser source 1920 × 1080.',
+  phone: "Portrait, clear of TikTok's buttons and chat. Browser source 1080 × 1920.",
+};
+// Each layout's name and color on its button (its icon is named after it).
+const LAYOUT_LOOKS: Record<ScreenLayout, { label: string; hue: Hue }> = { desktop: { label: 'Desktop', hue: 'sky' }, phone: { label: 'Phone', hue: 'violet' } };
+
 // What a screen shows, each in the color of the dashboard page it comes from (Actions pink, Commands indigo, and so on).
-const SCREEN_PARTS: { part: 'alerts' | 'feed' | 'leaderboard' | 'mode' | 'audio'; label: string; hint?: string; icon: IconName; hue: Hue }[] = [
+const SCREEN_PARTS: { part: 'alerts' | 'feed' | 'leaderboard' | 'mode' | 'audio'; label: string; hint: string; icon: IconName; hue: Hue }[] = [
   { part: 'alerts', label: 'Alerts', hint: 'From your actions, unless an action picks another screen.', icon: 'bell', hue: 'pink' },
   { part: 'feed', label: 'Command feed', hint: 'Who pressed what, level-ups and !points answers.', icon: 'feed', hue: 'indigo' },
   { part: 'leaderboard', label: 'Leaderboard', hint: 'The top players, by level or commands.', icon: 'leaderboard', hue: 'sky' },
   { part: 'mode', label: 'Crowd mode panel', hint: 'Votes, the queue, or the gift-mode banner.', icon: 'crowd', hue: 'teal' },
   { part: 'audio', label: 'Sound', hint: 'Alert sounds, voices and read-aloud chat.', icon: 'voice', hue: 'violet' },
 ];
-
-function PartToggle({ label, hint, icon, hue, checked, onChange }: (typeof SCREEN_PARTS)[number] & { checked: boolean; onChange: (on: boolean) => void }) {
-  return (
-    <label className={`part-toggle ${hue} ${checked ? 'on' : ''}`}>
-      <HueIcon name={icon} hue={hue} />
-      <span className="part-toggle-text">
-        <strong>{label}</strong>
-        {hint && <small>{hint}</small>}
-      </span>
-      <span className="switch">
-        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      </span>
-    </label>
-  );
-}

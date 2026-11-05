@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, type Companion } from '../api';
 import { Icon } from '../icons';
 import { Card, ErrorNotice, useError } from '../ui';
@@ -38,13 +38,18 @@ export function CompanionPage({ status }: PageProps) {
         <div className="pairing">
           <div className="inset">
             <div className="muted small">Server address</div>
-            <code className="pairing-address">{location.origin}</code>
+            <CopyText text={location.origin} label="server address" className="pairing-address">
+              <code>{location.origin}</code>
+            </CopyText>
           </div>
           <div className="inset">
             <div className="muted small">Pairing code</div>
             {pairing ? (
               <>
-                <strong className={`pairing-code ${expired ? 'expired' : ''}`}>{pairing.code}</strong>
+                {/* Keyed by the code, so a new one doesn't still say Copied. */}
+                <CopyText key={pairing.code} text={pairing.code} label="pairing code" className={`pairing-code ${expired ? 'expired' : ''}`} disabled={expired}>
+                  {pairing.code}
+                </CopyText>
                 <div className="row">
                   <span className="muted small">
                     {expired ? 'Expired. Make a new one.' : `Valid until ${new Date(pairing.expiresAt).toLocaleTimeString()}`}
@@ -94,5 +99,30 @@ export function CompanionPage({ status }: PageProps) {
         )}
       </Card>
     </div>
+  );
+}
+
+// Text that copies itself when clicked, then says so for a moment. `label` names it, for screen readers.
+function CopyText({ text, label, className, disabled, children }: { text: string; label: string; className: string; disabled?: boolean; children: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const { error, guard } = useError();
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <button
+      type="button"
+      className={`copy-text ${className} ${copied ? 'copied' : ''}`}
+      onClick={guard(() => navigator.clipboard.writeText(text).then(() => setCopied(true)))}
+      disabled={disabled}
+      aria-label={`${text}. ${copied ? `Copied the ${label}` : `Copy the ${label}`}`}
+    >
+      {children}
+      <span className={`copy-hint ${error ? 'failed' : ''}`} aria-hidden="true">
+        {copied ? 'Copied' : error ? "Couldn't copy" : 'Click to copy'}
+      </span>
+    </button>
   );
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "overlay_screens" ADD COLUMN "alert_scale" integer DEFAULT 100 NOT NULL;

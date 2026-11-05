@@ -37,10 +37,17 @@ export interface MediaItem {
 }
 // Files every host gets, from apps/server/assets/library.
 export const BUILT_IN_MEDIA = [
-  { file: 'dance.gif', name: 'Dance' },
-  { file: 'luffy-gear-5.gif', name: 'Luffy Gear 5' },
-  { file: 'scuba-cat.gif', name: 'Scuba Cat' },
-  { file: 'woah-look-at-that-look.gif', name: 'Woah, look at that look' },
+  { file: 'dance.gif', name: 'Dance', kind: 'image' },
+  { file: 'luffy-gear-5.gif', name: 'Luffy Gear 5', kind: 'image' },
+  { file: 'scuba-cat.gif', name: 'Scuba Cat', kind: 'image' },
+  { file: 'woah-look-at-that-look.gif', name: 'Woah, look at that look', kind: 'image' },
+  { file: 'balls-in-your-jaws.mp3', name: 'Balls in your jaws', kind: 'audio' },
+  { file: 'giga-chad.mp3', name: 'Giga Chad', kind: 'audio' },
+  { file: 'heavenly-music.mp3', name: 'Heavenly music', kind: 'audio' },
+  { file: 'i-just-hit-the-jackpot.mp3', name: 'I just hit the jackpot', kind: 'audio' },
+  { file: 'raaaah.mp3', name: 'Raaaah', kind: 'audio' },
+  { file: 'sad-meow-song.mp3', name: 'Sad meow song', kind: 'audio' },
+  { file: 'talking-ben-yes.mp3', name: 'Talking Ben: yes', kind: 'audio' },
 ] as const;
 
 // An overlay URL and what it shows. Every host has a main screen (their original overlay address) and can add more,
@@ -48,20 +55,23 @@ export const BUILT_IN_MEDIA = [
 export const ALERT_POSITIONS = ['top', 'middle', 'bottom'] as const;
 export type AlertPosition = (typeof ALERT_POSITIONS)[number];
 // Widgets a screen can add, each pinned to a spot on the screen. Widgets in the same spot stack.
-export const WIDGET_TYPES = ['goals', 'top_gift', 'top_streak', 'last_follower', 'last_gifter', 'stats', 'chat', 'coin_jar', 'firework', 'level_ups', 'message'] as const;
+export const WIDGET_TYPES = ['goals', 'top_gift', 'top_streak', 'last_follower', 'last_gifter', 'stats', 'chat', 'coin_jar', 'level_ups', 'message'] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 export const WIDGET_SPOTS = ['top-left', 'top', 'top-right', 'left', 'right', 'bottom-left', 'bottom', 'bottom-right'] as const;
 export type WidgetSpot = (typeof WIDGET_SPOTS)[number];
+// Where a goal's own widget goes when the goal is made.
+export const GOAL_WIDGET_SPOT: WidgetSpot = 'left';
 export interface ScreenWidget {
   type: WidgetType;
-  spot: WidgetSpot; // fireworks use the whole screen and ignore it
-  minDiamonds?: number; // firework: gifts worth at least this; coin jar: diamonds that fill the jar
-  effect?: ActionEffect; // firework: which animation; without it, fireworks
-  effectSpeed?: number; // firework: percent of normal; without it, 100
+  spot: WidgetSpot;
+  minDiamonds?: number; // coin jar: diamonds that fill the jar
+  raise?: GoalRaise; // coin jar: where its target goes once it's full, and it starts filling again; without it, it stays full
+  shine?: false; // coin jar: without the glass's gleam and the shine after each gift
   text?: string; // message: what it says
   goalId?: string; // goals: just this goal; without it, every goal
   pos?: { x: number; y: number }; // placed by hand instead of in its spot: the top-left corner, in percent of the screen
   style?: WidgetStyle; // without it, the widget's own colors
+  size?: number; // percent, on top of the screen's size (WIDGET_STYLE_LIMITS.size); without it, 100
 }
 // A widget's look. Colors are #rrggbb.
 export interface WidgetStyle {
@@ -73,7 +83,7 @@ export interface WidgetStyle {
   borderWidth: number; // px; 0 for none
   radius: number; // px
   font: AlertFont;
-  size: number; // percent, on top of the screen's size
+  size: number; // percent, on top of the screen's size. A Widget link's; a widget on a screen has its own size instead
 }
 export const WIDGET_STYLE_LIMITS = { opacity: [0, 100], borderWidth: [0, 8], radius: [0, 40], size: [50, 200] } as const;
 export const WIDGET_PRESETS: { id: string; label: string; style: WidgetStyle }[] = [
@@ -125,6 +135,9 @@ export interface StreamStats {
   goals: { id: string; name: string; metric: GoalMetric; target: number; current: number }[];
 }
 
+// What a screen is laid out for: a landscape stream, or a portrait one, as TikTok shows it on phones.
+export const SCREEN_LAYOUTS = ['desktop', 'phone'] as const;
+export type ScreenLayout = (typeof SCREEN_LAYOUTS)[number];
 export interface OverlayScreen {
   id: string;
   name: string;
@@ -137,7 +150,9 @@ export interface OverlayScreen {
   audio: boolean;
   alertPosition: AlertPosition;
   alertPos: { x: number; y: number } | null; // dragged by hand instead: its middle, in percent of the screen
+  alertScale: number; // percent: its alerts' size, on top of the screen's size and each action's own
   scale: number; // percent
+  layout: ScreenLayout;
   widgets: ScreenWidget[];
   linkStyles: Record<string, WidgetStyle>; // by widgetKey: looks for Widget links, over the same widget's look on this screen
 }
@@ -206,7 +221,8 @@ export type ModeState =
 export interface LeaderboardEntry {
   viewer: string;
   commands: number;
-  gifts: number;
+  gifts: number; // gifts sent, counting each of a combo
+  coins: number; // what those gifts were worth
   xp: number;
   points: number; // spendable balance
   avatar: string | null; // a link to their profile picture; TikTok's links stop working after a while
@@ -255,7 +271,7 @@ export type AlertSound = (typeof ALERT_SOUNDS)[number];
 // or second style. A host without a main style gets the Plasma preset. Colors are #rrggbb, or #rrggbbaa where a preset needs transparency.
 export const ALERT_FONTS = ['geist', 'oxanium', 'dm-sans', 'jakarta', 'fredoka', 'bebas', 'anton', 'impact', 'orbitron', 'righteous', 'press-start', 'bangers', 'permanent-marker', 'pacifico', 'lobster', 'caveat', 'comic', 'georgia', 'courier'] as const;
 export type AlertFont = (typeof ALERT_FONTS)[number];
-// Full-screen animations. Any action can play any of them, and the gift animation widget too.
+// Full-screen animations. Any action can play any of them.
 export const SCREEN_EFFECTS = ['fireworks', 'confetti', 'hearts', 'coins', 'balloons', 'snow', 'stars', 'bubbles'] as const;
 export type ScreenEffect = (typeof SCREEN_EFFECTS)[number];
 export type ActionEffect = ScreenEffect | 'random'; // random: a different one each time
@@ -366,6 +382,7 @@ export const DEFAULT_ALERT_STYLE = ALERT_PRESETS[0]!.style;
 // 'full' its font, corners and shadows too.
 export const UI_THEMES = [
   { id: 'default', label: 'Default' },
+  { id: 'legacy', label: 'Legacy' },
   { id: 'solar-dusk', label: 'Solar Dusk' },
   { id: 'graphite-mono', label: 'Graphite Mono' },
   { id: 'sage-mist', label: 'Sage Mist' },
@@ -378,12 +395,12 @@ export type UiMode = (typeof UI_MODES)[number]; // light or dark; 'system' follo
 // The dashboard Live page's cards. A card in neither column is hidden.
 export const LIVE_CARDS = [
   'commands', 'feed', 'stream', 'mode', 'voice', 'activity', 'players',
-  'viewers', 'peak-viewers', 'interactors', 'gifts', 'coins', 'likes', 'follows', 'shares', 'top-gift', 'last-follower',
+  'viewers', 'peak-viewers', 'interactors', 'gifts', 'coins', 'likes', 'follows', 'shares', 'subscriptions', 'top-gift', 'last-follower',
 ] as const;
 export type LiveCard = (typeof LIVE_CARDS)[number];
 export type LiveColumn = 'main' | 'side';
 export type LiveLayout = Record<LiveColumn, LiveCard[]>;
-export const DEFAULT_LIVE_LAYOUT: LiveLayout = { main: ['commands', 'feed', 'stream'], side: ['mode', 'voice', 'activity', 'players'] };
+export const DEFAULT_LIVE_LAYOUT: LiveLayout = { main: ['stream', 'commands', 'feed'], side: ['mode', 'voice', 'activity', 'players'] };
 
 // Template placeholders: {viewer}, {count}, {gift}, {diamonds}, {total} (likes), {months}, {text} (command), {goal}, {target}.
 
@@ -468,6 +485,8 @@ export type ServerToOverlay =
       sound: AlertSound | null;
       speech: Speech | null;
       soundFile?: string;
+      soundFileVolume?: number; // percent, of soundFile; without it, 100
+      soundVolume?: number; // percent, of a built-in sound or built-in sound file; without it, 100
       media?: { id: string; kind: MediaKind };
       durationMs?: number;
       screen?: string;
@@ -549,10 +568,26 @@ export interface StreamDetail {
   };
 }
 
+// One viewer's part in one stream, for the stream's report.
+export interface StreamViewer {
+  viewer: string;
+  name: string | null; // their display name in that stream
+  avatar: string | null; // the picture last saved for them, if any; TikTok's links stop working after a while
+  comments: number;
+  commands: number; // key presses
+  gifts: number;
+  coins: number;
+  likes: number;
+  followed: boolean;
+  firstAt: number;
+  lastAt: number;
+}
+
 // One viewer across the host's streams (optionally one TikTok account's).
 export interface ViewerProfile {
   viewer: string;
   name: string | null; // their latest display name
+  avatar: string | null; // a link to their profile picture; TikTok's links stop working after a while
   firstSeen: number | null;
   lastSeen: number | null;
   streams: number; // streams they showed up in

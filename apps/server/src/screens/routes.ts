@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { ALERT_FONTS, ALERT_POSITIONS, EFFECT_SPEEDS, WIDGET_STYLE_LIMITS, MAX_LEADERBOARD_SIZE, MAX_MESSAGE_LENGTH, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, SCREEN_EFFECTS, WIDGET_SPOTS, WIDGET_TYPES, type OverlayScreen } from '@hyperion/shared';
+import { ALERT_FONTS, ALERT_POSITIONS, WIDGET_STYLE_LIMITS, MAX_LEADERBOARD_SIZE, MAX_MESSAGE_LENGTH, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, SCREEN_LAYOUTS, WIDGET_SPOTS, WIDGET_TYPES, type GoalRaise, type OverlayScreen } from '@hyperion/shared';
 import { hosts, overlayScreens } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { newToken } from '../crypto.js';
@@ -9,6 +9,20 @@ type Row = typeof overlayScreens.$inferSelect;
 export const toScreen = ({ hostId: _h, token: _t, position: _p, ...screen }: Row): OverlayScreen => screen;
 
 const MAX_SCREENS = 8;
+const raiseBy = (kind: GoalRaise['kind'], by: object) => ({
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'by'],
+  properties: { kind: { const: kind }, by },
+});
+// Where a goal's target, or a coin jar's, goes once reached.
+export const raiseSchema = {
+  anyOf: [
+    raiseBy('times', { type: 'number', exclusiveMinimum: 1, maximum: 100 }),
+    raiseBy('plus', { type: 'integer', minimum: 1, maximum: 100_000_000 }),
+    raiseBy('to', { type: 'integer', minimum: 1, maximum: 100_000_000 }),
+  ],
+};
 const color = { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' };
 const widgetStyle = {
   type: 'object',
@@ -39,6 +53,8 @@ const fields = {
     properties: { x: { type: 'number', minimum: 0, maximum: 100 }, y: { type: 'number', minimum: 0, maximum: 100 } },
   },
   scale: { type: 'integer', minimum: 50, maximum: 200 },
+  alertScale: { type: 'integer', minimum: 50, maximum: 200 },
+  layout: { enum: SCREEN_LAYOUTS },
   linkStyles: { type: 'object', maxProperties: 40, propertyNames: { maxLength: 64 }, additionalProperties: widgetStyle },
   widgets: {
     type: 'array',
@@ -51,11 +67,12 @@ const fields = {
         type: { enum: WIDGET_TYPES },
         spot: { enum: WIDGET_SPOTS },
         minDiamonds: { type: 'integer', minimum: 1, maximum: 10_000_000 },
-        effect: { enum: [...SCREEN_EFFECTS, 'random'] },
-        effectSpeed: { enum: EFFECT_SPEEDS },
+        raise: raiseSchema,
+        shine: { const: false },
         goalId: { type: 'string', format: 'uuid' },
         text: { type: 'string', minLength: 1, maxLength: MAX_MESSAGE_LENGTH },
         style: widgetStyle,
+        size: { type: 'integer', minimum: WIDGET_STYLE_LIMITS.size[0], maximum: WIDGET_STYLE_LIMITS.size[1] },
         pos: {
           type: 'object',
           additionalProperties: false,

@@ -11,13 +11,14 @@ import {
   type ModeState,
   type AlertPosition,
   type OverlayScreen,
+  type ScreenLayout,
   type ScreenWidget,
   type OverlayToServer,
   type ServerToOverlay,
   type StreamStats,
   type WidgetSpot,
 } from '@hyperion/shared';
-import { giftAnimation, GiftBus, LevelUpLine, Title, usePreview, Widget, type ChatLine } from './overlay-widgets';
+import { GiftBus, LevelUpLine, Title, usePreview, Widget, type ChatLine } from './overlay-widgets';
 import { ScreenEffects } from './effects';
 import { Icon } from './icons';
 import { AlertContent, alertFxClass, alertFxStyle, MIDDLE, revealsInMiddle } from './alert-fx';
@@ -34,27 +35,41 @@ const CHAT_LINES = 6;
 // ?preview (the dashboard's Open preview link) fills the widgets with sample numbers while offline.
 const params = new URLSearchParams(location.search);
 const PREVIEW = params.has('preview');
+const FRAMED = window.top !== window.self; // in the dashboard's preview window
 // ?widget=chat (with &goal=<id> for one goal): just that widget, as a browser source of its own. No alerts, feed or sound.
 const SINGLE = (WIDGET_TYPES as readonly string[]).includes(params.get('widget') ?? '')
   ? { type: params.get('widget') as ScreenWidget['type'], goalId: params.get('goal') ?? undefined }
   : null;
 
-// The overlay is laid out on a 1920 by 1080 screen and scaled down to fit a smaller browser source: OBS makes new
-// browser sources 800 by 600 and stretches them, which at full size would crowd the corners together. A bigger source
-// isn't scaled up: it gets more room, with widgets at their normal size (the screen's Size setting makes them bigger).
-const REFERENCE = { width: 1920, height: 1080 };
-function useFit() {
+// The screen each layout is laid out on. Desktop is 1920 by 1080, scaled down to fit a smaller browser source: OBS
+// makes new browser sources 800 by 600 and stretches them, which at full size would crowd the corners together. A
+// bigger source isn't scaled up: it gets more room, with widgets at their normal size (the screen's Size setting makes
+// them bigger). Phone is a portrait stream, 1080 by 1920, scaled to fit whatever its size.
+export const LAYOUT_CANVAS: Record<ScreenLayout, { width: number; height: number }> = { desktop: { width: 1920, height: 1080 }, phone: { width: 1080, height: 1920 } };
+// Kept clear at the top and bottom of the screen, as fractions of its height: by alerts on desktop, and on phone by
+// widgets too, as TikTok's own buttons cover the top of a portrait stream and its chat the bottom.
+export const LAYOUT_SAFE: Record<ScreenLayout, { top: number; bottom: number }> = { desktop: { top: 0.05, bottom: 0.05 }, phone: { top: 0.13, bottom: 0.3 } };
+
+// How much the layout is scaled for a page this size, and the part of the page it takes. A phone screen opened in a
+// browser window to preview is shown at a phone's shape, in the middle.
+function fitFor(layout: ScreenLayout, width: number, height: number) {
+  const canvas = LAYOUT_CANVAS[layout];
+  if (layout === 'desktop') return { fit: Math.min(width / canvas.width, height / canvas.height, 1) || 1, width, left: 0 };
+  const shown = PREVIEW ? Math.min(width, (height * canvas.width) / canvas.height) : width;
+  return { fit: Math.min(shown / canvas.width, height / canvas.height) || 1, width: shown, left: (width - shown) / 2 };
+}
+function useFit(layout: ScreenLayout) {
   const [size, setSize] = useState({ width: innerWidth, height: innerHeight });
   useEffect(() => {
     const resize = () => setSize({ width: innerWidth, height: innerHeight });
     addEventListener('resize', resize);
     return () => removeEventListener('resize', resize);
   }, []);
-  const fit = Math.min(size.width / REFERENCE.width, size.height / REFERENCE.height, 1) || 1;
-  const width = size.width / fit;
+  const { fit, width: shown, left } = fitFor(layout, size.width, size.height);
+  const width = shown / fit;
   const height = size.height / fit;
   // The canvas size goes to CSS too, for sizes that would otherwise be in vw and vh of the unscaled page.
-  return { width, height, transform: `scale(${fit})`, '--canvas-w': `${width}px`, '--canvas-h': `${height}px` } as CSSProperties;
+  return { width, height, left, transform: `scale(${fit})`, '--canvas-w': `${width}px`, '--canvas-h': `${height}px` } as CSSProperties;
 }
 
 // Transparent page meant to sit on top of the stream as a browser source.
@@ -78,7 +93,7 @@ export function Overlay({ token }: { token: string }) {
   const [chat, setChat] = useState<ChatLine[]>([]);
   const [bus] = useState(() => new GiftBus());
   const preview = usePreview(PREVIEW && !live, bus);
-  const fit = useFit();
+  const fit = useFit(screen?.layout ?? 'desktop');
 
   useEffect(() => {
     let socket: WebSocket;
@@ -107,8 +122,8 @@ export function Overlay({ token }: { token: string }) {
         const message = JSON.parse(event.data) as ServerToOverlay;
         if (message.type === 'debug') {
           reporting = true;
-          // The browser source's size decides how much the 1920 by 1080 layout is scaled (see useFit).
-          const fit = Math.min(innerWidth / REFERENCE.width, innerHeight / REFERENCE.height, 1);
+          // The browser source's size decides how much the layout is scaled (see useFit).
+          const { fit } = fitFor(screenRef.current?.layout ?? 'desktop', innerWidth, innerHeight);
           report('page size', { width: innerWidth, height: innerHeight, zoom: devicePixelRatio, fit: Math.round(fit * 1000) / 1000 });
         }
         if (message.type === 'screen') {
@@ -173,7 +188,9 @@ export function Overlay({ token }: { token: string }) {
 
   // Alerts at the screen's top, middle or bottom step out of the way of widgets. Sizes change as a picture loads.
   const auto = alert && !alert.pos && !revealsInMiddle(alert.fx) && screen && !screen.alertPos ? screen : null;
-  const clear = useClearOfWidgets(alertBox, auto?.alertPosition ?? null, (auto?.scale ?? 100) / 100, (alert?.scale ?? 100) / 100, [alert?.id]);
+  // An alert's size is its action's, times the screen's for its alerts.
+  const alertScale = ((alert?.scale ?? 100) * (screen?.alertScale ?? 100)) / 100;
+  const clear = useClearOfWidgets(alertBox, auto?.alertPosition ?? null, (auto?.scale ?? 100) / 100, alertScale / 100, [alert?.id]);
 
   // Next frame: the alert has stepped clear of the widgets by then, so the burst comes from where it really is.
   useEffect(() => {
@@ -192,21 +209,18 @@ export function Overlay({ token }: { token: string }) {
     return (
       <div className="overlay-screen" style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
         {PREVIEW && !live && <div className="overlay-preview-note">Preview with sample numbers. Your stream shows real ones.</div>}
-        {(live || PREVIEW) &&
-          (widget.type === 'firework' ? (
-            <ScreenEffects gifts={giftAnimation(widget)} bus={bus} />
-          ) : (
-            <div className="overlay-spot spot-top-left">
-              <Widget widget={widget} stats={shownStats} chat={live ? chat : preview.chat} bus={bus} />
-            </div>
-          ))}
+        {(live || PREVIEW) && (
+          <div className="overlay-spot spot-top-left">
+            <Widget widget={widget} stats={shownStats} chat={live ? chat : preview.chat} bus={bus} />
+          </div>
+        )}
       </div>
     );
   }
   return (
     <>
-      <div className="overlay-fit" style={fit}>
-        <div className={`overlay-screen alerts-${screen.alertPosition}`} style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
+      <div className={`overlay-fit ${PREVIEW && screen.layout === 'phone' ? 'phone-frame' : ''}`} style={fit}>
+        <div className={`overlay-screen layout-${screen.layout} alerts-${screen.alertPosition}`} style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
           {/* Alerts show even while offline, so the dashboard's Test button works before going live. */}
           <ScreenEffects bus={bus} />
           {alert && (
@@ -214,7 +228,7 @@ export function Overlay({ token }: { token: string }) {
               key={alert.id}
               ref={alertBox}
               className={`overlay-alert ${alertLook(alert.style).className} ${alert.text ? '' : 'media-only'} ${alertFxClass(alert.fx)}`}
-              style={{ ...alertLook(alert.style).style, ...alertPlace({ pos: alert.pos ?? (revealsInMiddle(alert.fx) ? MIDDLE : screen.alertPos), scale: alert.scale }), ...clear, ...alertFxStyle(alert.fx, alert.durationMs, alert.style) }}
+              style={{ ...alertLook(alert.style).style, ...alertPlace({ pos: alert.pos ?? (revealsInMiddle(alert.fx) ? MIDDLE : screen.alertPos), scale: alertScale }), ...clear, ...alertFxStyle(alert.fx, alert.durationMs, alert.style) }}
             >
               <AlertContent
                 fx={alert.fx}
@@ -242,12 +256,13 @@ export function Overlay({ token }: { token: string }) {
           Click to enable alert sounds and voice (not needed in OBS or LIVE Studio)
         </button>
       )}
-      {PREVIEW && !live && <div className="overlay-preview-note">Preview with sample numbers. Your stream shows real ones.</div>}
+      {/* Not in the dashboard's preview window, which says so itself. */}
+      {PREVIEW && !live && !FRAMED && <div className="overlay-preview-note">Preview with sample numbers. Your stream shows real ones.</div>}
     </>
   );
 }
 
-const ALERT_GAP = 12; // px of the 1920 by 1080 layout
+const ALERT_GAP = 12; // px of the layout's canvas
 const CANVASES = '.overlay-fit, .pos-canvas'; // the overlay's, and the dashboard previews'
 const WIDGET_BOXES = '.overlay-spot, .overlay-placed';
 
@@ -273,7 +288,7 @@ export function useClearOfWidgets(box: RefObject<HTMLElement | null>, position: 
 function clearOfWidgets(box: HTMLElement, position: AlertPosition, zoom: number, alertScale: number): CSSProperties {
   const canvas = box.closest<HTMLElement>(CANVASES)!;
   const page = canvas.getBoundingClientRect();
-  const fit = page.width / parseFloat(canvas.style.width); // the browser source's size to the 1920 by 1080 layout
+  const fit = page.width / parseFloat(canvas.style.width); // the browser source's size to the layout's canvas
   const toScreen = fit * zoom;
   const gap = ALERT_GAP * fit;
   const width = box.offsetWidth * alertScale * toScreen;
@@ -283,8 +298,10 @@ function clearOfWidgets(box: HTMLElement, position: AlertPosition, zoom: number,
     .map((w) => w.getBoundingClientRect())
     .filter((w) => w.height > 0 && w.left < left + width && w.right > left);
   const up = position === 'bottom';
-  const margin = page.height * 0.05;
-  const usual = position === 'middle' ? page.top + (page.height - height) / 2 : up ? page.bottom - margin - height : page.top + margin;
+  // Kept clear of the screen's edges (see LAYOUT_SAFE); in the middle, it's the middle of what's left.
+  const safe = LAYOUT_SAFE[box.closest('.layout-phone') ? 'phone' : 'desktop'];
+  const [above, below] = [page.height * safe.top, page.height * safe.bottom];
+  const usual = position === 'middle' ? page.top + above + (page.height - above - below - height) / 2 : up ? page.bottom - below - height : page.top + above;
   let top = usual;
   for (const w of [...widgets].sort((a, b) => (up ? b.bottom - a.bottom : a.top - b.top))) {
     if (w.top < top + height + gap && w.bottom + gap > top) top = up ? w.top - gap - height : w.bottom + gap;
@@ -340,7 +357,7 @@ function LiveWidgets({
   const placed: ReactNode[] = [];
   screen.widgets.forEach((w, i) => {
     const widget = <Widget key={`w${i}`} widget={w} stats={w.type === 'goals' && !w.goalId ? grouped : stats} chat={chat} bus={bus} />;
-    if (w.pos && w.type !== 'firework') {
+    if (w.pos) {
       placed.push(
         <div key={`w${i}`} className="overlay-placed" style={{ left: `${w.pos.x}%`, top: `${w.pos.y}%` }}>
           {widget}
@@ -348,10 +365,8 @@ function LiveWidgets({
       );
     } else spots[w.spot].push(widget);
   });
-  const firework = screen.widgets.find((w) => w.type === 'firework');
   return (
     <>
-      {firework && <ScreenEffects gifts={giftAnimation(firework)} bus={bus} />}
       {WIDGET_SPOTS.map((spot) => (
         <div key={spot} className={`overlay-spot spot-${spot}`}>
           {spots[spot]}

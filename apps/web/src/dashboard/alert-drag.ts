@@ -18,3 +18,31 @@ export function dragAlert(e: PointerEvent<HTMLElement>, stage: HTMLElement, onMo
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', stop);
 }
+
+// Resizes by dragging a handle: the size grows as the pointer gets farther from `anchor` (in page px), the point that
+// stays put as it grows, in proportion to how far from it the drag started. Whole percents, within 50% to 200%.
+export function dragResize(e: PointerEvent<HTMLElement>, anchor: { x: number; y: number }, start: number, onSize: (size: number) => void, onEnd?: () => void) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation(); // a resize, not a move
+  const from = Math.hypot(e.clientX - anchor.x, e.clientY - anchor.y) || 1;
+  const move = (m: globalThis.PointerEvent) => onSize(Math.round(Math.min(200, Math.max(50, (start * Math.hypot(m.clientX - anchor.x, m.clientY - anchor.y)) / from))));
+  const stop = () => {
+    onEnd?.();
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', stop);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', stop);
+}
+
+// Resizes an alert by a handle on it. An alert grows from its transform origin: the edge it's kept at, or its middle.
+export function dragAlertSize(e: PointerEvent<HTMLElement>, start: number, onSize: (size: number) => void, onEnd?: () => void) {
+  const alert = e.currentTarget.parentElement!;
+  const box = alert.getBoundingClientRect();
+  const [x, y] = getComputedStyle(alert).transformOrigin.split(' ').map(parseFloat);
+  dragResize(e, { x: box.left + (x! / alert.offsetWidth) * box.width, y: box.top + (y! / alert.offsetHeight) * box.height }, start, onSize, onEnd);
+}
+
+// An alert's resize handle: the corner away from where it grows from (the top for one kept at the bottom).
+export const alertHandleCorner = (keptAtBottom: boolean) => (keptAtBottom ? 'tr' : 'br');

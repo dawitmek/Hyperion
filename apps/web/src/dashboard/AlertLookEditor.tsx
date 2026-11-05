@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ALERT_ANIMATIONS, ALERT_PRESETS, ALERT_STYLE_LIMITS, type AlertAnimation, type AlertStyle } from '@hyperion/shared';
+import { useRef, useState } from 'react';
+import { ALERT_ANIMATIONS, ALERT_PRESETS, ALERT_STYLE_LIMITS, DEFAULT_ALERT_STYLE, type AlertAnimation, type AlertStyle } from '@hyperion/shared';
 import { alertLook, animationSeconds } from '../alert-style';
 import { FontPicker } from './FontPicker';
 import { Icon } from '../icons';
@@ -38,6 +38,20 @@ export function AlertLookEditor({ value, onChange, onReplay }: { value: AlertSty
   const set = (patch: Partial<AlertStyle>) => onChange({ ...value, ...patch });
   const range = (key: keyof typeof ALERT_STYLE_LIMITS) => ({ min: ALERT_STYLE_LIMITS[key][0], max: ALERT_STYLE_LIMITS[key][1] });
   const setSpeed = (speed: number) => (set({ speed }), onReplay());
+  // What a background of None switched off, to put back when a background returns. A look opened with None already
+  // has nothing to put back, so it gets the default look's.
+  const boxed = useRef<Pick<AlertStyle, 'borderWidth' | 'glow' | 'shine'> | null>(null);
+  const setBackground = (background: AlertStyle['background']) => {
+    if (background === value.background) return;
+    if (background === 'none') {
+      boxed.current = { borderWidth: value.borderWidth, glow: value.glow, shine: value.shine };
+      set({ background, borderWidth: 0, glow: 0, shine: false });
+    } else if (value.background === 'none') {
+      // Anything turned back on while there was no background (picking a glow color does) stays as it is.
+      const before = boxed.current ?? DEFAULT_ALERT_STYLE;
+      set({ background, borderWidth: value.borderWidth || before.borderWidth, glow: value.glow || before.glow, shine: value.shine || before.shine });
+    } else set({ background });
+  };
 
   return (
     <div className="alert-look stack">
@@ -73,7 +87,7 @@ export function AlertLookEditor({ value, onChange, onReplay }: { value: AlertSty
         <span className="hint">Click a color to pick any color you like.</span>
         <div className="look-colors">
           {value.background === 'none' ? (
-            <button type="button" className="btn look-color-off" onClick={() => set({ background: 'solid' })}>
+            <button type="button" className="btn look-color-off" onClick={() => setBackground('solid')}>
               No background. Add one
             </button>
           ) : (
@@ -112,7 +126,7 @@ export function AlertLookEditor({ value, onChange, onReplay }: { value: AlertSty
                 ['none', 'None'],
               ]}
               // No background means only the text: a border, glow or shine would still draw the box.
-              onChange={(background) => set({ background, ...(background === 'none' && { borderWidth: 0, glow: 0, shine: false }) })}
+              onChange={setBackground}
             />
             {value.background === 'gradient' && (
               <div className="field">

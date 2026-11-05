@@ -12,7 +12,11 @@ let speech: SpeechPlayer | null = null;
 export function playAlertPreview(alert: Extract<ServerToOverlay, { type: 'alert' }>) {
   const audio = previewAudio();
   void audio.resume();
-  if (alert.sound) playSound(audio, alert.sound);
-  if (alert.soundFile) void new Audio(`/media/${alert.soundFile}`).play();
+  if (alert.sound) playSound(audio, alert.sound, (alert.soundVolume ?? 100) / 100);
+  if (alert.soundFile) {
+    const file = new Audio(`/media/${alert.soundFile}`);
+    file.volume = (alert.soundFileVolume ?? 100) / 100;
+    void file.play();
+  }
   if (alert.speech) (speech ??= new SpeechPlayer(previewAudio)).say(alert.speech);
 }

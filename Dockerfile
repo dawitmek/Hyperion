@@ -1,5 +1,5 @@
 # Hyperion server + dashboard + overlay in one image. The companion app is not part of it.
-FROM node:22-bookworm-slim AS build
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
@@ -13,12 +13,14 @@ COPY packages/shared packages/shared
 COPY packages/theme packages/theme
 COPY apps/server apps/server
 COPY apps/web apps/web
+# The site's Changelog page is built from it.
+COPY CHANGELOG.md ./
 RUN npm run build
 
 # Piper (MIT, https://github.com/rhasspy/piper) for server-side text-to-speech, plus voices whose licenses
 # allow commercial use (see THIRD_PARTY_NOTICES.md). PIPER_VOICES picks which; each adds 60–80 MB.
 # Build with --build-arg WITH_PIPER=false to leave Piper out; TTS then falls back to eSpeak.
-FROM debian:bookworm-slim AS piper
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS piper
 ARG TARGETARCH
 ARG WITH_PIPER=true
 ARG PIPER_RELEASE=2023.11.14-2

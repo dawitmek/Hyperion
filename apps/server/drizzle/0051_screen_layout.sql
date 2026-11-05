@@ -1,0 +1,1 @@
+ALTER TABLE "overlay_screens" ADD COLUMN "layout" text DEFAULT 'desktop' NOT NULL;

@@ -1,8 +1,8 @@
 import { useState, type DragEvent, type ReactNode } from 'react';
 import { DEFAULT_LIVE_LAYOUT, LIVE_CARDS, type LiveCard, type LiveColumn, type LiveLayout } from '@hyperion/shared';
 import { api } from '../api';
-import { ErrorNotice, useError } from '../ui';
-import { Icon } from '../icons';
+import { ErrorNotice, HueIcon, useError, type Hue } from '../ui';
+import { Icon, type IconName } from '../icons';
 import type { PageProps } from './Dashboard';
 
 const COLUMNS: { id: LiveColumn; className: string }[] = [
@@ -26,8 +26,31 @@ export const CARD_LABELS: Record<LiveCard, string> = {
   likes: 'Likes',
   follows: 'New followers',
   shares: 'Shares',
+  subscriptions: 'Subscriptions',
   'top-gift': 'Top gift',
   'last-follower': 'Last follower',
+};
+
+// How each card looks in the picker: panels do something or show a lot; numbers are one figure from the stream.
+const CARD_INFO: Record<LiveCard, { icon: IconName; hue: Hue; blurb: string; kind: 'panel' | 'number' }> = {
+  commands: { icon: 'commands', hue: 'indigo', blurb: 'Every command and how often chat uses it', kind: 'panel' },
+  feed: { icon: 'feed', hue: 'sky', blurb: 'Everything viewers do, as it happens', kind: 'panel' },
+  stream: { icon: 'analytics', hue: 'teal', blurb: 'Numbers and charts for this stream', kind: 'panel' },
+  mode: { icon: 'crowd', hue: 'violet', blurb: 'Switch how the crowd shares control', kind: 'panel' },
+  voice: { icon: 'voice', hue: 'violet', blurb: 'Skip, pause and the read-aloud queue', kind: 'panel' },
+  activity: { icon: 'live', hue: 'red', blurb: 'Recent chat, gifts and follows', kind: 'panel' },
+  players: { icon: 'leaderboard', hue: 'sky', blurb: 'The three most active viewers', kind: 'panel' },
+  viewers: { icon: 'eye', hue: 'sky', blurb: 'Watching right now', kind: 'number' },
+  'peak-viewers': { icon: 'eye', hue: 'sky', blurb: 'The most at once', kind: 'number' },
+  interactors: { icon: 'crowd', hue: 'indigo', blurb: 'Chatted or sent a gift', kind: 'number' },
+  gifts: { icon: 'gift', hue: 'pink', blurb: 'Gifts sent this stream', kind: 'number' },
+  coins: { icon: 'coin', hue: 'teal', blurb: "Those gifts' value", kind: 'number' },
+  likes: { icon: 'heart', hue: 'red', blurb: 'Taps on the stream', kind: 'number' },
+  follows: { icon: 'follower', hue: 'pink', blurb: 'Followed during the stream', kind: 'number' },
+  shares: { icon: 'share', hue: 'violet', blurb: 'Shared the stream', kind: 'number' },
+  subscriptions: { icon: 'star', hue: 'orange', blurb: 'Subscribed during the stream', kind: 'number' },
+  'top-gift': { icon: 'trophy', hue: 'orange', blurb: 'The most valuable gift so far', kind: 'number' },
+  'last-follower': { icon: 'follower', hue: 'pink', blurb: 'Who followed most recently', kind: 'number' },
 };
 
 // Takes the card out of wherever it is and puts it at `index` of `column`, counted with the card still in place.
@@ -82,9 +105,9 @@ export function LiveCards({ host, refreshHost, card, extra }: Pick<PageProps, 'h
     <>
       <ErrorNotice error={error} />
       {editing ? (
-        <section className="live-editor" aria-label="Edit layout">
+        <section className="live-editor" aria-label="Add and arrange cards">
           <div className="live-editor-head">
-            <p className="muted small">Hiding a card only takes it off this page. Whatever it controls keeps working.</p>
+            <p className="muted small">Add cards below, drag them into place, or hide them. Hiding a card only takes it off this page; whatever it controls keeps working.</p>
             <div className="row">
               <button className="btn btn-ghost btn-sm" onClick={() => setDraft(DEFAULT_LIVE_LAYOUT)}>
                 Reset to default
@@ -97,22 +120,41 @@ export function LiveCards({ host, refreshHost, card, extra }: Pick<PageProps, 'h
               </button>
             </div>
           </div>
-          {hidden.length > 0 && (
-            <div className="live-hidden">
-              <span className="muted small">Add a card</span>
-              {hidden.map((c) => (
-                <button key={c} className="btn btn-ghost btn-sm" onClick={() => setDraft(moveCard(layout, c, DEFAULT_LIVE_LAYOUT.side.includes(c) ? 'side' : 'main', Infinity))}>
-                  <Icon name="plus" size={14} />
-                  {CARD_LABELS[c]}
-                </button>
-              ))}
-            </div>
+          {hidden.length > 0 ? (
+            (['panel', 'number'] as const).map((kind) => {
+              const cards = hidden.filter((c) => CARD_INFO[c].kind === kind);
+              if (cards.length === 0) return null;
+              return (
+                <div key={kind} className="live-picker">
+                  <h3 className="small muted">{kind === 'panel' ? 'Add a panel' : 'Add a number'}</h3>
+                  <div className="live-picker-grid">
+                    {cards.map((c) => (
+                      <button
+                        key={c}
+                        className="live-pick"
+                        onClick={() => setDraft(moveCard(layout, c, DEFAULT_LIVE_LAYOUT.side.includes(c) ? 'side' : 'main', Infinity))}
+                      >
+                        <HueIcon name={CARD_INFO[c].icon} hue={CARD_INFO[c].hue} size="sm" />
+                        <span>
+                          <strong>{CARD_LABELS[c]}</strong>
+                          <span className="muted small">{CARD_INFO[c].blurb}</span>
+                        </span>
+                        <Icon name="plus" size={16} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <p className="muted small">Every card is on the page. Hide one to take it off.</p>
           )}
         </section>
       ) : (
         <div className="live-edit-open">
           <button className="btn btn-ghost btn-sm" onClick={() => setDraft(saved)}>
-            Edit layout
+            <Icon name="layout" size={14} />
+            {hidden.length > 0 ? 'Add cards and arrange' : 'Arrange cards'}
           </button>
         </div>
       )}
@@ -173,7 +215,7 @@ export function LiveCards({ host, refreshHost, card, extra }: Pick<PageProps, 'h
           );
         })}
       </div>
-      {!editing && layout.main.length === 0 && layout.side.length === 0 && !extra && <p className="empty">Every card is hidden. Use Edit layout to add some back.</p>}
+      {!editing && layout.main.length === 0 && layout.side.length === 0 && !extra && <p className="empty">Every card is hidden. Use Add cards and arrange to put some back.</p>}
     </>
   );
 }

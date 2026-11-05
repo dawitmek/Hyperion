@@ -16,12 +16,13 @@ const PAGES = [
 ];
 const DOWNLOAD = { href: '/download', label: 'Download' };
 const PRIVACY = { href: '/privacy', label: 'Privacy' };
+const CHANGELOG = { href: '/changelog', label: 'Changelog' };
 
 // What slides in as it scrolls into view: section headings, cards, feature rows, steps and questions.
 // The hero is already on screen, so it doesn't.
 const REVEAL = [
   '.s-carousel-head', '.s-card', '.s-center', '.s-box', '.s-flow-copy', '.s-flow-art', '.s-split > *', '.s-feature-row',
-  '.s-timeline > li', '.s-faq details', '.s-downloads > *', '.s-download-source', '.s-cta .s-wrap > :not(.s-footer)',
+  '.s-timeline > li', '.s-changelog > li', '.s-faq details', '.s-downloads > *', '.s-download-source', '.s-cta .s-wrap > :not(.s-footer)',
 ].join(', ');
 
 // Content fades and slides up a little as it scrolls into view, neighbours one after another. Without JavaScript,
@@ -169,7 +170,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
           <footer className="s-footer">
             <span>© 2026 Hyperion. Not affiliated with TikTok.</span>
             <nav aria-label="Footer">
-              {[...PAGES, DOWNLOAD, PRIVACY].map((p) => (
+              {[...PAGES, DOWNLOAD, CHANGELOG, PRIVACY].map((p) => (
                 <Link key={p.href} href={p.href}>
                   {p.label}
                 </Link>

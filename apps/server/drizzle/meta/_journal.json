@@ -330,6 +330,55 @@
       "when": 1793596303460,
       "tag": "0046_alert_effect_color",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793741500176,
+      "tag": "0047_viewer_coins",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793743152614,
+      "tag": "0048_stream_recap",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793752775122,
+      "tag": "0049_alert_sounds",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793768776286,
+      "tag": "0050_gift_animation_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793800927729,
+      "tag": "0051_screen_layout",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793803459468,
+      "tag": "0052_widget_size",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793804629763,
+      "tag": "0053_screen_alert_scale",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ViewerHistoryEvent, ViewerProfile } from '@hyperion/shared';
 import { api } from '../api';
+import { Spinner, ViewerAvatar } from '../ui';
 import { Icon } from '../icons';
 import { describeEvent, KindChips, KIND_TAGS, VIEWER_FILTERS, type Kind } from './ActivityFeed';
 import { Stat } from './AnalyticsPage';
@@ -122,9 +123,7 @@ export function ViewerPanel({ viewer, live, onClose }: { viewer: string; live: b
       <aside className="viewer-panel" role="dialog" aria-modal="true" aria-labelledby="viewer-name" onClick={(e) => e.stopPropagation()}>
         <header className="viewer-top">
           <div className="viewer-head">
-            <span className="viewer-avatar" aria-hidden="true">
-              {(profile?.name ?? viewer)[0]?.toUpperCase()}
-            </span>
+            <ViewerAvatar className="viewer-avatar" name={profile?.name ?? viewer} src={profile?.avatar} />
             <div>
               <h2 id="viewer-name">{profile?.name ?? viewer}</h2>
               <p className="muted small">
@@ -139,6 +138,7 @@ export function ViewerPanel({ viewer, live, onClose }: { viewer: string; live: b
           </div>
         </header>
 
+        {!profile && <Spinner label="Loading viewer" />}
         {seen && (
           <div className="stack viewer-body">
             <div className="viewer-stats">

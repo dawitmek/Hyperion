@@ -1,7 +1,7 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { levelForXp, type StreamDetail, type StreamEvent, type StreamSummary, type ViewerHistoryEvent, type ViewerProfile } from '@hyperion/shared';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { levelForXp, type StreamDetail, type StreamEvent, type StreamSummary, type StreamViewer, type ViewerHistoryEvent, type ViewerProfile } from '@hyperion/shared';
 import type { Db } from '../db/client.js';
-import { viewerStats } from '../db/schema.js';
+import { streams, viewerStats } from '../db/schema.js';
 
 // Interacting means chatting or gifting; joins and likes are too passive to count.
 const PARTICIPATION = sql`('comment', 'gift')`;
@@ -52,38 +52,92 @@ const toSummary = (r: SummaryRow): StreamSummary => ({
   topPlayerName: r.top_player_name,
 });
 
-// Who pressed the most keys in the stream `s`.
-const TOP_PLAYER = sql`(select e.viewer from stream_events e where e.stream_id = s.id and e.kind = 'command' and e.viewer is not null
-  group by 1 order by count(*) desc, 1 limit 1)`;
+// Summaries of streams that have ended, by stream id. An ended stream gets no more events, and "new" participants only
+// look at streams before it, which have ended too, so its summary never changes and is only worked out once.
+const endedSummaries = new Map<string, StreamSummary>();
 
 // Per-stream totals. "New" participants never took part in an earlier real stream on the same TikTok account.
 export async function streamSummaries(db: Db, hostId: string, opts: { streamId?: string; limit?: number } = {}): Promise<StreamSummary[]> {
+  const listed = await db
+    .select({ id: streams.id })
+    .from(streams)
+    .where(and(eq(streams.hostId, hostId), opts.streamId ? eq(streams.id, opts.streamId) : eq(streams.source, 'tiktok')))
+    .orderBy(desc(streams.startedAt))
+    .limit(opts.limit ?? 50);
+  const missing = listed.filter((s) => !endedSummaries.has(s.id)).map((s) => s.id);
+  const fresh = new Map((missing.length > 0 ? await summarize(db, hostId, missing) : []).map((s) => [s.id, s]));
+  for (const s of fresh.values()) if (s.endedAt !== null) endedSummaries.set(s.id, s);
+  return listed.flatMap((s) => endedSummaries.get(s.id) ?? fresh.get(s.id) ?? []);
+}
+
+// Each total is a grouped pass over all the given streams' events at once, rather than one query per stream per total.
+async function summarize(db: Db, hostId: string, ids: string[]): Promise<StreamSummary[]> {
   const rows = await db.execute<SummaryRow>(sql`
+    with s as (
+      select id, source, profile_name, tiktok_username, started_at, ended_at, peak_viewers from streams
+      where host_id = ${hostId} and ${inArray(streams.id, ids)}
+    ),
+    -- Each viewer once per stream, and whether they took part; counting these avoids sorting every event for count(distinct).
+    seen as (
+      select e.stream_id, e.viewer, bool_or(e.kind in ${PARTICIPATION}) as took_part from stream_events e
+      where e.stream_id in (select id from s) and e.viewer is not null group by 1, 2
+    ),
+    viewer_counts as (
+      select stream_id, count(*) as viewers, count(*) filter (where took_part) as participants from seen group by 1
+    ),
+    totals as (
+      select e.stream_id,
+        count(*) filter (where e.kind = 'comment') as comments,
+        count(*) filter (where e.kind = 'command') as commands,
+        coalesce(sum((e.data->>'count')::int) filter (where e.kind = 'gift'), 0) as gifts,
+        coalesce(sum((e.data->>'count')::int * (e.data->>'diamonds')::int) filter (where e.kind = 'gift'), 0) as diamonds,
+        count(*) filter (where e.kind = 'follow') as follows
+      from stream_events e where e.stream_id in (select id from s) group by 1
+    ),
+    commands as (
+      select e.stream_id, e.viewer, e.data->>'keyword' as keyword from stream_events e
+      where e.stream_id in (select id from s) and e.kind = 'command'
+    ),
+    top_command as (
+      select distinct on (stream_id) stream_id, keyword from commands group by 1, 2 order by stream_id, count(*) desc, keyword
+    ),
+    -- Who pressed the most keys.
+    top_player as (
+      select distinct on (stream_id) stream_id, viewer from commands where viewer is not null
+      group by 1, 2 order by stream_id, count(*) desc, viewer
+    ),
+    top_player_name as (
+      select p.stream_id, max(e.data->>'name') as name
+      from top_player p join stream_events e on e.stream_id = p.stream_id and e.viewer = p.viewer group by 1
+    ),
+    participants as (select stream_id, viewer from seen where took_part),
+    -- When each of those viewers first took part on each TikTok account.
+    firsts as (
+      select s2.tiktok_username, e2.viewer, min(s2.started_at) as first_at
+      from stream_events e2 join streams s2 on s2.id = e2.stream_id
+      where s2.host_id = ${hostId} and s2.source = 'tiktok' and e2.kind in ${PARTICIPATION}
+        and e2.viewer in (select viewer from participants)
+      group by 1, 2
+    ),
+    new_participants as (
+      select p.stream_id, count(*) as n from participants p join s on s.id = p.stream_id
+      where not exists (
+        select 1 from firsts f
+        where f.viewer = p.viewer and f.tiktok_username is not distinct from s.tiktok_username and f.first_at < s.started_at)
+      group by 1
+    )
     select s.id, s.source, s.profile_name, s.tiktok_username, s.started_at, s.ended_at, s.peak_viewers,
-      (select count(distinct e.viewer) from stream_events e where e.stream_id = s.id) as viewers,
-      (select count(distinct e.viewer) from stream_events e where e.stream_id = s.id and e.kind in ${PARTICIPATION}) as participants,
-      (select count(distinct e.viewer) from stream_events e
-        where e.stream_id = s.id and e.kind in ${PARTICIPATION}
-          and not exists (
-            select 1 from stream_events e2 join streams s2 on s2.id = e2.stream_id
-            where e2.viewer = e.viewer and e2.kind in ${PARTICIPATION}
-              and s2.host_id = s.host_id and s2.source = 'tiktok' and s2.started_at < s.started_at
-              and s2.tiktok_username is not distinct from s.tiktok_username)) as new_participants,
-      (select count(*) from stream_events e where e.stream_id = s.id and e.kind = 'comment') as comments,
-      (select count(*) from stream_events e where e.stream_id = s.id and e.kind = 'command') as commands,
-      (select coalesce(sum((e.data->>'count')::int), 0) from stream_events e where e.stream_id = s.id and e.kind = 'gift') as gifts,
-      (select coalesce(sum((e.data->>'count')::int * (e.data->>'diamonds')::int), 0) from stream_events e
-        where e.stream_id = s.id and e.kind = 'gift') as diamonds,
-      (select count(*) from stream_events e where e.stream_id = s.id and e.kind = 'follow') as follows,
-      (select e.data->>'keyword' from stream_events e where e.stream_id = s.id and e.kind = 'command'
-        group by 1 order by count(*) desc, 1 limit 1) as top_command,
-      ${TOP_PLAYER} as top_player,
-      (select max(e.data->>'name') from stream_events e where e.stream_id = s.id and e.viewer = ${TOP_PLAYER}) as top_player_name
-    from streams s
-    where s.host_id = ${hostId}
-      and ${opts.streamId ? sql`s.id = ${opts.streamId}` : sql`s.source = 'tiktok'`}
-    order by s.started_at desc
-    limit ${opts.limit ?? 50}
+      coalesce(vc.viewers, 0) as viewers, coalesce(vc.participants, 0) as participants, coalesce(np.n, 0) as new_participants,
+      coalesce(t.comments, 0) as comments, coalesce(t.commands, 0) as commands, coalesce(t.gifts, 0) as gifts,
+      coalesce(t.diamonds, 0) as diamonds, coalesce(t.follows, 0) as follows,
+      tc.keyword as top_command, tp.viewer as top_player, tpn.name as top_player_name
+    from s
+      left join viewer_counts vc on vc.stream_id = s.id
+      left join totals t on t.stream_id = s.id
+      left join new_participants np on np.stream_id = s.id
+      left join top_command tc on tc.stream_id = s.id
+      left join top_player tp on tp.stream_id = s.id
+      left join top_player_name tpn on tpn.stream_id = s.id
   `);
   return rows.map(toSummary);
 }
@@ -188,7 +242,7 @@ export function busiestWindows(lastMinute: number, counts: Map<number, number>) 
 export async function streamActivity(
   db: Db,
   streamId: string,
-  opts: { before?: number; after?: number; kinds: string[]; viewer?: string; limit: number },
+  opts: { before?: number; after?: number; from?: number; to?: number; kinds: string[]; viewer?: string; viewerId?: string; keyword?: string; gift?: string; limit: number },
 ): Promise<StreamEvent[]> {
   const rows = await db.execute<{ id: number; at: Date; kind: StreamEvent['kind']; viewer: string | null; data: Record<string, unknown> }>(sql`
     select id, at, kind, viewer, data from stream_events
@@ -197,9 +251,52 @@ export async function streamActivity(
       ${opts.viewer ? sql`and (viewer ilike ${containing(opts.viewer)} or data->>'name' ilike ${containing(opts.viewer)})` : sql``}
       ${opts.before !== undefined ? sql`and id < ${opts.before}` : sql``}
       ${opts.after !== undefined ? sql`and id > ${opts.after}` : sql``}
+      ${opts.from !== undefined ? sql`and at >= to_timestamp(${opts.from}::bigint / 1000.0)` : sql``}
+      ${opts.to !== undefined ? sql`and at < to_timestamp(${opts.to}::bigint / 1000.0)` : sql``}
+      ${opts.viewerId !== undefined ? sql`and viewer = ${opts.viewerId}` : sql``}
+      ${opts.keyword !== undefined ? sql`and data->>'keyword' = ${opts.keyword}` : sql``}
+      ${opts.gift !== undefined ? sql`and data->>'gift' = ${opts.gift}` : sql``}
     order by id ${opts.after !== undefined ? sql`asc` : sql`desc`}
     limit ${opts.limit}`);
   return rows.map((r) => ({ id: Number(r.id), at: new Date(r.at).getTime(), kind: r.kind, viewer: r.viewer, data: r.data }));
+}
+
+// Everyone who did something in a stream, with what they did, the biggest gifters and players first.
+export async function streamViewers(db: Db, hostId: string, streamId: string, limit: number): Promise<StreamViewer[]> {
+  const rows = await db.execute<{
+    viewer: string; name: string | null; avatar: string | null; comments: number; commands: number; gifts: number; coins: number; likes: number;
+    followed: boolean; first_at: Date; last_at: Date;
+  }>(sql`
+    select e.viewer,
+      (array_agg(e.data->>'name' order by e.id desc) filter (where e.data->>'name' is not null))[1] as name,
+      (select vs.avatar_url from viewer_stats vs where vs.host_id = ${hostId} and vs.viewer_id = e.viewer and vs.avatar_url is not null
+        order by vs.updated_at desc limit 1) as avatar,
+      count(*) filter (where e.kind = 'comment')::int as comments,
+      count(*) filter (where e.kind = 'command')::int as commands,
+      coalesce(sum((e.data->>'count')::int) filter (where e.kind = 'gift'), 0)::int as gifts,
+      coalesce(sum((e.data->>'count')::int * (e.data->>'diamonds')::int) filter (where e.kind = 'gift'), 0)::int as coins,
+      coalesce(sum(coalesce((e.data->>'count')::int, 1)) filter (where e.kind = 'like'), 0)::int as likes,
+      bool_or(e.kind = 'follow') as followed,
+      min(e.at) as first_at, max(e.at) as last_at
+    from stream_events e
+    where e.stream_id = ${streamId} and e.viewer is not null
+      and e.kind in ('comment', 'command', 'gift', 'like', 'follow', 'share', 'join', 'subscribe', 'emote')
+    group by e.viewer
+    order by 7 desc, 5 desc, 4 desc, 8 desc, e.viewer
+    limit ${limit}`);
+  return rows.map((r) => ({
+    viewer: r.viewer,
+    name: r.name,
+    avatar: r.avatar,
+    comments: Number(r.comments),
+    commands: Number(r.commands),
+    gifts: Number(r.gifts),
+    coins: Number(r.coins),
+    likes: Number(r.likes),
+    followed: r.followed,
+    firstAt: new Date(r.first_at).getTime(),
+    lastAt: new Date(r.last_at).getTime(),
+  }));
 }
 
 // Limits a query on streams `s` to one TikTok account, when given.
@@ -227,7 +324,7 @@ export async function viewerProfile(db: Db, hostId: string, viewer: string, stre
       where s.host_id = ${hostId} and e.viewer = ${viewer} and e.kind = 'command' ${onAccount(account)}
       group by 1 order by 2 desc, 1 limit 5`),
     db
-      .select({ xp: viewerStats.xp, points: viewerStats.points })
+      .select({ xp: viewerStats.xp, points: viewerStats.points, avatar: viewerStats.avatarUrl })
       .from(viewerStats)
       .where(and(eq(viewerStats.hostId, hostId), eq(viewerStats.streamer, streamer), eq(viewerStats.viewerId, viewer))),
     db.execute<{ name: string }>(sql`
@@ -242,6 +339,7 @@ export async function viewerProfile(db: Db, hostId: string, viewer: string, stre
   return {
     viewer,
     name: named?.name ?? null,
+    avatar: stats?.avatar ?? null,
     firstSeen: times.length ? Math.min(...times) : null,
     lastSeen: times.length ? Math.max(...times) : null,
     streams: perStream.length,

@@ -1,6 +1,6 @@
 import { bigserial, boolean, customType, index, integer, jsonb, pgTable, primaryKey, real, serial, text, timestamp, unique, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { ActionEffect, AlertEffect, AlertShape, ChainStep, GoalRaise, LiveLayout, WidgetStyle } from '@hyperion/shared';
-import type { ActionTrigger, ActivityKind, AlertPosition, AlertSound, AlertStyle, Audience, CloudProvider, GoalMetric, MediaKind, Mode, ScreenWidget, TtsEngine, TtsMode, UiMode, UiTheme, UiThemeStyle, VoiceEffect } from '@hyperion/shared';
+import type { ActionTrigger, ActivityKind, AlertPosition, AlertSound, AlertStyle, Audience, CloudProvider, GoalMetric, MediaKind, Mode, ScreenLayout, ScreenWidget, TtsEngine, TtsMode, UiMode, UiTheme, UiThemeStyle, VoiceEffect } from '@hyperion/shared';
 
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 
@@ -52,8 +52,11 @@ export const hosts = pgTable('hosts', {
   uiThemeStyle: text('ui_theme_style').$type<UiThemeStyle>().notNull().default('colors'),
   uiMode: text('ui_mode').$type<UiMode>().notNull().default('system'), // light or dark, or the system's
   liveLayout: jsonb('live_layout').$type<LiveLayout>(), // the dashboard Live page's cards; null: DEFAULT_LIVE_LAYOUT
+  streamRecap: boolean('stream_recap').notNull().default(true), // the dashboard sums up a stream when it ends
   alertStyle: jsonb('alert_style').$type<AlertStyle>(), // the look of alerts whose action has none; null: DEFAULT_ALERT_STYLE
   alertStyle2: jsonb('alert_style_2').$type<AlertStyle>(), // a second look actions can share; null: same as alertStyle
+  hiddenSounds: jsonb('hidden_sounds').$type<AlertSound[]>().notNull().default([]), // built-in sounds the host removed
+  soundVolumes: jsonb('sound_volumes').$type<Record<string, number>>().notNull().default({}), // percent, by built-in sound or file id; missing: 100
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -163,7 +166,8 @@ export const viewerStats = pgTable(
     streamer: text('streamer').notNull().default(''),
     viewerId: text('viewer_id').notNull(),
     commands: integer('commands').notNull().default(0),
-    gifts: integer('gifts').notNull().default(0),
+    gifts: integer('gifts').notNull().default(0), // gifts sent, counting each of a combo
+    coins: integer('coins').notNull().default(0), // what those gifts were worth
     xp: integer('xp').notNull().default(0),
     points: integer('points').notNull().default(0), // balance: earned minus spent, never below 0
     avatarUrl: text('avatar_url'), // a link to their profile picture, from the last time they did something that counts
@@ -275,6 +279,8 @@ export const overlayScreens = pgTable(
     audio: boolean('audio').notNull().default(true),
     alertPosition: text('alert_position').$type<AlertPosition>().notNull().default('top'),
     scale: integer('scale').notNull().default(100),
+    alertScale: integer('alert_scale').notNull().default(100),
+    layout: text('layout').$type<ScreenLayout>().notNull().default('desktop'),
     widgets: jsonb('widgets').$type<ScreenWidget[]>().notNull().default([]),
     linkStyles: jsonb('link_styles').$type<Record<string, WidgetStyle>>().notNull().default({}),
   },

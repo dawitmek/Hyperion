@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { pickEffect, type ActionEffect, type ScreenEffect } from '@hyperion/shared';
-import { useBursts, useGifts, useEffects, type GiftBus } from './overlay-widgets';
+import type { ScreenEffect } from '@hyperion/shared';
+import { useBursts, useEffects, type GiftBus } from './overlay-widgets';
 
-// Full-screen animations. Actions play them, and the gift animation widget plays one for big gifts. Any of them can
+// Full-screen animations, which actions play. Any of them can
 // stand in for any other: each is only a recipe for particles, and one canvas pair draws them all.
 
 export const EFFECT_LABELS: Record<ScreenEffect, string> = {
@@ -176,8 +176,8 @@ const RECIPES: Record<ScreenEffect, (scene: Scene, amount: number) => void> = {
   },
 };
 
-// Plays effects from the bus, or with `gifts`, its one effect for gifts worth at least `min`, more for bigger gifts.
-export function ScreenEffects({ bus, gifts }: { bus: GiftBus; gifts?: { min: number; effect: ActionEffect; speed: number } }) {
+// Plays the effects and bursts that come through the bus.
+export function ScreenEffects({ bus }: { bus: GiftBus }) {
   const trails = useRef<HTMLCanvasElement>(null); // fades rather than clears, for sparks' trails
   const crisp = useRef<HTMLCanvasElement>(null);
   const particles = useRef<Particle[]>([]);
@@ -270,7 +270,7 @@ export function ScreenEffects({ bus, gifts }: { bus: GiftBus; gifts?: { min: num
   useBursts(bus, ({ box, emoji, amount, speed }) => {
     const c = crisp.current;
     const shapes = emojiIn(emoji);
-    if (gifts || !c || document.hidden || shapes.length === 0) return;
+    if (!c || document.hidden || shapes.length === 0) return;
     const canvas = c.getBoundingClientRect();
     const across = c.clientWidth / canvas.width; // the overlay is scaled to fit its browser source
     const unit = Math.max(0.3, Math.min(c.clientWidth, c.clientHeight) / 1080);
@@ -283,12 +283,7 @@ export function ScreenEffects({ bus, gifts }: { bus: GiftBus; gifts?: { min: num
     }
     start();
   });
-  useEffects(bus, ({ effect, amount, speed, color }) => {
-    if (!gifts) play(effect, amount, speed, color);
-  });
-  useGifts(bus, (gift) => {
-    if (gifts && gift.diamonds >= gifts.min) play(pickEffect(gifts.effect), Math.min(6, 1 + Math.floor(Math.log2(gift.diamonds / gifts.min))), gifts.speed);
-  });
+  useEffects(bus, ({ effect, amount, speed, color }) => play(effect, amount, speed, color));
   useEffect(() => {
     // React's dev mode unmounts and remounts once, which can land just after the first play.
     if (particles.current.length > 0) start();

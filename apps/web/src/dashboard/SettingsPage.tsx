@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { UI_THEMES, type UiMode, type UiTheme, type UiThemeStyle } from '@hyperion/shared';
 import { api, type Host } from '../api';
 import { navigate } from '../router';
-import { Card, Choices, ErrorNotice, Seg, useError } from '../ui';
+import { Card, Choices, ErrorNotice, Seg, Switch, useError } from '../ui';
 import { rememberTheme } from '../theme';
 import type { PageProps } from './Dashboard';
 
@@ -46,6 +46,7 @@ export function SettingsPage({ host, refreshHost }: PageProps) {
           </div>
         </form>
       </Card>
+      <AfterStream host={host} refreshHost={refreshHost} />
       <Appearance host={host} refreshHost={refreshHost} />
       <Card title="Account" description={`Signed in as ${host.email}.`}>
         <div className="row">
@@ -54,13 +55,17 @@ export function SettingsPage({ host, refreshHost }: PageProps) {
           </button>
         </div>
       </Card>
+      <Card title="About">
+        <span className="muted">Hyperion version {__APP_VERSION__}</span>
+      </Card>
     </div>
   );
 }
 
 // Each theme's light and dark look, for its swatch: page, card, accent, second accent.
 const SWATCHES: Record<UiTheme, { light: string[]; dark: string[]; note: string }> = {
-  default: { light: ['#f6f6f9', '#ffffff', '#5b5fef', '#e5469a'], dark: ['#07080c', '#141720', '#6366f1', '#a855f7'], note: 'Indigo and plasma, with Geist.' },
+  default: { light: ['#f6f6f9', '#ffffff', '#5b5fef', '#e5469a'], dark: ['#0a0b12', '#171a25', '#6366f1', '#a855f7'], note: 'Indigo and plasma, with Geist.' },
+  legacy: { light: ['#f6f6f9', '#ffffff', '#0b0c12', '#5b5fef'], dark: ['#07080c', '#141720', '#ffffff', '#6366f1'], note: 'The original look: indigo and plasma on plain black and white, with Geist.' },
   'solar-dusk': { light: ['#fdfbf7', '#f1e9da', '#b45309', '#ca8a04'], dark: ['#1c1917', '#292524', '#f97316', '#0ea5e9'], note: 'Parchment and amber, with Oxanium and sharp corners.' },
   'graphite-mono': { light: ['#ffffff', '#f0f0f0', '#171717', '#3b82f6'], dark: ['#171717', '#262626', '#e5e5e5', '#3b82f6'], note: 'Black, white and grays with a blue accent, with DM Sans and soft corners.' },
   'sage-mist': { light: ['#fdfdfd', '#f5f5f5', '#afbea5', '#495940'], dark: ['#070503', '#1e1a14', '#afbea5', '#495940'], note: 'Sage and olive on white or near-black, with Plus Jakarta Sans and round corners.' },
@@ -130,6 +135,19 @@ function Appearance({ host, refreshHost }: { host: Host; refreshHost: () => Prom
           />
         </div>
       </div>
+    </Card>
+  );
+}
+
+function AfterStream({ host, refreshHost }: Pick<PageProps, 'host' | 'refreshHost'>) {
+  const { error, guard } = useError();
+  const save = (streamRecap: boolean) => guard(() => api('PATCH', '/settings', { streamRecap }).then(refreshHost))();
+  return (
+    <Card title="After a stream" description="What the dashboard does when a stream or test session ends.">
+      <ErrorNotice error={error} />
+      <Switch checked={host.streamRecap} onChange={save} hint="Peak viewers, new followers, likes, coins, the top player and the busiest moment, over whichever page is open.">
+        Show a recap of the stream
+      </Switch>
     </Card>
   );
 }

@@ -16,8 +16,8 @@ There are three ways to run it:
 You need:
 
 - A Linux server with [Docker](https://docs.docker.com/engine/install/) (with Compose) and Git
-- About 2 GB of free disk space for the build. The finished image is about 700 MB with all five voices; see
-  [Text-to-speech](#text-to-speech) for a smaller one
+- About 1 GB of free disk space for the published image (about 700 MB with all five voices), or about 2 GB to build
+  it yourself; see [Text-to-speech](#text-to-speech) for a smaller one
 - A domain or subdomain you can point at the server, such as `hyperion.example.com`
 - Ports 80 and 443 open to the internet
 
@@ -61,11 +61,25 @@ API keys and TikTok sign-ins again.
 
 ### 4. Start Hyperion
 
+Either download the ready-made image from GitHub (`ghcr.io/dawitmek/hyperion`, for x86-64 and ARM servers):
+
+```sh
+docker compose -f docker/compose.yml --env-file .env pull
+docker compose -f docker/compose.yml --env-file .env up -d
+```
+
+Or build it yourself from the code you cloned, for example to change what's in it:
+
 ```sh
 docker compose -f docker/compose.yml --env-file .env up -d --build
 ```
 
-The first build takes a while, because it downloads the voices. Database migrations run by themselves on startup.
+The first build takes a while, because it downloads the voices. Either way, database migrations run by themselves on
+startup.
+
+The published image is the newest release (`latest`). To stay on one release until you choose to update, add
+`HYPERION_VERSION=0.4.0` (or another version from the
+[image's page](https://github.com/users/dawitmek/packages/container/package/hyperion)) to `.env`.
 
 ### 5. Check it's running
 
@@ -104,10 +118,11 @@ cat > .env <<EOF
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 SECRETS_KEY=$(openssl rand -base64 32)
 EOF
-docker compose -f docker/compose.yml --env-file .env up -d --build
+docker compose -f docker/compose.yml --env-file .env pull
+docker compose -f docker/compose.yml --env-file .env up -d
 ```
 
-Hyperion is then on `http://localhost:3000`, and nothing outside your PC can reach it. Pair the companion with
+(Or `up -d --build` instead of the last two lines, to build the image yourself.) Hyperion is then on `http://localhost:3000`, and nothing outside your PC can reach it. Pair the companion with
 `http://localhost:3000`.
 
 ## On a private network
@@ -138,12 +153,22 @@ proxy isn't on the same machine, set `TRUST_PROXY` to its address, or everyone m
 
 ## Updating
 
+With the published image (change `HYPERION_VERSION` in `.env` first, if you set one):
+
+```sh
+git pull
+docker compose -f docker/compose.yml --env-file .env pull
+docker compose -f docker/compose.yml --env-file .env up -d
+```
+
+If you build it yourself:
+
 ```sh
 git pull
 docker compose -f docker/compose.yml --env-file .env up -d --build
 ```
 
-Your data stays in Docker volumes. Back up first, because migrations run on startup.
+`git pull` keeps `docker/compose.yml` and the Caddy config up to date. Your data stays in Docker volumes. Back up first, because migrations run on startup.
 
 ## Backups
 
@@ -190,6 +215,7 @@ See what a service is doing with `docker compose -f docker/compose.yml --env-fil
 | `TRUST_PROXY` | `loopback,uniquelocal` | Which addresses are your reverse proxy, so rate limits apply per visitor: addresses, ranges, or `loopback` and `uniquelocal` (private networks). The default suits the built-in Caddy or a proxy on the same machine. With no proxy (port published on a LAN), set `none`, or clients could fake their address |
 | `HYPERION_BIND` | `127.0.0.1` | Interface the port is published on; `0.0.0.0` exposes it on the LAN |
 | `HYPERION_PORT` | `3000` | Published port |
+| `HYPERION_VERSION` | `latest` | Which release of the published image to pull, such as `0.4.0` |
 
 Browsers share cookies between servers on the same host name regardless of port, so two Hyperion servers on
 `127.0.0.1:3000` and `127.0.0.1:3131` log each other out in one browser. Use different host names (for example
@@ -200,9 +226,11 @@ Browsers share cookies between servers on the same host name regardless of port,
 The image includes [Piper](https://github.com/rhasspy/piper) and five English voices (two of them multi-speaker, with 904 and 109 speakers), so the "Piper" voice engine
 works out of the box. Each spoken line costs a little server CPU (about half a second for a short line).
 
-- Smaller image: under `build:` in `docker/compose.yml`, add `args: { WITH_PIPER: "false" }` to leave Piper out
+- Smaller image: the published image always has all five voices, so build your own. Under `build:` in
+  `docker/compose.yml`, add `args: { WITH_PIPER: "false" }` to leave Piper out
   (about 360 MB less; hosts who pick Piper get the in-overlay eSpeak voice instead), or
-  `args: { PIPER_VOICES: "en_GB/alba/medium/en_GB-alba-medium" }` to bundle fewer voices (each is 60–80 MB).
+  `args: { PIPER_VOICES: "en_GB/alba/medium/en_GB-alba-medium" }` to bundle fewer voices (each is 60–80 MB), then
+  start it with `up -d --build`.
 - More voices: mount a folder of Piper voices (`.onnx` + `.onnx.json` pairs) at `/opt/piper-voices`. Check each
   voice's license first; see `THIRD_PARTY_NOTICES.md`.
 - Running without Docker: set `PIPER_BIN` (the `piper` executable) and `PIPER_VOICES_DIR` in `.env`.

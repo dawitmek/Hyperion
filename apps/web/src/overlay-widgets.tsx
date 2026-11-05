@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { DEFAULT_MESSAGE, type GoalMetric, type ScreenEffect, type ScreenWidget, type StreamStats, type WidgetStyle } from '@hyperion/shared';
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { DEFAULT_MESSAGE, type GoalMetric, type GoalRaise, type ScreenEffect, type ScreenWidget, type StreamStats, type WidgetStyle } from '@hyperion/shared';
 import { ALERT_FONT_STACKS } from './alert-style';
 import { Icon, type IconName } from './icons';
 import { ViewerAvatar } from './ui';
@@ -60,10 +60,7 @@ const METRIC_LOOK: Record<GoalMetric, { icon: IconName; tone: Tone }> = {
   subscriptions: { icon: 'star', tone: 'violet' },
 };
 
-export const DEFAULT_FIREWORK_DIAMONDS = 100;
 export const DEFAULT_JAR_DIAMONDS = 1000;
-// What a gift animation widget plays, and from which gifts.
-export const giftAnimation = (w: ScreenWidget) => ({ min: w.minDiamonds ?? DEFAULT_FIREWORK_DIAMONDS, effect: w.effect ?? ('fireworks' as const), speed: w.effectSpeed ?? 100 });
 
 type WidgetProps = { widget: ScreenWidget; stats: StreamStats | null; chat: ChatLine[]; bus: GiftBus };
 
@@ -83,9 +80,9 @@ const widgetLook = (s: WidgetStyle) =>
 
 export function Widget(props: WidgetProps) {
   // Always the same wrapper: a widget that gains a look keeps what it's showing.
-  const { style } = props.widget;
+  const { style, size } = props.widget;
   return (
-    <div className={`widget-box ${style ? 'widget-look' : ''}`} style={style && widgetLook(style)}>
+    <div className={`widget-box ${style ? 'widget-look' : ''}`} style={{ ...(style && widgetLook(style)), ...(size && { '--w-scale': size / 100 }) } as CSSProperties}>
       <WidgetBody {...props} />
     </div>
   );
@@ -117,9 +114,7 @@ function WidgetBody({ widget, stats, chat, bus }: WidgetProps) {
     case 'chat':
       return chat.length > 0 ? <Chat lines={chat} /> : null;
     case 'coin_jar':
-      return <CoinJar diamonds={stats?.diamonds ?? 0} target={widget.minDiamonds ?? DEFAULT_JAR_DIAMONDS} bus={bus} />;
-    case 'firework':
-      return null; // drawn over the whole screen by <Fireworks>
+      return <CoinJar diamonds={stats?.diamonds ?? 0} target={widget.minDiamonds ?? DEFAULT_JAR_DIAMONDS} raise={widget.raise} shine={widget.shine !== false} bus={bus} />;
     case 'level_ups':
       return <LevelUps bus={bus} />;
     case 'message':
@@ -296,31 +291,160 @@ function Chat({ lines }: { lines: ChatLine[] }) {
   );
 }
 
-// Coins drop into a jar that fills toward a diamond target. More diamonds, more coins (up to a handful per gift).
+// Coins drop into a glass jar and settle onto a pile that rises toward a diamond target. More diamonds, more coins (up
+// to a dozen per gift). A full jar glows and sparkles; with `raise`, it then empties and fills toward a bigger target.
 type Coin = { id: number; x: number; delay: number };
 let coinId = 0;
-function CoinJar({ diamonds, target, bus }: { diamonds: number; target: number; bus: GiftBus }) {
+const COIN_FALL_MS = 1100;
+const COIN_GAP_MS = 90;
+// The jar, drawn 140 × 180: an open mouth with a rim, a short neck and a round-shouldered body.
+const JAR_BODY = 'M38 24 H102 V32 C102 40 126 42 126 60 V154 Q126 174 106 174 H34 Q14 174 14 154 V60 C14 42 38 40 38 32 Z';
+const PILE_EMPTY = 182; // the pile's top, out of sight below the jar
+const PILE_FULL = 46; // the pile's top at the shoulders, where the jar counts as full
+const PILE_BOTTOM = 174;
+const MOUTH = [46, 94]; // where coins fall, the mouth's inside less a coin's width
+const BUMPS = Array.from({ length: 11 }, (_, i) => 10 + i * 12);
+const JAR_FULL_MS = 2500; // how long a filled jar shows off before emptying for the next
+const MAX_JARS = 1000;
+
+// The jar being filled now: which one (0 for the first), and the totals it fills from and to. Raised the way goals are.
+export function currentJar(diamonds: number, target: number, raise?: GoalRaise) {
+  if (!raise || diamonds < target) return { jar: 0, from: 0, to: target };
+  if (raise.kind === 'plus') {
+    const jar = Math.floor((diamonds - target) / raise.by) + 1;
+    return { jar, from: target + (jar - 1) * raise.by, to: target + jar * raise.by };
+  }
+  if (raise.kind === 'to') return raise.by > target ? { jar: 1, from: target, to: raise.by } : { jar: 0, from: 0, to: target };
+  let jar = { jar: 0, from: 0, to: target };
+  while (diamonds >= jar.to && jar.jar < MAX_JARS) jar = { jar: jar.jar + 1, from: jar.to, to: Math.max(jar.to + 1, Math.ceil(jar.to * raise.by)) };
+  return jar;
+}
+
+function CoinJar({ diamonds, target, raise, shine, bus }: { diamonds: number; target: number; raise?: GoalRaise; shine: boolean; bus: GiftBus }) {
   const [coins, setCoins] = useState<Coin[]>([]);
+  const [gifts, setGifts] = useState(0); // restarts the shine that follows each gift's coins
+  const id = `jar${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   useGifts(bus, (gift) => {
     const count = Math.min(12, Math.max(1, Math.ceil(Math.log2(gift.diamonds + 1))));
-    const added = Array.from({ length: count }, (_, i) => ({ id: coinId++, x: 20 + Math.random() * 60, delay: i * 90 }));
+    const added = Array.from({ length: count }, (_, i) => ({ id: coinId++, x: MOUTH[0]! + Math.random() * (MOUTH[1]! - MOUTH[0]!), delay: i * COIN_GAP_MS }));
     setCoins((current) => [...current, ...added].slice(-40));
-    setTimeout(() => setCoins((current) => current.filter((c) => !added.includes(c))), 1400 + count * 90);
+    setGifts((n) => n + 1);
+    setTimeout(() => setCoins((current) => current.filter((c) => !added.includes(c))), COIN_FALL_MS + count * COIN_GAP_MS + 100);
   });
-  const level = Math.min(1, diamonds / target);
+  const { jar, from, to } = currentJar(diamonds, target, raise);
+  // A jar just filled shows off for a moment before the next one starts (not one already past when the overlay opened).
+  const [showingOff, setShowingOff] = useState<{ jar: number; to: number } | null>(null);
+  const lastJar = useRef(jar);
+  useEffect(() => {
+    if (jar <= lastJar.current) return void (lastJar.current = jar);
+    setShowingOff({ jar: lastJar.current, to: from });
+    lastJar.current = jar;
+    const timer = setTimeout(() => setShowingOff(null), JAR_FULL_MS);
+    return () => clearTimeout(timer);
+  }, [jar, from]);
+  const level = showingOff ? 1 : Math.min(1, (diamonds - from) / (to - from));
+  const full = level >= 1;
+  const filled = showingOff ? showingOff.jar : jar; // the full one, while full
+  const top = diamonds > 0 ? PILE_BOTTOM - 8 - level * (PILE_BOTTOM - 8 - PILE_FULL) : PILE_EMPTY;
+  const shown = useCountUp(diamonds);
   return (
-    <div className="overlay-panel w-jar tone-amber">
-      <div className="w-jar-glass">
-        <div className="w-jar-fill" style={{ height: `${level * 100}%` }} />
+    <div className={`overlay-panel w-jar tone-amber ${full ? 'full' : ''}`}>
+      <div className="w-jar-stage">
+        <svg className="w-jar-layer" viewBox="0 0 140 180" aria-hidden="true">
+          <defs>
+            <clipPath id={`${id}-body`}>
+              <path d={JAR_BODY} />
+            </clipPath>
+            <linearGradient id={`${id}-gold`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#ffe08a" />
+              <stop offset="0.5" stopColor="#f7b733" />
+              <stop offset="1" stopColor="#c97a0a" />
+            </linearGradient>
+            <linearGradient id={`${id}-round`} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor="#000" stopOpacity="0.35" />
+              <stop offset="0.3" stopColor="#000" stopOpacity="0" />
+              <stop offset="0.75" stopColor="#000" stopOpacity="0" />
+              <stop offset="1" stopColor="#000" stopOpacity="0.4" />
+            </linearGradient>
+            {/* Coins lying every which way, so the pile doesn't read as a grid. */}
+            <linearGradient id={`${id}-shine`} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor="#fff" stopOpacity="0" />
+              <stop offset="0.5" stopColor="#fff" stopOpacity="0.14" />
+              <stop offset="1" stopColor="#fff" stopOpacity="0" />
+            </linearGradient>
+            <pattern id={`${id}-coins`} width="44" height="22" patternUnits="userSpaceOnUse">
+              <ellipse cx="8" cy="4" rx="7.5" ry="3.4" fill="#ffd56e" stroke="#c07a0c" strokeWidth="0.8" />
+              <ellipse cx="27" cy="7" rx="7" ry="2.6" fill="#f6b53a" stroke="#c07a0c" strokeWidth="0.8" transform="rotate(-12 27 7)" />
+              <ellipse cx="40" cy="15" rx="7.5" ry="3.2" fill="#ffcf5e" stroke="#c07a0c" strokeWidth="0.8" />
+              <ellipse cx="16" cy="15" rx="7" ry="3.6" fill="#eea530" stroke="#c07a0c" strokeWidth="0.8" transform="rotate(10 16 15)" />
+              <ellipse cx="2" cy="19" rx="6.5" ry="2.8" fill="#ffda78" stroke="#c07a0c" strokeWidth="0.8" />
+              <circle cx="30" cy="18" r="1.1" fill="#fff4c4" opacity="0.8" />
+              <circle cx="6" cy="9" r="0.9" fill="#fff4c4" opacity="0.7" />
+            </pattern>
+          </defs>
+          <path className="w-jar-glass" d={JAR_BODY} />
+          <g clipPath={`url(#${id}-body)`}>
+            <g className="w-jar-pile" style={{ transform: `translateY(${top}px)` }}>
+              <rect x="0" y="2" width="140" height="190" fill={`url(#${id}-gold)`} />
+              <rect x="0" y="2" width="140" height="190" fill={`url(#${id}-coins)`} opacity="0.55" />
+              {BUMPS.map((x, i) => (
+                <ellipse key={x} cx={x} cy={i % 2 ? 1 : -1} rx="8" ry="3.6" fill="#ffdc7d" stroke="#b86e06" strokeWidth="1" />
+              ))}
+              <rect x="0" y="-6" width="140" height="196" fill={`url(#${id}-round)`} />
+            </g>
+          </g>
+        </svg>
         {coins.map((c) => (
-          <span key={c.id} className="w-coin" style={{ left: `${c.x}%`, animationDelay: `${c.delay}ms`, '--land': `${(1 - level) * 100}%` } as CSSProperties} />
+          <span key={c.id} className="w-coin" style={{ left: c.x, animationDelay: `${c.delay}ms`, '--land': `${top - 12}px` } as CSSProperties} />
         ))}
+        <svg className="w-jar-layer" viewBox="0 0 140 180" aria-hidden="true">
+          <path className="w-jar-outline" d={JAR_BODY} />
+          <rect className="w-jar-rim" x="34" y="18" width="72" height="10" rx="5" />
+          {shine && (
+            <>
+              <path className="w-jar-gleam" d="M24 70 C22 92 22 124 25 150" />
+              <path className="w-jar-gleam thin" d="M34 66 C33 76 33 84 33.5 92" />
+              <g clipPath={`url(#${id}-body)`}>
+                {gifts > 0 && <rect key={gifts} className="w-jar-shine" x="-60" y="0" width="34" height="180" fill={`url(#${id}-shine)`} />}
+              </g>
+            </>
+          )}
+        </svg>
+        {full && (
+          <div className="w-jar-sparkles" aria-hidden="true">
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} />
+            ))}
+          </div>
+        )}
       </div>
       <div className="w-jar-label">
-        <strong>{number(diamonds)}</strong> / {number(target)} coins
+        <strong>{number(shown)}</strong>
+        <span>{full ? `Jar ${filled > 0 ? `${filled + 1} ` : ''}full!` : `of ${number(to)} coins${jar > 0 ? ` · jar ${jar + 1}` : ''}`}</span>
       </div>
     </div>
   );
+}
+
+// Counts up to `value` over a moment rather than jumping to it.
+function useCountUp(value: number, ms = 800) {
+  const [shown, setShown] = useState(value);
+  const from = useRef(value);
+  useEffect(() => {
+    const start = performance.now();
+    const begin = from.current;
+    let frame = 0;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / ms);
+      const next = Math.round(begin + (value - begin) * (1 - (1 - t) ** 3));
+      from.current = next;
+      setShown(next);
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [value, ms]);
+  return shown;
 }
 
 // Preview: sample numbers and gifts, so a host can see their widgets before going live. Goals are the host's own

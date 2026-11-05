@@ -168,7 +168,7 @@
 .s-arrows button { width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--line-strong); background: transparent; color: #fff; cursor: pointer; display: grid; place-items: center; }
 .s-arrows button:hover { background: rgba(255, 255, 255, 0.06); }
 .s-arrows button:disabled { opacity: 0.35; cursor: default; }
-.s-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 300px); gap: 20px; margin-top: 40px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding-bottom: 4px; }
+.s-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 300px); gap: 20px; margin-top: 40px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; padding-bottom: 4px; }
 .s-track::-webkit-scrollbar { display: none; }
 .s-card { scroll-snap-align: start; }
 .s-card-art { height: 180px; border-radius: 14px; background: radial-gradient(120% 90% at 50% 0%, rgba(99, 102, 241, 0.12), transparent 60%), var(--panel); border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden; padding: 16px; box-sizing: border-box; }
@@ -399,4 +399,28 @@
   .s-privacy-body .s-table tr { display: grid; gap: 4px; padding: 14px 0; border-bottom: 1px solid var(--line); }
   .s-privacy-body .s-table td { padding: 0; border: 0; }
   .s-privacy-body .s-table td:last-child { color: var(--muted); font-size: 14px; }
+}
+
+/* Changelog page: each release's date and version beside it, sticking while its notes scroll past. */
+.s-changelog { list-style: none; margin: 40px 0 96px; padding: 0; }
+.s-changelog > li { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 56px; padding: 48px 0; border-top: 1px solid var(--line); scroll-margin-top: 80px; }
+.s-changelog-meta { position: sticky; top: 96px; align-self: start; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.s-changelog-meta time { color: var(--muted); font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; }
+.s-changelog-version { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-strong); color: #d7d9e4; font: 500 13px/1.5 ui-monospace, 'SF Mono', Consolas, monospace; text-decoration: none; }
+.s-changelog-version:hover { color: #fff; border-color: var(--indigo-fill); }
+.s-changelog h2 { font-size: clamp(26px, 3vw, 34px); font-weight: 500; letter-spacing: -0.035em; max-width: 30ch; }
+.s-changelog section { margin-top: 30px; max-width: 760px; }
+.s-changelog h3 { color: var(--muted); font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; }
+.s-changelog .s-checks { margin-top: 14px; }
+/* Items mix text with bold, code and links, so they flow as text with the bullet placed beside them. */
+.s-changelog .s-checks li { display: block; position: relative; padding-left: 16px; font-size: 16px; line-height: 1.65; color: #c3c6d3; }
+.s-changelog .s-checks li::before { position: absolute; left: 0; top: 0; }
+.s-changelog .s-checks strong { color: var(--ink); font-weight: 600; }
+.s-changelog .s-checks a { color: var(--indigo); }
+.s-changelog code { font-size: 14px; color: var(--key-ink); }
+.s-breaking { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 6px; background: rgba(244, 63, 94, 0.14); color: #fda4af;
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; vertical-align: 1px; }
+@media (max-width: 860px) {
+  .s-changelog > li { grid-template-columns: 1fr; gap: 18px; padding: 36px 0; }
+  .s-changelog-meta { position: static; flex-direction: row; align-items: center; gap: 12px; }
 }

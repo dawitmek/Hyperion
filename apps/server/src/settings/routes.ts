@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { eq } from 'drizzle-orm';
-import { hosts, profiles } from '../db/schema.js';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { actions, hosts, profiles } from '../db/schema.js';
 import {
+  ALERT_SOUNDS,
   CLOUD_PROVIDERS,
   MODES,
   TTS_ENGINES,
@@ -13,6 +14,7 @@ import {
   type Mode,
   type TtsEngine,
   type TtsMode,
+  type AlertSound,
   type AlertStyle,
   type UiMode,
   type UiTheme,
@@ -68,8 +70,11 @@ type Body = {
   uiThemeStyle?: UiThemeStyle;
   uiMode?: UiMode;
   liveLayout?: LiveLayout | null;
+  streamRecap?: boolean;
   alertStyle?: AlertStyle | null;
   alertStyle2?: AlertStyle | null;
+  hiddenSounds?: AlertSound[];
+  soundVolumes?: Record<string, number>;
 };
 
 // Tells the host's companions the dashboard's theme, which they follow.
@@ -136,6 +141,7 @@ export async function settingsRoutes(app: FastifyInstance) {
             uiTheme: { enum: UI_THEMES.map((t) => t.id) },
             uiThemeStyle: { enum: ['full', 'colors'] },
             uiMode: { enum: UI_MODES },
+            streamRecap: { type: 'boolean' },
             liveLayout: {
               type: ['object', 'null'],
               additionalProperties: false,
@@ -144,12 +150,20 @@ export async function settingsRoutes(app: FastifyInstance) {
             },
             alertStyle: { anyOf: [{ type: 'null' }, alertStyleSchema()] },
             alertStyle2: { anyOf: [{ type: 'null' }, alertStyleSchema()] },
+            hiddenSounds: { type: 'array', items: { enum: ALERT_SOUNDS }, uniqueItems: true },
+            soundVolumes: {
+              type: 'object',
+              additionalProperties: false,
+              properties: Object.fromEntries(ALERT_SOUNDS.map((s) => [s, { type: 'integer', minimum: 0, maximum: 100 }])),
+              // built-in sound files, by id
+              patternProperties: { '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$': { type: 'integer', minimum: 0, maximum: 100 } },
+            },
           },
         },
       },
     },
     async (req, reply) => {
-      const { tiktokUsername, actionsPerSecond, progression, levelGating, uiTheme, uiThemeStyle, uiMode, liveLayout, alertStyle, alertStyle2 } = req.body;
+      const { tiktokUsername, actionsPerSecond, progression, levelGating, uiTheme, uiThemeStyle, uiMode, liveLayout, streamRecap, alertStyle, alertStyle2, hiddenSounds, soundVolumes } = req.body;
       const tts = Object.fromEntries(Object.entries(req.body).filter(([k]) => k.startsWith('tts')));
       const points = Object.fromEntries(Object.entries(req.body).filter(([k]) => k.startsWith('points')));
       if (typeof req.body.ttsCloudKey === 'string') tts.ttsCloudKey = app.secrets.seal(req.body.ttsCloudKey);
@@ -176,13 +190,21 @@ export async function settingsRoutes(app: FastifyInstance) {
         ...(uiThemeStyle !== undefined && { uiThemeStyle }),
         ...(uiMode !== undefined && { uiMode }),
         ...(liveLayout !== undefined && { liveLayout }),
+        ...(streamRecap !== undefined && { streamRecap }),
         ...(alertStyle !== undefined && { alertStyle }),
         ...(alertStyle2 !== undefined && { alertStyle2 }),
+        ...(hiddenSounds !== undefined && { hiddenSounds }),
+        // Merged into the saved ones, so each slider only sends its own.
+        ...(soundVolumes !== undefined && { soundVolumes: sql`${hosts.soundVolumes} || ${JSON.stringify(soundVolumes)}::jsonb` }),
       };
       const profilePatch = Object.fromEntries(
         PROFILE_FIELDS.filter((f) => req.body[f] !== undefined).map((f) => [f, req.body[f]]),
       ) as Partial<typeof profiles.$inferInsert>;
       if (Object.keys(hostPatch).length > 0) await app.db.update(hosts).set(hostPatch).where(eq(hosts.id, req.hostId));
+      // Like a removed built-in picture, a removed built-in sound is let go of by the actions that used it.
+      if (hiddenSounds?.length) {
+        await app.db.update(actions).set({ sound: null }).where(and(eq(actions.hostId, req.hostId), inArray(actions.sound, hiddenSounds)));
+      }
       if (Object.keys(profilePatch).length > 0) {
         const profile = await activeProfile(app.db, req.hostId);
         await app.db.update(profiles).set(profilePatch).where(eq(profiles.id, profile.id));

@@ -3,7 +3,7 @@ import { levelForXp, MAX_LEADERBOARD_SIZE, type LeaderboardEntry } from '@hyperi
 import type { Db } from '../db/client.js';
 import { hosts, viewerStats } from '../db/schema.js';
 
-type Counts = { commands: number; gifts: number; xp: number; points: number };
+type Counts = { commands: number; gifts: number; coins: number; xp: number; points: number };
 type Totals = { xp: number; points: number };
 type Seen = { avatar?: string; name?: string };
 type Pending = { hostId: string; streamer: string; viewers: Map<string, Counts> };
@@ -31,7 +31,7 @@ export class Stats {
     if (streamer === undefined) return null; // not live
     const before = totals?.get(viewerId) ?? { xp: 0, points: 0 };
     const points = totals ? Math.max(add.points ?? 0, -before.points) : 0;
-    this.addPending(hostId, streamer, viewerId, { commands: 0, gifts: 0, xp: 0, ...add, points });
+    this.addPending(hostId, streamer, viewerId, { commands: 0, gifts: 0, coins: 0, xp: 0, ...add, points });
     if (!totals) return null;
     const after = { xp: before.xp + (add.xp ?? 0), points: before.points + points };
     totals.set(viewerId, after);
@@ -118,6 +118,7 @@ export class Stats {
           set: {
             commands: sql`${viewerStats.commands} + excluded.commands`,
             gifts: sql`${viewerStats.gifts} + excluded.gifts`,
+            coins: sql`${viewerStats.coins} + excluded.coins`,
             xp: sql`${viewerStats.xp} + excluded.xp`,
             points: sql`greatest(0, ${viewerStats.points} + excluded.points)`,
             avatarUrl: sql`coalesce(excluded.avatar_url, ${viewerStats.avatarUrl})`,
@@ -136,7 +137,7 @@ export class Stats {
   async top(hostId: string, limit = MAX_LEADERBOARD_SIZE): Promise<LeaderboardEntry[]> {
     const streamer = await this.streamerOf(hostId);
     return this.db
-      .select({ viewer: viewerStats.viewerId, commands: viewerStats.commands, gifts: viewerStats.gifts, xp: viewerStats.xp, points: viewerStats.points, avatar: viewerStats.avatarUrl, name: viewerStats.displayName })
+      .select({ viewer: viewerStats.viewerId, commands: viewerStats.commands, gifts: viewerStats.gifts, coins: viewerStats.coins, xp: viewerStats.xp, points: viewerStats.points, avatar: viewerStats.avatarUrl, name: viewerStats.displayName })
       .from(viewerStats)
       // Viewers who have only earned points from chat haven't played yet.
       .where(and(eq(viewerStats.hostId, hostId), eq(viewerStats.streamer, streamer), sql`(${viewerStats.commands} > 0 or ${viewerStats.gifts} > 0)`))
@@ -144,14 +145,14 @@ export class Stats {
       .limit(limit);
   }
 
-  // Clears the current account's leaderboard (commands, gifts, XP). Points are kept: viewers may be saving them up.
+  // Clears the current account's leaderboard (commands, gifts, coins, XP). Points are kept: viewers may be saving them up.
   async reset(hostId: string) {
     const streamer = await this.streamerOf(hostId);
     const mine = and(eq(viewerStats.hostId, hostId), eq(viewerStats.streamer, streamer));
-    for (const counts of this.pending.get(`${hostId}/${streamer}`)?.viewers.values() ?? []) Object.assign(counts, { commands: 0, gifts: 0, xp: 0 });
+    for (const counts of this.pending.get(`${hostId}/${streamer}`)?.viewers.values() ?? []) Object.assign(counts, { commands: 0, gifts: 0, coins: 0, xp: 0 });
     if (this.streamers.get(hostId) === streamer) for (const t of this.totals.get(hostId)?.values() ?? []) t.xp = 0;
     await this.db.delete(viewerStats).where(and(mine, eq(viewerStats.points, 0)));
-    await this.db.update(viewerStats).set({ commands: 0, gifts: 0, xp: 0 }).where(mine);
+    await this.db.update(viewerStats).set({ commands: 0, gifts: 0, coins: 0, xp: 0 }).where(mine);
   }
 
   // Sets every viewer's points on the current account back to 0.
@@ -167,10 +168,11 @@ export class Stats {
     let entry = this.pending.get(key);
     if (!entry) this.pending.set(key, (entry = { hostId, streamer, viewers: new Map() }));
     const viewers = entry.viewers;
-    const counts = viewers.get(viewerId) ?? { commands: 0, gifts: 0, xp: 0, points: 0 };
+    const counts = viewers.get(viewerId) ?? { commands: 0, gifts: 0, coins: 0, xp: 0, points: 0 };
     viewers.set(viewerId, {
       commands: counts.commands + add.commands,
       gifts: counts.gifts + add.gifts,
+      coins: counts.coins + add.coins,
       xp: counts.xp + add.xp,
       points: counts.points + add.points,
     });

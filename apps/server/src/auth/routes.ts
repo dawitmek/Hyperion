@@ -113,8 +113,11 @@ export async function authRoutes(app: FastifyInstance) {
         uiThemeStyle: hosts.uiThemeStyle,
         uiMode: hosts.uiMode,
         liveLayout: hosts.liveLayout,
+        streamRecap: hosts.streamRecap,
         alertStyle: hosts.alertStyle,
         alertStyle2: hosts.alertStyle2,
+        hiddenSounds: hosts.hiddenSounds,
+        soundVolumes: hosts.soundVolumes,
         // Mode settings of the active profile.
         profileId: profiles.id,
         profileName: profiles.name,

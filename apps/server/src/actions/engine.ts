@@ -17,6 +17,8 @@ export interface ActionRule {
   random: boolean;
   text: string | null;
   sound: AlertSound | null;
+  soundVolume: number; // percent, the host's volume for that built-in sound
+  soundFileVolume: number; // percent, the host's volume for that sound file (only built-in files have one)
   soundMediaId: string | null;
   media: { id: string; kind: MediaKind } | null;
   speak: boolean;
@@ -58,7 +60,9 @@ export type ActionOutput =
       action: string; // its id
       text: string;
       sound: AlertSound | null;
+      soundVolume: number;
       soundFile: string | null;
+      soundFileVolume: number;
       media: { id: string; kind: MediaKind } | null;
       speak: boolean;
       durationMs: number;
@@ -293,7 +297,9 @@ export function createActions(ctx: ActionContext) {
         action: action.id,
         text: action.text ? fillTemplate(action.text, values) : '',
         sound: action.sound,
+        soundVolume: action.soundVolume,
         soundFile: action.soundMediaId,
+        soundFileVolume: action.soundFileVolume,
         media: action.media,
         speak: action.speak && !!action.text,
         durationMs: action.durationMs,

@@ -320,10 +320,10 @@ export class SessionManager {
     session.recorder.add(event.kind, event.viewerId, { ...eventData(event), ...this.named(hostId, event.viewerId) }, event.at);
     if (event.kind === 'gift') {
       const xp = Math.max(1, event.diamonds) * event.count;
-      this.levelUp(hostId, session, event.viewerId, this.stats.record(hostId, event.viewerId, { gifts: event.count, xp }));
+      this.levelUp(hostId, session, event.viewerId, this.stats.record(hostId, event.viewerId, { gifts: event.count, coins: event.diamonds * event.count, xp }));
     }
     if (session.points) this.earn(hostId, session, session.points, event);
-    // Widgets: chat lines, and gifts for the coin jar and fireworks.
+    // Widgets: chat lines, and gifts for the coin jar.
     if (event.kind === 'comment') this.hub.sendToOverlays(hostId, { type: 'chat', viewer: this.stats.nameOf(hostId, event.viewerId), text: event.text, ...this.avatar(hostId, event.viewerId) });
     if (event.kind === 'gift') {
       this.hub.sendToOverlays(hostId, { type: 'gift', viewer: this.stats.nameOf(hostId, event.viewerId), gift: event.giftName, count: event.count, diamonds: event.diamonds * event.count });
@@ -568,7 +568,9 @@ export function alertMessage(output: Extract<ActionOutput, { type: 'alert' }>, s
     text: output.text,
     sound: output.sound,
     speech,
+    ...(output.sound && output.soundVolume !== 100 && { soundVolume: output.soundVolume }),
     ...(output.soundFile && { soundFile: output.soundFile }),
+    ...(output.soundFile && output.soundFileVolume !== 100 && { soundFileVolume: output.soundFileVolume }),
     ...(output.media && { media: output.media }),
     ...(output.durationMs !== DEFAULT_ALERT_MS && { durationMs: output.durationMs }),
     ...(output.screen && { screen: output.screen }),

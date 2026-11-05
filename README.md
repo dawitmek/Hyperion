@@ -150,7 +150,8 @@ One container runs the server, dashboard and overlay, and a second runs Postgres
 git clone https://github.com/dawitmek/Hyperion && cd Hyperion
 cp .env.example .env
 # edit .env: set POSTGRES_PASSWORD, and SECRETS_KEY to the output of: openssl rand -base64 32
-docker compose -f docker/compose.yml --env-file .env up -d --build
+docker compose -f docker/compose.yml --env-file .env pull     # the published image, ghcr.io/dawitmek/hyperion
+docker compose -f docker/compose.yml --env-file .env up -d     # or: up -d --build, to build it yourself
 ```
 
 Hyperion is then on http://127.0.0.1:3000.

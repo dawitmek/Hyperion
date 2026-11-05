@@ -123,8 +123,8 @@ export class AlertPlayer {
     const media = alert.media ? { url: `/media/${alert.media.id}`, kind: alert.media.kind } : null;
     this.onShow({ id: this.nextId++, text: alert.text, media, pos: alert.pos ?? null, scale: alert.scale ?? 100, style: alert.style ?? null, fx: alert.fx ?? null, durationMs: alert.durationMs ?? ALERT_MS });
     if (this.audible) {
-      if (alert.sound) playSound(this.context(), alert.sound);
-      if (alert.soundFile) void this.playFile(alert.soundFile);
+      if (alert.sound) playSound(this.context(), alert.sound, (alert.soundVolume ?? 100) / 100);
+      if (alert.soundFile) void this.playFile(alert.soundFile, (alert.soundFileVolume ?? 100) / 100);
     }
     if (alert.speech) this.say(alert.speech, false, alert.action);
     this.timer = window.setTimeout(() => {
@@ -134,7 +134,7 @@ export class AlertPlayer {
     }, alert.durationMs ?? ALERT_MS);
   }
 
-  private async playFile(id: string) {
+  private async playFile(id: string, volume: number) {
     const audio = this.context();
     let decoded = this.sounds.get(id);
     if (!decoded) {
@@ -146,7 +146,9 @@ export class AlertPlayer {
     try {
       const source = audio.createBufferSource();
       source.buffer = await decoded;
-      source.connect(audio.destination);
+      const gain = audio.createGain();
+      gain.gain.value = volume;
+      source.connect(gain).connect(audio.destination);
       source.start();
     } catch {
       this.sounds.delete(id); // a file that failed to load or decode can be tried again next time

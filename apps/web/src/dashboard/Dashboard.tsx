@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { StreamStats } from '@hyperion/shared';
 import { api, type Host, type LiveStatus, type Profile } from '../api';
 import { Icon, Logo, type IconName } from '../icons';
 import { Link, navigate, usePath } from '../router';
 import { Glow } from '../site/Glow';
 import { rememberTheme } from '../theme';
-import { ErrorNotice, useError } from '../ui';
+import { ErrorNotice, Spinner, useError } from '../ui';
 import { useLiveFeed, type LiveFeed } from './live-feed';
 import { LivePage } from './LivePage';
 import { CommandsPage } from './CommandsPage';
@@ -17,6 +18,8 @@ import { ProfilesPage } from './ProfilesPage';
 import { CompanionPage } from './CompanionPage';
 import { OverlayPage } from './OverlayPage';
 import { SettingsPage } from './SettingsPage';
+import { StreamRecap } from './StreamRecap';
+import { LiveDock } from './LiveDock';
 
 export interface PageProps {
   host: Host;
@@ -64,6 +67,7 @@ export function Dashboard() {
     if (host === null) navigate(`/login?next=${encodeURIComponent(location.pathname)}`, { replace: true });
   }, [host]);
 
+  if (host === undefined) return <Spinner page />;
   if (!host) return null;
   return <Shell host={host} refreshHost={refresh} />;
 }
@@ -75,6 +79,18 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
   const [viewer, setViewer] = useState<string | null>(null); // whose profile is open
   const closeViewer = useCallback(() => setViewer(null), []);
   const feed = useLiveFeed(host.overlayToken);
+  // A stream that ends while this page is open gets a recap, unless turned off. Its last live totals are kept for it.
+  const [recap, setRecap] = useState<{ stats: StreamStats | null } | null>(null);
+  const wasLive = useRef(false);
+  const lastStats = useRef<StreamStats | null>(null);
+  useEffect(() => {
+    if (status.live && feed.stats) lastStats.current = feed.stats;
+  }, [status.live, feed.stats]);
+  useEffect(() => {
+    if (wasLive.current && !status.live && host.streamRecap) setRecap({ stats: lastStats.current });
+    if (status.live && !wasLive.current) lastStats.current = null; // a new stream's totals start over
+    wasLive.current = status.live;
+  }, [status.live]);
 
   useEffect(() => {
     const load = () => api<LiveStatus>('GET', '/live/status').then(setStatus).catch(() => {});
@@ -84,7 +100,10 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
   }, []);
   useEffect(() => setMenuOpen(false), [path]);
 
-  const section = SECTIONS.flat().find((s) => s.path === path.replace(/\/$/, '')) ?? SECTIONS[0]![0]!;
+  const here = path.replace(/\/$/, '');
+  // A section's own pages (like one stream on Analytics) sit under its path.
+  const section =
+    SECTIONS.flat().find((s) => s.path === here) ?? SECTIONS.flat().find((s) => s.path !== '/dashboard' && here.startsWith(`${s.path}/`)) ?? SECTIONS[0]![0]!;
   const Page = section.page;
 
   return (
@@ -154,6 +173,9 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
           {/* Keyed by profile so switching profiles reloads everything that belongs to one. */}
           <Page key={host.profileId} host={host} refreshHost={refreshHost} status={status} setStatus={setStatus} feed={feed} />
           {viewer && <ViewerPanel key={viewer} viewer={viewer} live={status.live} onClose={closeViewer} />}
+          {/* The Live page has these controls already. */}
+          {section.path !== '/dashboard' && <LiveDock host={host} refreshHost={refreshHost} status={status} setStatus={setStatus} feed={feed} />}
+          {recap && <StreamRecap stats={recap.stats} refreshHost={refreshHost} onClose={() => setRecap(null)} />}
         </ViewerContext.Provider>
       </main>
     </div>

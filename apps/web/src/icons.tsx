@@ -61,6 +61,19 @@ const paths = {
   moon: <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />,
   popOut: <path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
   expand: <path d="M15 4h5v5M9 20H4v-5M20 4l-6 6M4 20l6-6" />,
+  // A screen's layout: a monitor, and a phone held upright.
+  desktop: (
+    <>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+    </>
+  ),
+  phone: (
+    <>
+      <rect x="7" y="2.5" width="10" height="19" rx="2.5" />
+      <path d="M11 18h2" />
+    </>
+  ),
   layout: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />

@@ -7,6 +7,7 @@ import { Dashboard } from './dashboard/Dashboard';
 import { HomePage } from './site/HomePage';
 import { DownloadPage, FaqPage, FeaturesPage, HowItWorksPage, SelfHostingPage } from './site/pages';
 import { PrivacyPage } from './site/PrivacyPage';
+import { ChangelogPage } from './site/ChangelogPage';
 import { Overlay } from './Overlay';
 import { usePath } from './router';
 import { applyTheme, rememberedTheme, themedPath } from './theme';
@@ -48,6 +49,7 @@ function App() {
   if (path === '/faq') return <FaqPage />;
   if (path === '/download') return <DownloadPage />;
   if (path === '/privacy') return <PrivacyPage />;
+  if (path === '/changelog') return <ChangelogPage />;
   return <HomePage />;
 }
 
