@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
+import type { RouteOptions } from 'fastify';
 import { WebSocket } from 'ws';
 import { sql } from 'drizzle-orm';
 import { ALERT_PRESETS, BUILT_IN_MEDIA, PROTOCOL_VERSION, WIDGET_PRESETS, type Gift, type MediaItem } from '@hyperion/shared';
@@ -19,6 +20,7 @@ const secretsKey = randomBytes(32);
 let app: Awaited<ReturnType<typeof buildApp>>;
 let baseWs: string;
 const sockets: WebSocket[] = [];
+const routes: RouteOptions[] = [];
 
 // Stands in for cloud TTS providers: records requests and answers with fake MP3 bytes.
 const cloudRequests: { url: string; init: RequestInit }[] = [];
@@ -44,7 +46,7 @@ beforeAll(async () => {
   };
   app = await buildApp(
     { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId: undefined, secretsKey },
-    { logger: false, createTikTok: fakeTikTok, fetch: fakeFetch },
+    { logger: false, createTikTok: fakeTikTok, fetch: fakeFetch, onRoute: (route) => routes.push(route) },
   );
   await app.listen({ port: 0, host: '127.0.0.1' });
   baseWs = `ws://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -165,6 +167,52 @@ describe('accounts', () => {
     ]);
     const dup = await app.inject({ method: 'POST', url: '/api/auth/signup', payload: { email: 'HOST@example.com', password: 'whatever123' } });
     expect(dup.statusCode).toBe(409);
+  });
+
+  // Every route answers 401 to a visitor without a session, unless it's listed here with the reason it's open.
+  // A new route that forgets requireHost fails this test instead of going unnoticed.
+  const PUBLIC_ROUTES: Record<string, string> = {
+    'GET /api/health': 'health check',
+    'POST /api/auth/signup': 'creates the session',
+    'POST /api/auth/login': 'creates the session',
+    'POST /api/auth/logout': 'only ends the session it was sent',
+    'POST /api/companions/pair': 'the one-time pairing code is the credential',
+    'POST /api/companions/tiktok-session': "the companion's device token is the credential (tested below)",
+    'GET /media/:id': 'overlays in OBS have no login; ids are random UUIDs',
+    'GET /ws/companion': 'websocket; the device token comes in the first message',
+    'GET /ws/overlay': "websocket; the overlay's token is the credential",
+  };
+
+  it('requires a session on every route that is not deliberately public', async () => {
+    const unguarded: string[] = [];
+    const checked = new Set<string>();
+    for (const route of routes) {
+      if (!route.url.startsWith('/api/') && !route.url.startsWith('/media/') && !route.url.startsWith('/ws/')) continue; // the web app's files
+      for (const method of [route.method].flat()) {
+        if (method === 'HEAD') continue;
+        const key = `${method} ${route.url}`;
+        checked.add(key);
+        if (key in PUBLIC_ROUTES) continue;
+        const url = route.url.replace(/:\w+/g, '00000000-0000-4000-8000-000000000000');
+        const res = await app.inject({ method: method as 'GET', url, remoteAddress: nextAddress() });
+        if (res.statusCode !== 401) unguarded.push(`${key} answered ${res.statusCode}`);
+      }
+    }
+    expect(unguarded).toEqual([]);
+    // Keeps the list honest: a public route that was removed or renamed must leave the list too.
+    expect(Object.keys(PUBLIC_ROUTES).filter((key) => !checked.has(key))).toEqual([]);
+  });
+
+  it('does not let a session outlive a new login from the same browser', async () => {
+    const { cookie } = await signUp();
+    const again = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'host@example.com', password: 'correct horse' },
+      headers: { cookie },
+    });
+    expect(again.statusCode).toBe(200);
+    expect((await api(cookie, 'GET', '/api/auth/me')).statusCode).toBe(401);
   });
 
   it('logs in, rejects a wrong password, and logs out', async () => {

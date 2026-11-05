@@ -13,7 +13,10 @@ declare module 'fastify' {
   }
 }
 
-export async function startSession(db: Db, reply: FastifyReply, hostId: string, secure: boolean) {
+// A login replaces the session this browser already had, so an old token never outlives the cookie that held it.
+export async function startSession(db: Db, req: FastifyRequest, reply: FastifyReply, hostId: string, secure: boolean) {
+  const previous = req.cookies[SESSION_COOKIE];
+  if (previous) await db.delete(authSessions).where(eq(authSessions.tokenHash, sha256(previous)));
   const token = newToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   await db.insert(authSessions).values({ tokenHash: sha256(token), hostId, expiresAt });

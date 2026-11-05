@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import Fastify, { type FastifyError } from 'fastify';
+import Fastify, { type FastifyError, type RouteOptions } from 'fastify';
 import { eq, isNotNull, or } from 'drizzle-orm';
 import fastifyCookie from '@fastify/cookie';
 import fastifyRateLimit from '@fastify/rate-limit';
@@ -58,6 +58,8 @@ interface Options {
   fetch?: typeof fetch;
   // Tests swap in a fake Piper with known voices.
   piper?: Piper;
+  // Tests see every route as it's added, to check each one is signed-in only or deliberately public.
+  onRoute?: (route: RouteOptions) => void;
 }
 
 const MAX_WS_MESSAGE_BYTES = 64 * 1024;
@@ -67,6 +69,7 @@ export async function buildApp(config: Config, options: Options = {}) {
   const app = Fastify({ logger: options.logger ?? true, trustProxy: config.trustProxy ?? false });
   const { db, close } = createDb(config.databaseUrl);
   const hub = new Hub();
+  if (options.onRoute) app.addHook('onRoute', options.onRoute);
   const createTikTok = options.createTikTok ?? ((username) => new TikTokAdapter(username, config.eulerApiKey));
 
   app.decorate('config', config);

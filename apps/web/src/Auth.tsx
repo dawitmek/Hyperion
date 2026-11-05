@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api } from './api';
 import { Logo } from './icons';
 import { Link, navigate } from './router';
 import { Glow } from './site/Glow';
-import { ErrorNotice, useError } from './ui';
+import { ErrorNotice, Spinner, useError } from './ui';
 
 // Only same-site paths, so a crafted ?next= can't send someone elsewhere after logging in.
 function nextPath() {
@@ -16,12 +16,20 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
   const [password, setPassword] = useState('');
   const { error, guard } = useError();
   const login = mode === 'login';
+  // Someone already signed in has no business here: send them on instead of showing the form.
+  const [checking, setChecking] = useState(true);
+  useEffect(() => {
+    api('GET', '/auth/me')
+      .then(() => navigate(nextPath(), { replace: true }))
+      .catch(() => setChecking(false));
+  }, []);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     guard(() => api('POST', `/auth/${mode}`, { email, password }).then(() => navigate(nextPath(), { replace: true })))();
   };
 
+  if (checking) return <Spinner page />;
   return (
     <div className="auth">
       <div className="content-glow" aria-hidden="true">

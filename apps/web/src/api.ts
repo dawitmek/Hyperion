@@ -15,6 +15,10 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 204) return undefined as T;
+  // The session ended (expired, or logged out in another tab): back to login, then back here afterwards.
+  if (res.status === 401 && !path.startsWith('/auth/') && location.pathname.startsWith('/dashboard')) {
+    location.replace(`/login?next=${encodeURIComponent(location.pathname)}`);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(data.error ?? data.message ?? `Request failed (${res.status})`, res.status);
   return data as T;
