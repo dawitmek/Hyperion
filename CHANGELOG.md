@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-05
+
+Game integrations, starting with Minecraft, and a raffle crowd mode.
+
 ### Added
 - Game actions: the companion sends commands straight into Minecraft, Java or Bedrock. Set up the game and write actions in the companion's Game actions section, then choose Game action for a chat command, which a gift action can run too.
 - Minecraft Java goes through the RCON connection Minecraft servers have built in. Minecraft Bedrock connects itself: turn it on in the companion, then type `/connect 127.0.0.1:19131` in a world with cheats on, single-player included.
@@ -66,5 +70,6 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/dawitmek/Hyperion/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dawitmek/Hyperion/compare/v0.3.1...v0.4.0
