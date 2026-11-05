@@ -2,12 +2,13 @@ import { useRef, useState, type ReactNode } from 'react';
 import { Icon, type IconName } from '../icons';
 import { Glow } from './Glow';
 import { Link } from '../router';
-import { CompanionArt, GiftArt, LevelsArt, ModesArt, ProfilesArt, SafetyArt, Stage, VoiceArt } from './visuals';
+import { CompanionArt, DeckArt, GameActionArt, GiftArt, LevelsArt, ModesArt, ProfilesArt, SafetyArt, Stage, VoiceArt } from './visuals';
 import { SiteLayout } from './SiteLayout';
 
 const CARDS: { art: ReactNode; title: string; text: string }[] = [
-  { art: <ModesArt />, title: 'Four crowd modes', text: 'Anarchy, democracy votes, a queue of players, or gift-only. Switch mid-stream.' },
+  { art: <ModesArt />, title: 'Five crowd modes', text: 'Anarchy, democracy votes, a queue of players, a raffle, or gift-only. Switch mid-stream.' },
   { art: <GiftArt />, title: 'Gifts that press keys', text: 'Tie a gift to a command, and thank gifters with a big on-stream alert.' },
+  { art: <GameActionArt />, title: 'Straight into Minecraft', text: 'Gifts and commands spawn mobs, drop TNT or hand out diamonds, in Java or Bedrock.' },
   { art: <VoiceArt />, title: 'Chat read aloud', text: 'Offline voices, your own cloud key, and effects from chipmunk to robot.' },
   { art: <LevelsArt />, title: 'Levels and a leaderboard', text: 'Viewers earn XP as they play. Lock some commands behind a level if you like.' },
   { art: <ProfilesArt />, title: 'A profile per game', text: 'Each game keeps its own commands and mode, and the companion follows along.' },
@@ -93,7 +94,7 @@ function Control() {
             <p>Out of the box, with no extra downloads on a Docker install.</p>
             <div className="s-figures">
               <div className="s-figure">
-                <b>4</b>
+                <b>5</b>
                 <span>crowd modes</span>
               </div>
               <div className="s-figure">
@@ -197,23 +198,11 @@ function Flow() {
 const TABS: { title: string; body: string; panel: ReactNode }[] = [
   {
     title: 'Commands',
-    body: 'Pick what chat types and the key it presses, how long to hold it, and a cooldown per viewer.',
+    body: 'Pick what chat types and what it does: press a key, play a macro, send a game action, or chain several together. Each gets its own cooldown.',
     panel: (
       <div className="s-panel-window">
         <h4>Commands</h4>
-        {[
-          ['left', 'A', '300 ms', true],
-          ['right', 'D', '300 ms', true],
-          ['jump', 'Space', '150 ms', true],
-          ['shoot', 'F', '200 ms', false],
-        ].map(([word, key, hold, on]) => (
-          <div key={word as string} className="s-rowline">
-            <span className={`s-switch ${on ? '' : 'off'}`} />
-            <strong>{word}</strong>
-            <kbd className="kbd">{key}</kbd>
-            <span className="s-chip">{hold}</span>
-          </div>
-        ))}
+        <DeckArt />
       </div>
     ),
   },
@@ -276,22 +265,58 @@ const TABS: { title: string; body: string; panel: ReactNode }[] = [
   },
   {
     title: 'Companion',
-    body: 'A small app on your gaming PC that presses the keys. You choose which keys it may press and which game gets them.',
+    body: 'A small app on your gaming PC. It presses the keys you allow in the game you pick, plays your macros, and sends game actions into Minecraft.',
     panel: (
       <div className="s-panel-window">
         <h4>Hyperion Companion</h4>
-        <div className="art-line">
-          <span>
-            <span className="tag green">Connected</span> Gaming PC
-          </span>
-          <span className="s-chip">gta5.exe</span>
-        </div>
         <CompanionArt />
+        <div className="art-links">
+          <span>
+            <i /> Minecraft Java <span className="s-muted">Connected</span>
+          </span>
+          <span>
+            <i /> Minecraft Bedrock <span className="s-muted">Connected</span>
+          </span>
+        </div>
         <div className="s-muted">Panic hotkey: Ctrl+Shift+Backspace</div>
       </div>
     ),
   },
 ];
+
+// Game integrations: what a gift can do once it reaches the game itself, beyond key presses.
+function Integrations() {
+  return (
+    <section className="s-section" aria-labelledby="integrations-title">
+      <div className="s-wrap s-split s-integrations">
+        <div>
+          <h2 id="integrations-title">Go beyond key presses</h2>
+          <p className="s-lead">
+            Game integrations send commands straight into the game. A rose spawns a creeper beside you, a lion drops TNT, and
+            the mob wears the gifter’s name.
+          </p>
+          <ul className="s-integration-list">
+            <li>
+              <span className="tag green">Integrated</span> Minecraft: Java Edition
+            </li>
+            <li>
+              <span className="tag green">Integrated</span> Minecraft: Bedrock Edition
+            </li>
+            <li>
+              <span className="tag">Coming</span> More games, one at a time
+            </li>
+          </ul>
+          <Link href="/integrations" className="s-link" style={{ marginTop: 26 }}>
+            See integrations <Icon name="play" size={12} />
+          </Link>
+        </div>
+        <div className="s-panel s-integration-art" aria-hidden="true">
+          <GameActionArt />
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function Tour() {
   const [active, setActive] = useState(0);
@@ -354,6 +379,7 @@ export function HomePage() {
       <Carousel />
       <Control />
       <Flow />
+      <Integrations />
       <Tour />
     </SiteLayout>
   );

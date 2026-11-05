@@ -1,4 +1,4 @@
-// Game actions: commands sent straight into a game (Minecraft for now), set up and kept on this PC. Like macros, the
+// Game actions: commands sent straight into a game (Minecraft Java or Bedrock for now), set up and kept on this PC. Like macros, the
 // server only ever names one to run, and viewer names only fill blanks in commands the host wrote.
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,7 @@ const BLANKS: [&str; 3] = ["viewer", "count", "player"];
 #[serde(rename_all = "camelCase")]
 pub enum Game {
     MinecraftJava,
+    MinecraftBedrock,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -33,7 +34,7 @@ pub struct GameAction {
 pub struct Values<'a> {
     pub viewer: &'a str,
     pub count: u32, // how many gifts; a gift action that repeats per gift runs the whole action once for each
-    pub player: Option<&'a str>, // the host's own name in the game
+    pub player: Option<&'a str>, // the host's own name in the game, or @s on Bedrock, where commands run as them
 }
 
 pub fn load(path: &Path) -> Vec<GameAction> {

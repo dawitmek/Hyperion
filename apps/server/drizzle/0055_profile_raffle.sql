@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "raffle_ms" integer DEFAULT 10000 NOT NULL;

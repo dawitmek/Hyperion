@@ -1,7 +1,8 @@
 // Shared companion state plus the safety gate every action passes through before a key is pressed.
 
+use crate::bedrock::{self, Bedrock};
 use crate::config::Config;
-use crate::game_actions::{self, GameAction, Values};
+use crate::game_actions::{self, Game, GameAction, Values};
 use crate::input::{self, GameWindow};
 use crate::keys::{self, ALL_KEYS, Combo, Modifier, OLD_MODIFIER_TOGGLES};
 use crate::macros::{self, Input, Macro, Pressed, Recorder};
@@ -42,6 +43,16 @@ pub struct MinecraftView {
     has_password: bool,
 }
 
+/// Whether this PC listens for Minecraft Bedrock, and whether the game has joined.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BedrockView {
+    on: bool,
+    connected: bool,
+    port: u16,
+    problem: Option<String>,
+}
+
 /// The stop key. Taken from other programs only during a recording, so F9 keeps working in games otherwise.
 pub fn stop_key() -> Shortcut {
     Shortcut::new(None, Code::F9)
@@ -72,6 +83,7 @@ pub struct Snapshot {
     device_name: Option<String>,
     connection: String,
     paused: bool,
+    paused_by_host: bool, // paused with the button or the panic key, rather than not started yet
     target_process: Option<String>,
     profile_name: Option<String>,
     profile_game: Option<String>,
@@ -89,6 +101,7 @@ pub struct Snapshot {
     game_actions: Vec<GameAction>,
     minecraft_java: Option<MinecraftView>,
     minecraft_default_port: u16,
+    minecraft_bedrock: BedrockView,
     stop_recording_hotkey: &'static str,
     pending_approvals: usize, // enabled combinations waiting for this PC's OK
     theme: Option<String>,
@@ -118,6 +131,7 @@ pub struct Controller {
     config_path: PathBuf,
     config: Mutex<Config>,
     paused: AtomicBool,
+    paused_by_host: AtomicBool,
     connection: Mutex<String>,
     profile: Mutex<(Option<String>, Option<String>)>, // active dashboard profile: (name, game process)
     commands: Mutex<Vec<CommandInfo>>,               // the active profile's commands, from the server
@@ -137,8 +151,10 @@ pub struct Controller {
     game_actions_path: PathBuf,
     game_actions: Mutex<Vec<GameAction>>,
     pub game_actions_changed: tokio::sync::Notify, // tells the server the list changed
-    // The open RCON connection and the settings it was made with. Held while an action runs, so actions go in order.
+    // The open RCON connection and the settings it was made with. Held while any action runs, Java or Bedrock, so
+    // actions go in order.
     rcon: tokio::sync::Mutex<Option<(minecraft::Settings, Rcon)>>,
+    bedrock: Arc<Bedrock>,
     pub connection_task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     pub update: Mutex<Updater>,
 }
@@ -153,6 +169,7 @@ impl Controller {
             game_actions_path,
             game_actions_changed: tokio::sync::Notify::new(),
             rcon: tokio::sync::Mutex::new(None),
+            bedrock: Arc::new(Bedrock::default()),
             macros: Mutex::new(macros::load(&macros_path)),
             macros_path,
             macros_changed: tokio::sync::Notify::new(),
@@ -163,8 +180,9 @@ impl Controller {
             app,
             config_path,
             config: Mutex::new(config),
-            // Starts paused: nothing is pressed until the host has picked the game and pressed Resume.
+            // Starts paused: nothing is pressed until the host has picked the game and pressed Play.
             paused: AtomicBool::new(true),
+            paused_by_host: AtomicBool::new(false),
             connection: Mutex::new("disconnected".into()),
             profile: Mutex::new((None, None)),
             commands: Mutex::new(Vec::new()),
@@ -245,6 +263,7 @@ impl Controller {
             device_name: config.device_name,
             connection: self.connection.lock().unwrap().clone(),
             paused: self.paused.load(Ordering::SeqCst),
+            paused_by_host: self.paused_by_host.load(Ordering::SeqCst),
             target_process: config.target_process,
             profile_name,
             profile_game,
@@ -262,6 +281,12 @@ impl Controller {
             game_actions: self.game_actions.lock().unwrap().clone(),
             minecraft_java: config.minecraft_java.map(|m| MinecraftView { host: m.host, port: m.port, player: m.player, has_password: !m.password.is_empty() }),
             minecraft_default_port: minecraft::DEFAULT_PORT,
+            minecraft_bedrock: BedrockView {
+                on: config.minecraft_bedrock == Some(true),
+                connected: self.bedrock.connected(),
+                port: bedrock::PORT,
+                problem: self.bedrock.problem(),
+            },
             stop_recording_hotkey: STOP_RECORDING_HOTKEY,
             pending_approvals,
             theme: config.theme,
@@ -309,8 +334,10 @@ impl Controller {
         self.emit();
     }
 
-    pub fn set_paused(&self, paused: bool) {
+    /// `by_host`: the host paused, with the button or the panic key, so the window offers Resume rather than Play.
+    pub fn set_paused(&self, paused: bool, by_host: bool) {
         self.paused.store(paused, Ordering::SeqCst);
+        self.paused_by_host.store(paused && by_host, Ordering::SeqCst);
         if paused {
             self.release_all();
         }
@@ -530,6 +557,27 @@ impl Controller {
         Ok(online)
     }
 
+    /// Listens for Minecraft Bedrock's /connect, or stops.
+    pub fn set_bedrock(self: &Arc<Self>, on: bool) -> Result<(), String> {
+        self.update_config(|c| c.minecraft_bedrock = Some(on))?;
+        if on {
+            self.start_bedrock();
+        } else {
+            self.bedrock.stop();
+            self.emit();
+        }
+        Ok(())
+    }
+
+    pub fn start_bedrock(self: &Arc<Self>) {
+        let this = Arc::downgrade(self);
+        self.bedrock.start(bedrock::PORT, move || {
+            if let Some(this) = this.upgrade() {
+                this.emit();
+            }
+        });
+    }
+
     /// Runs a game action set up on this PC, for `viewer`'s gift of `count`. Pausing or the panic key stops it
     /// between commands.
     pub fn run_game_action(self: &Arc<Self>, name: &str, viewer: &str, count: u32) -> Result<(), String> {
@@ -544,22 +592,30 @@ impl Controller {
         if self.paused.load(Ordering::SeqCst) {
             return Err("paused".into());
         }
-        let settings = self.config().minecraft_java.ok_or("Minecraft isn't set up on this PC")?;
+        let target = match found.game {
+            Game::MinecraftJava => Target::Java(self.config().minecraft_java.ok_or("Minecraft Java isn't set up on this PC")?),
+            Game::MinecraftBedrock if self.bedrock.connected() => Target::Bedrock,
+            Game::MinecraftBedrock => return Err(format!("Minecraft Bedrock isn't connected. Type /connect 127.0.0.1:{} in your world", bedrock::PORT)),
+        };
         // Filled in now, so a missing {player} is refused before anything runs.
-        let values = Values { viewer, count, player: settings.player.as_deref() };
+        let player = match &target {
+            Target::Java(settings) => settings.player.as_deref(),
+            Target::Bedrock => Some("@s"),
+        };
+        let values = Values { viewer, count, player };
         let commands = found.commands.iter().map(|c| game_actions::fill(c, &values)).collect::<Result<Vec<_>, _>>()?;
         let generation = self.macro_generation.load(Ordering::SeqCst);
         let this = self.clone();
         let name = name.to_string();
         tauri::async_runtime::spawn(async move {
-            if let Err(reason) = this.send_rounds(&settings, &commands, found.repeat, found.delay_ms, generation).await {
+            if let Err(reason) = this.send_rounds(&target, &commands, found.repeat, found.delay_ms, generation).await {
                 this.record(&format!("Action: {name}"), &Err(reason));
             }
         });
         Ok(())
     }
 
-    async fn send_rounds(&self, settings: &minecraft::Settings, commands: &[String], rounds: u32, delay_ms: u32, generation: u64) -> Result<(), String> {
+    async fn send_rounds(&self, target: &Target, commands: &[String], rounds: u32, delay_ms: u32, generation: u64) -> Result<(), String> {
         let mut rcon = self.rcon.lock().await;
         // A command Minecraft turns down doesn't stop the rest; the first one is reported at the end.
         let mut refused = None;
@@ -571,9 +627,12 @@ impl Controller {
                 if self.macro_generation.load(Ordering::SeqCst) != generation || self.paused.load(Ordering::SeqCst) {
                     break 'rounds;
                 }
-                let answer = minecraft_command(&mut rcon, settings, command).await?;
+                let refusal = match target {
+                    Target::Java(settings) => minecraft::refusal(&minecraft_command(&mut rcon, settings, command).await?),
+                    Target::Bedrock => Some(self.bedrock.run(command).await?).filter(|a| !a.ok).map(|a| a.message),
+                };
                 if refused.is_none() {
-                    refused = minecraft::refusal(&answer);
+                    refused = refusal;
                 }
             }
         }
@@ -794,6 +853,12 @@ impl Controller {
         drop(log);
         self.emit();
     }
+}
+
+/// Where a game action's commands go.
+enum Target {
+    Java(minecraft::Settings),
+    Bedrock,
 }
 
 /// Runs one command over the open connection, or a new one if there's none, the settings changed, or it dropped

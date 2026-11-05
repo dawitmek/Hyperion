@@ -7,5 +7,9 @@ export const MODE_INFO: Record<Mode, { label: string; help: string }> = {
     label: 'Queue',
     help: `Viewers type "${QUEUE_JOIN}" to line up. One viewer at a time controls the game for a turn.`,
   },
+  raffle: {
+    label: 'Raffle',
+    help: "Each draw, one random viewer's command fires. Made for big commands, like spawning a mob.",
+  },
   gift: { label: 'Gift-only', help: "Chat can't press keys. Only actions do, like a gift that jumps." },
 };

@@ -209,7 +209,7 @@ export type ServerToCompanion =
   | { type: 'theme'; theme: UiTheme; style: UiThemeStyle; mode: UiMode };
 
 // Crowd-control modes. The host picks one and can switch while live.
-export const MODES = ['anarchy', 'democracy', 'queue', 'gift'] as const;
+export const MODES = ['anarchy', 'democracy', 'queue', 'raffle', 'gift'] as const;
 export type Mode = (typeof MODES)[number];
 
 // In queue mode, a viewer types this to join the line.
@@ -222,7 +222,8 @@ export type ModeState =
   | { mode: 'anarchy' }
   | { mode: 'gift' }
   | { mode: 'democracy'; tally: { keyword: string; votes: number }[]; endsAt: number | null }
-  | { mode: 'queue'; viewer: string | null; endsAt: number | null; queue: string[] };
+  | { mode: 'queue'; viewer: string | null; endsAt: number | null; queue: string[] }
+  | { mode: 'raffle'; entrants: number; endsAt: number | null; lastWinner: string | null };
 
 export interface LeaderboardEntry {
   viewer: string;

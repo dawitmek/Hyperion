@@ -478,17 +478,19 @@ export class SessionManager {
     return name !== viewer ? { name } : {};
   }
 
-  // The mode as overlays show it: the queue by display name.
+  // The mode as overlays show it: the queue and the last raffle winner by display name.
   private shownState(hostId: string, session: LiveSession): ModeState {
     const state = session.engine.state();
+    if (state.mode === 'raffle') return { ...state, lastWinner: state.lastWinner && this.stats.nameOf(hostId, state.lastWinner) };
     if (state.mode !== 'queue') return state;
     return { ...state, viewer: state.viewer && this.stats.nameOf(hostId, state.viewer), queue: state.queue.map((viewer) => this.stats.nameOf(hostId, viewer)) };
   }
 
-  // Whose turn it is in queue mode.
+  // Whose turn it is in queue mode, or who last won the raffle.
   private playerAvatar(hostId: string, session: LiveSession) {
     const state = session.engine.state();
-    return state.mode === 'queue' && state.viewer ? this.avatar(hostId, state.viewer) : {};
+    const viewer = state.mode === 'queue' ? state.viewer : state.mode === 'raffle' ? state.lastWinner : null;
+    return viewer ? this.avatar(hostId, viewer) : {};
   }
 
   private levelUp(hostId: string, session: LiveSession, viewer: string, level: number | null) {
@@ -525,6 +527,7 @@ export class SessionManager {
       actionsPerSecond: host.actionsPerSecond,
       voteWindowMs: profile.voteWindowMs,
       turnMs: profile.turnMs,
+      raffleMs: profile.raffleMs,
       giftBoosts: profile.giftBoosts,
       levelGating: host.progression && host.levelGating,
       points: host.points,

@@ -126,8 +126,6 @@ html:has(.app) { overscroll-behavior-y: none; }
 /* The crowd modes share the card's width evenly: four across, or two by two when narrow. */
 .voice-controls .seg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
 .voice-controls .seg button { min-width: 0; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crowd-mode > .seg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
-@media (max-width: 520px) { .crowd-mode > .seg { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* Show more as a divider: a thin line across with the words in the middle, no button outline. */
 .line-expand { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 0; border: 0; background: none; color: var(--muted); font: 600 13px var(--font); cursor: pointer; transition: color 0.15s; }
 .line-expand::before, .line-expand::after { content: ''; flex: 1; height: 1px; background: var(--line); transition: background 0.15s; }
@@ -811,6 +809,29 @@ label.btn.disabled { opacity: 0.6; pointer-events: none; }
 .command-fields > .form-grid { width: 100%; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .command-key { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .command-tip { margin: 0; }
+/* What a command does: four options, each kind with its own icon and colour, which its tiles carry too. */
+.kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+@container (min-width: 620px) { .kinds { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.kinds-label { margin-bottom: -8px; font-size: 14px; font-weight: 600; }
+.kind { --k: var(--indigo); --k-soft: var(--indigo-soft); display: grid; grid-template-columns: 30px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 10px;
+  align-items: start; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: calc(12px * var(--radius-scale)); background: var(--panel);
+  color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color 0.15s, background 0.15s, transform 0.12s; }
+.kind-macro { --k: var(--violet); --k-soft: var(--violet-soft); }
+.kind-gameAction { --k: var(--green); --k-soft: var(--green-soft); }
+.kind-chain { --k: var(--pink); --k-soft: var(--pink-soft); }
+.kind:hover:not(:disabled) { border-color: var(--k); }
+.kind:active:not(:disabled) { transform: scale(0.98); }
+.kind:focus-visible { outline: 2px solid var(--indigo-fill); outline-offset: 2px; }
+.kind[aria-checked='true'] { border-color: var(--k); background: color-mix(in srgb, var(--k-soft) 70%, var(--panel)); box-shadow: inset 0 0 0 1px var(--k); }
+.kind:disabled { cursor: not-allowed; border-style: dashed; background: transparent; }
+.kind:disabled > :not(.kind-help) { opacity: 0.45; }
+.kind-icon { grid-row: span 2; display: grid; place-items: center; width: 30px; height: 30px; border-radius: calc(9px * var(--radius-scale)); background: var(--k-soft); color: var(--k); }
+.kind strong { overflow: hidden; font-size: 14px; font-weight: 600; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.kind-help { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.does-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 8px 2px 6px; border-radius: calc(8px * var(--radius-scale));
+  background: var(--k-soft); color: var(--k); font-size: 13px; font-weight: 600; }
+.does-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.does-chip svg { flex: none; }
 .command-search { max-width: 320px; margin-bottom: 4px; }
 .chain { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; }
 .chain-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; width: 100%; margin: 0; }
@@ -1088,3 +1109,41 @@ input[type='number']:not(:focus):not(:disabled):not([readonly]) { cursor: ns-res
 @keyframes spinner-in { from { opacity: 0; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner > span { animation-duration: 2s; } }
+
+/* Crowd mode (ModePicker.tsx): a tile per mode in its own colour, then the chosen mode in full. */
+.mode-is-anarchy { --m: var(--orange); --m-soft: var(--orange-soft); }
+.mode-is-democracy { --m: var(--indigo); --m-soft: var(--indigo-soft); }
+.mode-is-queue { --m: var(--teal); --m-soft: var(--teal-soft); }
+.mode-is-raffle { --m: var(--violet); --m-soft: var(--violet-soft); }
+.mode-is-gift { --m: var(--pink); --m-soft: var(--pink-soft); }
+.mode-tiles-box { container-type: inline-size; }
+.mode-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+/* Narrow, as in a Live page card: three to a row. */
+@container (max-width: 460px) { .mode-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.mode-tile { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; padding: 12px 6px 10px; border: 1px solid var(--line-strong);
+  border-radius: calc(14px * var(--radius-scale)); background: var(--panel); color: var(--muted); font: 600 13px var(--font); cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.12s; }
+.mode-tile:hover { border-color: var(--m); color: var(--ink); }
+.mode-tile:active { transform: scale(0.97); }
+.mode-tile:focus-visible { outline: 2px solid var(--indigo-fill); outline-offset: 2px; }
+.mode-tile[aria-checked='true'] { border-color: var(--m); background: color-mix(in srgb, var(--m-soft) 70%, var(--panel)); color: var(--ink); box-shadow: inset 0 0 0 1px var(--m); }
+.mode-tile-icon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: calc(11px * var(--radius-scale)); background: var(--m-soft); color: var(--m); }
+.mode-details { display: flex; flex-direction: column; gap: 16px; padding: 18px; border-radius: calc(16px * var(--radius-scale)); border: 1px solid color-mix(in srgb, var(--m) 30%, var(--line));
+  background: radial-gradient(420px 160px at 0% 0%, var(--m-soft), transparent 70%), var(--panel2); }
+.mode-details-head { display: flex; align-items: flex-start; gap: 12px; }
+.mode-details-head h3 { font-size: 17px; font-weight: 600; }
+.mode-details-head p { margin-top: 2px; }
+/* How the mode plays, in order: numbered steps joined by a line. */
+.mode-details { container-type: inline-size; }
+.mode-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.mode-steps li { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: calc(12px * var(--radius-scale)); background: var(--panel);
+  font-size: 13.5px; line-height: 1.4; counter-increment: step; }
+.mode-steps li::before { content: counter(step); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--m-soft); color: var(--m);
+  font-size: 12px; font-weight: 700; }
+.mode-setting { max-width: 240px; }
+/* In a narrow panel the steps stack, each number beside its text. */
+@container (max-width: 520px) {
+  .mode-steps { grid-template-columns: 1fr; gap: 6px; }
+  .mode-steps li { flex-direction: row; align-items: center; padding: 9px 12px; }
+  .mode-steps li::before { flex: none; }
+}

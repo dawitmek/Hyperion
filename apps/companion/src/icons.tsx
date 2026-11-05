@@ -16,6 +16,22 @@ const paths = {
   chevron: <path d="m6 9 6 6 6-6" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
   shield: <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3z" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  edit: <path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />,
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a1 1 0 0 1 1-1h9" />
+    </>
+  ),
+  repeat: <path d="M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4" />,
+  record: (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  cube: <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3zM4 7.5l8 4.5 8-4.5M12 12v9" />,
 } as const;
 
 export type IconName = keyof typeof paths;
@@ -35,20 +51,5 @@ export function Icon({ name, size = 16, strokeWidth = 2 }: { name: IconName; siz
     >
       {paths[name]}
     </svg>
-  );
-}
-
-// A section's heading: a tinted icon, the title and what the section is for.
-export function SectionHead({ id, icon, hue, title, children }: { id: string; icon: IconName; hue: string; title: string; children?: React.ReactNode }) {
-  return (
-    <div className="section-head">
-      <span className={`hue-icon ${hue}`}>
-        <Icon name={icon} />
-      </span>
-      <div>
-        <h2 id={id}>{title}</h2>
-        {children && <p className="muted small">{children}</p>}
-      </div>
-    </div>
   );
 }

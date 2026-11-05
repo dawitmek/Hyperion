@@ -1,5 +1,14 @@
 // Line icons, 24-unit grid, drawn in currentColor.
 const paths = {
+  record: (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  ticket: <path d="M3 7h18v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4V7zM15 7v2M15 11v2M15 15v2" />,
+  chain: <path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1" />,
+  cube: <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3zM4 7.5l8 4.5 8-4.5M12 12v9" />,
   live: (
     <>
       <circle cx="12" cy="12" r="3" />

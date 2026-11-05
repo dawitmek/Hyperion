@@ -124,6 +124,7 @@ export async function authRoutes(app: FastifyInstance) {
         mode: profiles.mode,
         voteWindowMs: profiles.voteWindowMs,
         turnMs: profiles.turnMs,
+        raffleMs: profiles.raffleMs,
         giftBoosts: profiles.giftBoosts,
       })
       .from(hosts)

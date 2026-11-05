@@ -32,12 +32,9 @@ Still to design:
 
 ### Game integrations
 
-Game actions send commands straight into a game, set up and kept on the companion. Minecraft Java (RCON) works.
+Game actions send commands straight into a game, set up and kept on the companion. Minecraft Java (RCON) and
+Bedrock (`/connect`) work.
 
-- [ ] Minecraft Bedrock: the companion as a local WebSocket server the game joins with `/connect localhost:PORT`
-      (cheats on, "Require Encrypted Websockets" off), pacing commands since Bedrock queues about 100 at a time.
-      Check whether Windows still needs a `CheckNetIsolation` loopback exemption
-- [ ] A list of compatible games on the site, with a setup guide for each
 - [ ] More games through a small localhost protocol that game mods connect to (GTA V via Script Hook V, story mode
       only)
 

@@ -28,6 +28,7 @@ function setup(mode: Mode, config: Partial<EngineConfig> = {}, levels: Record<st
       actionsPerSecond: 100,
       voteWindowMs: 3000,
       turnMs: 30000,
+      raffleMs: 10000,
       giftBoosts: true,
       levelGating: false,
       points: false,
@@ -170,6 +171,61 @@ describe('democracy mode', () => {
     press(gift('a', 'Rose', 5));
     advance(3000);
     expect(tick()).toEqual(['KeyD']);
+  });
+});
+
+describe('raffle mode', () => {
+  it('runs one random entrant’s command when the draw closes', () => {
+    const { engine, ctx, press, tick, advance } = setup('raffle');
+    expect(press(comment('alice', 'left'))).toEqual([]);
+    press(comment('bob', 'right'));
+    press(comment('cara', 'jump'));
+    expect(engine.state()).toEqual({ mode: 'raffle', entrants: 3, endsAt: 10000, lastWinner: null });
+    advance(9999);
+    expect(tick()).toEqual([]);
+    advance(1);
+    Object.assign(ctx, { random: () => 0.5 }); // the middle of three entries
+    const [won, ...others] = engine.tick();
+    expect(others).toEqual([]);
+    expect(won).toMatchObject({ action: { key: 'KeyD' }, keyword: 'right', viewer: 'bob', credit: ['bob'] });
+    expect(engine.state()).toEqual({ mode: 'raffle', entrants: 0, endsAt: null, lastWinner: 'bob' });
+  });
+
+  it('keeps one entry per viewer, their latest command', () => {
+    const { ctx, press, tick, advance } = setup('raffle');
+    press(comment('alice', 'left'));
+    press(comment('alice', 'jump'));
+    advance(10000);
+    Object.assign(ctx, { random: () => 0 });
+    expect(tick()).toEqual(['Space']);
+  });
+
+  it('gives a gifting entrant extra chances when gift boosts are on', () => {
+    const boosted = setup('raffle');
+    boosted.press(comment('alice', 'left'));
+    boosted.press(comment('bob', 'right'));
+    boosted.press(gift('bob', 'Rose', 3)); // bob: 4 entries of 5
+    boosted.advance(10000);
+    Object.assign(boosted.ctx, { random: () => 0.3 }); // 1.5 of 5: past alice's one entry
+    expect(boosted.tick()).toEqual(['KeyD']);
+
+    const plain = setup('raffle', { giftBoosts: false });
+    plain.press(comment('alice', 'left'));
+    plain.press(comment('bob', 'right'));
+    plain.press(gift('bob', 'Rose', 3));
+    plain.advance(10000);
+    Object.assign(plain.ctx, { random: () => 0.3 }); // 0.6 of 2: alice
+    expect(plain.tick()).toEqual(['KeyA']);
+  });
+
+  it('does nothing until someone enters, and skips a command turned off meanwhile', () => {
+    const { ctx, press, tick, advance } = setup('raffle');
+    advance(20000);
+    expect(tick()).toEqual([]);
+    press(comment('alice', 'left'));
+    ctx.config.commands = [right, jump];
+    advance(10000);
+    expect(tick()).toEqual([]);
   });
 });
 

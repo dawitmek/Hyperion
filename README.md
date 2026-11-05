@@ -44,10 +44,12 @@
 
 ![Six feature previews: crowd mode voting, a gift that presses a key, chat read aloud, viewer levels, game profiles, and allowed keys with a focus check](docs/images/features.png)
 
-- **Four crowd modes:**
+- **Five crowd modes:**
   - Anarchy: every command fires.
   - Democracy: chat votes, and the winner fires when each window closes.
   - Queue: viewers take turns.
+  - Raffle: every few seconds one random viewer who typed a command wins, and only their command fires. Made for big
+    commands, like spawning a mob.
   - Gift-only: only gifts press keys.
 
   You can switch modes mid-stream.
@@ -58,7 +60,7 @@
   - play a built-in sound or your own upload
   - show your picture or video
   - read its text aloud
-  - press a command's key, once per gift in a streak if you like
+  - run a command (a key, macro, chain or game action), once per gift in a streak if you like
   - give points
 
   Actions can be limited to followers, subscribers, moderators, top gifters or one viewer, with cooldowns and random
@@ -89,6 +91,9 @@
 
   Voice effects are available too.
 
+- **Game integrations:** commands sent straight into a game, set up in the companion and run by chat or gifts.
+  Minecraft is the first, Java and Bedrock: spawn mobs, drop TNT or hand out diamonds, with the viewer's name filled
+  in. See the [Minecraft guide](docs/MINECRAFT.md) for setup and sample commands.
 - **Levels and a leaderboard:** viewers earn XP, and level-ups and top players can show on stream.
 - **Key combinations:** a command can press a key or a combination like Ctrl+Shift+E. Set it by pressing the keys.
 - **Game profiles:** each game keeps its own commands, key-press actions and mode. The companion targets the game's

@@ -120,6 +120,7 @@ export interface Host {
   mode: Mode;
   voteWindowMs: number;
   turnMs: number;
+  raffleMs: number;
   giftBoosts: boolean;
 }
 

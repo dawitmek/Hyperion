@@ -7,10 +7,21 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- Game actions: the companion sends commands straight into a Minecraft Java server, through the RCON connection Minecraft servers have built in. Set up the server and write actions in the companion's Game actions section, then pick one with "Run a game action" for a chat command or gift action.
-- An action is one or more commands, repeated up to 100 times with a wait between. Blanks fill in the viewer's name ({viewer}), how many gifts they sent ({count}) and your Minecraft name ({player}), so `execute at {player} run summon creeper ~ ~ ~` spawns a creeper beside you. Viewer names are cleaned so they can never change a command.
-- Actions and the RCON password stay on your PC. The server only knows action names, and a command whose action isn't on the connected PC is marked "(PC offline)".
+- Game actions: the companion sends commands straight into Minecraft, Java or Bedrock. Set up the game and write actions in the companion's Game actions section, then choose Game action for a chat command, which a gift action can run too.
+- Minecraft Java goes through the RCON connection Minecraft servers have built in. Minecraft Bedrock connects itself: turn it on in the companion, then type `/connect 127.0.0.1:19131` in a world with cheats on, single-player included.
+- An action is one or more commands, repeated up to 100 times with a wait between. Blanks fill in the viewer's name ({viewer}), how many gifts they sent ({count}) and you ({player}), so `execute at {player} run summon creeper ~ ~ ~` spawns a creeper beside you on Java. On Bedrock commands run as you, so `summon creeper ~ ~ ~` does. Viewer names are cleaned so they can never change a command.
+- Actions and the Java RCON password stay on your PC. The server only knows action names, and a command whose action isn't on the connected PC is marked "(PC offline)".
 - Try runs an action from the companion as a viewer called Tester, and commands Minecraft refuses show in the activity list with Minecraft's reason.
+- A fifth crowd mode, Raffle: chat types commands to enter, and every few seconds (10 by default, set per profile) one entrant is drawn at random and only their command fires. Made for big commands like spawning a mob, where every comment firing would be too much. A viewer has one entry per draw, their latest command, and with gift boosts on each gift adds an entry. The overlay and Live page show the entrants, a countdown and the last winner.
+- An Integrations page on the site lists the games Hyperion sends commands into, starting with Minecraft, and a [Minecraft guide](docs/MINECRAFT.md) covers setup step by step with sample commands for both editions.
+
+### Changed
+- Choosing what a command does is four labelled options (Key, Macro, Game action and Chain), each with its own icon and colour, which its tile and list row carry too. Options with nothing to pick yet say what to set up first, and switching back to an option restores what it was set to.
+- Choosing a crowd mode is a row of tiles, each mode with its own icon and colour, on the Commands page and the Live page. Below them the chosen mode explains how it plays in three steps using your own numbers, and shows only its own settings, with gift boosts described for that mode.
+- An action's "Press a command's key" is now "Run a command", since the command can be a macro, chain or game action.
+- The site shows the current apps: the Commands deck, the companion's status card, and game actions.
+- The companion's sections fold away to their title and a one-line summary, like "14 commands" or "2 need your OK", and stay folded next time. A bar at the top jumps to any section and shows which one you're in.
+- The companion offers Play when it starts, after pairing and after the game is cleared. It only says Paused and offers Resume after you pause it yourself, with the button or the panic key.
 
 ### Fixed
 - The Download page finds the newest companion release itself, so it keeps offering the installers when a server release is marked as GitHub's latest.

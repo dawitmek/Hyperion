@@ -19,6 +19,7 @@ export interface EngineConfig {
   actionsPerSecond: number;
   voteWindowMs: number;
   turnMs: number;
+  raffleMs: number; // how long each raffle draw collects entries
   giftBoosts: boolean;
   levelGating: boolean; // commands with minLevel above a viewer's level ignore them
   points: boolean; // commands that cost more points than a viewer has ignore them
@@ -30,6 +31,7 @@ export interface EngineContext {
   newId: () => string;
   levelOf: (viewerId: string) => number;
   pointsOf: (viewerId: string) => number;
+  random?: () => number; // 0 to 1, for raffle draws; Math.random unless a test fixes it
   // Reports what the engine decided not to do, and mode moments, for stream analytics:
   // refused {keyword, reason}, vote {winner, votes, total, voters, margin}, queue_join, turn {waitedMs}.
   note?: (kind: 'refused' | 'vote' | 'queue_join' | 'turn', viewer: string | null, data?: Record<string, unknown>) => void;

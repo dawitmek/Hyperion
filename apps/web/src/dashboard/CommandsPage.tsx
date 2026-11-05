@@ -1,10 +1,10 @@
-import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react';
-import { BLOCKED_COMBOS, MAX_CHAIN_DELAY_MS, MAX_CHAIN_STEPS, MAX_LEVEL, MODES, type ChainStep } from '@hyperion/shared';
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { BLOCKED_COMBOS, MAX_CHAIN_DELAY_MS, MAX_CHAIN_STEPS, MAX_LEVEL, type ChainStep } from '@hyperion/shared';
 import { api, type Command, type Host } from '../api';
-import { Icon } from '../icons';
-import { Card, Choices, ConfirmButton, ErrorNotice, KeyCapture, keyLabel, NumberCell, Seg, Switch, useError } from '../ui';
+import { Icon, type IconName } from '../icons';
+import { Card, ConfirmButton, ErrorNotice, KeyCapture, keyLabel, NumberCell, Seg, useError } from '../ui';
 import type { PageProps } from './Dashboard';
-import { MODE_INFO } from './modes';
+import { ModeDetails, ModeTiles } from './ModePicker';
 
 export function CommandsPage({ host, refreshHost }: PageProps) {
   return (
@@ -233,10 +233,21 @@ function PanelTitle({ title, onClose }: { title: string; onClose: () => void }) 
   );
 }
 
+// A macro or game action by name, marked with its kind's icon and colour so the two can't be mistaken.
+function NamedChip({ kind, name }: { kind: 'macro' | 'gameAction'; name: string }) {
+  const { icon, title } = KINDS.find((k) => k.id === kind)!;
+  return (
+    <span className={`does-chip kind-${kind}`} title={`${title}: ${name}`}>
+      <Icon name={icon} size={13} />
+      <span>{name}</span>
+    </span>
+  );
+}
+
 // The list's version of a tile: a command's key, its macro or game action, or its steps in the order they start.
 function CommandSummary({ command, commands }: { command: Command; commands: Command[] }) {
-  if (command.macro) return <span className="step-chip">{command.macro}</span>;
-  if (command.gameAction) return <span className="step-chip">{command.gameAction}</span>;
+  if (command.macro) return <NamedChip kind="macro" name={command.macro} />;
+  if (command.gameAction) return <NamedChip kind="gameAction" name={command.gameAction} />;
   if (!command.chain) return <kbd className="kbd">{keyLabel(command.key)}</kbd>;
   if (command.chain.length === 0) return <span className="muted small">No steps yet</span>;
   const times = [...new Set(command.chain.map((s) => s.delayMs))].sort((a, b) => a - b);
@@ -266,8 +277,8 @@ function CommandSummary({ command, commands }: { command: Command; commands: Com
 
 // What a command does, at a glance: its key, its macro or game action, or a small picture of its chain's timing.
 function TileFace({ command, commands }: { command: Command; commands: Command[] }) {
-  if (command.macro) return <span className="step-chip">{command.macro}</span>;
-  if (command.gameAction) return <span className="step-chip">{command.gameAction}</span>;
+  if (command.macro) return <NamedChip kind="macro" name={command.macro} />;
+  if (command.gameAction) return <NamedChip kind="gameAction" name={command.gameAction} />;
   if (!command.chain) return <kbd className="kbd">{keyLabel(command.key)}</kbd>;
   const steps = command.chain.map((s) => {
     const step = commands.find((c) => c.enabled && !c.chain && c.keyword === s.keyword);
@@ -291,6 +302,14 @@ function TileFace({ command, commands }: { command: Command; commands: Command[]
 }
 
 type Does = 'key' | 'macro' | 'gameAction' | 'chain';
+// What a command can do. `missing` says what to do first when there's nothing of that kind to pick yet.
+const KINDS: { id: Does; title: string; help: string; missing?: string; icon: IconName }[] = [
+  { id: 'key', title: 'Key', help: 'Presses a key or combination', icon: 'commands' },
+  { id: 'macro', title: 'Macro', help: 'Plays input you recorded', missing: 'Record one in the companion', icon: 'record' },
+  { id: 'gameAction', title: 'Game action', help: 'Sends game commands', missing: 'Set one up in the companion', icon: 'cube' },
+  { id: 'chain', title: 'Chain', help: 'Times other commands', icon: 'chain' },
+];
+type Doing = Pick<Command, 'key' | 'macro' | 'gameAction' | 'chain'>;
 const kindOf = (command: Pick<Command, 'macro' | 'gameAction' | 'chain'>): Does =>
   command.chain ? 'chain' : command.macro ? 'macro' : command.gameAction ? 'gameAction' : 'key';
 
@@ -317,18 +336,20 @@ function CommandEditor({
   // The saved macro or game action stays listed while the PC holding it is offline.
   const names = command.macro && !macros.includes(command.macro) ? [command.macro, ...macros] : macros;
   const actionNames = command.gameAction && !gameActions.includes(command.gameAction) ? [command.gameAction, ...gameActions] : gameActions;
-  const kinds: [Does, string][] = [
-    ['key', 'Press a key'],
-    ...(names.length > 0 ? ([['macro', 'Run a macro']] as [Does, string][]) : []),
-    ...(actionNames.length > 0 ? ([['gameAction', 'Run a game action']] as [Does, string][]) : []),
-    ['chain', 'Run a chain'],
-  ];
+  const available: Record<Does, boolean> = { key: true, macro: names.length > 0, gameAction: actionNames.length > 0, chain: true };
+  // What each kind was set to before switching away, so switching back by mistake loses nothing.
+  const before = useRef<Partial<Record<Does, Doing>>>({});
   const change = (next: Does) => {
     if (next === kind) return;
-    if (next === 'key') onChange({ key: 'KeyA', macro: null, gameAction: null, chain: null });
-    if (next === 'macro') onChange({ key: '', macro: names[0]!, gameAction: null, chain: null });
-    if (next === 'gameAction') onChange({ key: '', macro: null, gameAction: actionNames[0]!, chain: null });
-    if (next === 'chain') onChange({ key: '', macro: null, gameAction: null, chain: [] });
+    before.current[kind] = { key: command.key, macro: command.macro, gameAction: command.gameAction, chain: command.chain };
+    const none = { key: '', macro: null, gameAction: null, chain: null };
+    const fresh: Record<Does, Doing> = {
+      key: { ...none, key: 'KeyA' },
+      macro: { ...none, macro: names[0] ?? null },
+      gameAction: { ...none, gameAction: actionNames[0] ?? null },
+      chain: { ...none, chain: [] },
+    };
+    onChange(before.current[next] ?? fresh[next]);
   };
   return (
     <div
@@ -341,10 +362,28 @@ function CommandEditor({
         }
       }}
     >
-      <Seg label={`What ${name} does`} value={kind} options={kinds} onChange={change} />
-      {names.length === 0 && actionNames.length === 0 && (
-        <p className="muted small command-tip">Record a macro or set up a Minecraft game action in the companion to run it from a command.</p>
-      )}
+      <span className="kinds-label" id="kinds-label">
+        What it does
+      </span>
+      <div className="kinds" role="radiogroup" aria-labelledby="kinds-label">
+        {KINDS.map((k) => (
+          <button
+            key={k.id}
+            type="button"
+            role="radio"
+            className={`kind kind-${k.id}`}
+            aria-checked={kind === k.id}
+            disabled={!available[k.id]}
+            onClick={() => change(k.id)}
+          >
+            <span className="kind-icon">
+              <Icon name={k.icon} size={16} />
+            </span>
+            <strong>{k.title}</strong>
+            <span className="kind-help">{available[k.id] ? k.help : k.missing}</span>
+          </button>
+        ))}
+      </div>
       {kind === 'key' && (
         <div className="command-key">
           <KeyCapture value={command.key} label={`Key for ${name}`} onChange={(key) => onChange({ key })} />
@@ -492,36 +531,10 @@ function ModeCard({ host, refreshHost }: { host: Host; refreshHost: () => Promis
   const save = (patch: Partial<Host>) => guard(() => api('PATCH', '/settings', patch).then(refreshHost))();
 
   return (
-    <Card
-      title="Crowd mode"
-      description="Saved with the active profile. You can switch while live; votes and the queue are kept when you change other settings."
-    >
+    <Card title="Crowd mode" description="How chat shares control. Saved with the active profile, and you can switch while live.">
       <ErrorNotice error={error} />
-      <Choices
-        label="Crowd mode"
-        value={host.mode}
-        options={MODES.map((m) => [m, MODE_INFO[m].label, MODE_INFO[m].help] as const)}
-        onChange={(mode) => save({ mode })}
-      />
-      <div className="form-grid">
-        <label className="field">
-          Voting window, in seconds
-          <span className="hint">Democracy: how long each vote stays open.</span>
-          <NumberCell value={host.voteWindowMs / 1000} min={1} max={30} onSave={(s) => save({ voteWindowMs: Math.round(s * 1000) })} />
-        </label>
-        <label className="field">
-          Turn length, in seconds
-          <span className="hint">Queue: how long each viewer gets.</span>
-          <NumberCell value={host.turnMs / 1000} min={5} max={300} onSave={(s) => save({ turnMs: Math.round(s * 1000) })} />
-        </label>
-      </div>
-      <Switch
-        checked={host.giftBoosts}
-        onChange={(giftBoosts) => save({ giftBoosts })}
-        hint="In democracy a gift adds votes to the gifter's vote; in queue it moves them to the front."
-      >
-        Gift boosts
-      </Switch>
+      <ModeTiles value={host.mode} onChange={(mode) => save({ mode })} />
+      <ModeDetails host={host} onSave={save} />
     </Card>
   );
 }

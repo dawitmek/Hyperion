@@ -250,6 +250,56 @@
 .s-keygrid span { display: grid; place-items: center; height: 30px; border-radius: 7px; border: 1px solid var(--line-strong); border-bottom-width: 2px; color: var(--muted); font-weight: 600; font-size: 12px; background: var(--panel2); }
 .s-keygrid span.on { border-color: var(--key-edge); background: var(--indigo-soft); color: var(--key-ink); }
 
+/* The companion's status card, game actions and the Commands deck, drawn like the apps. */
+.art-hero { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 14px; border: 1px solid rgba(34, 197, 94, 0.35);
+  background: radial-gradient(160px 90px at 0% 0%, rgba(34, 197, 94, 0.18), transparent 75%), var(--panel2); }
+.art-orb { position: relative; display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 50%; background: rgba(34, 197, 94, 0.16); }
+.art-orb > span { width: 12px; height: 12px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 12px #22c55e; }
+.art-orb::before { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid #22c55e; animation: s-ring 2.4s ease-out infinite; }
+@keyframes s-ring { from { transform: scale(0.45); opacity: 0.9; } to { transform: scale(1.25); opacity: 0; } }
+.art-hero-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.art-hero-text strong { color: var(--green); font-size: 17px; font-weight: 600; letter-spacing: -0.03em; }
+.art-btn { padding: 6px 12px; border-radius: 9px; background: #e5304a; color: #fff; font-weight: 600; }
+.art-console { padding: 10px 12px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); font: 500 11.5px/1.8 ui-monospace, 'SF Mono', Consolas, monospace; overflow-wrap: anywhere; }
+.art-console div::before { content: '/'; margin-right: 6px; color: var(--muted); }
+.s-blank { display: inline-block; padding: 0 5px; border-radius: 5px; font: 700 10.5px/1.6 var(--font); vertical-align: 1px; }
+.s-blank-viewer { background: var(--violet-soft); color: var(--violet); }
+.s-blank-count { background: var(--amber-soft); color: var(--amber); }
+.s-blank-player { background: var(--teal-soft); color: var(--teal); }
+.art-does { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border-radius: 7px; background: var(--green-soft); color: var(--green); font-weight: 600; }
+.art-does.violet { background: var(--violet-soft); color: var(--violet); }
+.art-links { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.art-links span { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+.art-links i { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+.art-deck { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.art-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; padding: 10px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--panel); }
+.art-tile .art-line { width: 100%; }
+.art-tile strong { font-size: 13px; }
+.art-tile.off > * { opacity: 0.45; }
+.art-bars { display: flex; flex-direction: column; gap: 3px; width: 100%; height: 22px; justify-content: center; }
+.art-bars i { display: block; height: 3px; border-radius: 3px; background: var(--plasma); }
+@media (prefers-reduced-motion: reduce) { .art-orb::before { animation: none; opacity: 0.4; } }
+
+/* Home: game integrations beside a game action. */
+.s-integrations { align-items: center; }
+.s-integration-list { list-style: none; margin: 26px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; font-size: 17px; }
+.s-integration-list li { display: flex; align-items: center; gap: 12px; }
+.s-integration-list .tag { min-width: 92px; justify-content: center; }
+.s-integration-art { display: grid; place-items: center; min-height: 320px; }
+.s-integration-art .art { max-width: 380px; font-size: 13px; }
+
+/* Integrations page: a card per game, then Minecraft in detail. */
+.s-games { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-top: 40px; }
+.s-game { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 24px; }
+.s-game h2 { margin-top: 14px; font-size: 21px; font-weight: 500; letter-spacing: -0.02em; }
+.s-game p { margin-top: 6px; color: var(--muted); line-height: 1.55; }
+.s-game .s-game-needs { margin-top: auto; padding-top: 14px; color: #d7d9e4; font-size: 14px; }
+.s-game.ready { border-color: rgba(34, 197, 94, 0.3); background: radial-gradient(260px 140px at 0% 0%, rgba(34, 197, 94, 0.1), transparent 75%), var(--panel); }
+.s-game.next { border-style: dashed; background: transparent; }
+.s-game.next .s-link { margin-top: auto; padding-top: 14px; color: var(--indigo); }
+.s-samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 820px) { .s-samples { grid-template-columns: 1fr; } .art-deck { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* Closing call to action and footer */
 .s-cta { position: relative; margin-top: 60px; padding: 140px 0 0; text-align: center; overflow: hidden; }
 .s-cta .s-glow { inset: 0 -20% -20% -20%; }

@@ -78,6 +78,7 @@ export const profiles = pgTable(
     mode: text('mode').$type<Mode>().notNull().default('anarchy'),
     voteWindowMs: integer('vote_window_ms').notNull().default(3000),
     turnMs: integer('turn_ms').notNull().default(30000),
+    raffleMs: integer('raffle_ms').notNull().default(10000),
     giftBoosts: boolean('gift_boosts').notNull().default(true),
   },
   (t) => [unique().on(t.hostId, t.name)],

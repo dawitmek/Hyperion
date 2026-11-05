@@ -25,6 +25,8 @@ pub struct Config {
     pub skipped_version: Option<String>,
     /// The Minecraft Java server game actions go to, over RCON.
     pub minecraft_java: Option<crate::minecraft::Settings>,
+    /// Whether to listen for Minecraft Bedrock's /connect.
+    pub minecraft_bedrock: Option<bool>,
 }
 
 impl Config {

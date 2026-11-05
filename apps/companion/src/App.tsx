@@ -4,7 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "@hyperion/theme/theme.css";
 import "./App.css";
-import { Icon, SectionHead } from "./icons";
+import { Icon } from "./icons";
+import { JumpBar, Section, SectionsProvider } from "./sections";
 
 interface LogEntry {
   key: string;
@@ -18,6 +19,7 @@ interface Snapshot {
   deviceName: string | null;
   connection: string;
   paused: boolean;
+  pausedByHost: boolean; // paused with the button or the panic key; otherwise it hasn't been started yet
   targetProcess: string | null;
   profileName: string | null;
   profileGame: string | null;
@@ -36,6 +38,7 @@ interface Snapshot {
   gameActions: GameAction[];
   minecraftJava: MinecraftView | null;
   minecraftDefaultPort: number;
+  minecraftBedrock: BedrockView;
   pendingApprovals: number;
   theme: string | null; // the account's dashboard theme, which this window follows
   themeStyle: string | null;
@@ -75,10 +78,21 @@ interface MacroView {
 // Commands sent straight into a game, set up and kept on this PC.
 interface GameAction {
   name: string;
-  game: "minecraftJava";
+  game: Game;
   commands: string[];
   repeat: number;
   delayMs: number;
+}
+
+type Game = "minecraftJava" | "minecraftBedrock";
+const GAME_NAMES: Record<Game, string> = { minecraftJava: "Minecraft Java", minecraftBedrock: "Minecraft Bedrock" };
+
+// Whether this PC listens for Minecraft Bedrock's /connect, and whether the game has joined.
+interface BedrockView {
+  on: boolean;
+  connected: boolean;
+  port: number;
+  problem: string | null;
 }
 
 // The Minecraft server game actions go to. The password stays on the Rust side.
@@ -479,17 +493,19 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
 
   const connected = state.connection === "connected";
   // One state for the whole PC, most pressing first: nothing arrives while disconnected, and nothing is pressed until
-  // a game is picked and the host resumes. The companion starts paused.
+  // a game is picked and the host presses Play. The companion starts paused, but only a pause the host made says so.
   const status = !connected
     ? { hue: "red", title: state.connection === "connecting" ? "Connecting" : "Offline", text: "Not connected to the server, so chat's keys can't reach this PC." }
     : !state.targetProcess
-      ? { hue: "amber", title: "Pick a game", text: "Pick the game chat plays below, then press Resume." }
-      : state.paused
-        ? { hue: "amber", title: "Paused", text: `Nothing is pressed until you resume. Keys will go to ${state.targetProcess}.` }
-        : { hue: "green", title: "Ready", text: `Chat's keys go to ${state.targetProcess} while its window is in focus.` };
+      ? { hue: "amber", title: "Pick a game", text: "Pick the game chat plays below, then press Play." }
+      : state.paused && !state.pausedByHost
+        ? { hue: "amber", title: "Not started", text: `Press Play when you're ready. Keys will go to ${state.targetProcess}.` }
+        : state.paused
+          ? { hue: "amber", title: "Paused", text: `Nothing is pressed until you resume. Keys will go to ${state.targetProcess}.` }
+          : { hue: "green", title: "Ready", text: `Chat's keys go to ${state.targetProcess} while its window is in focus.` };
 
   return (
-    <>
+    <SectionsProvider>
       <section className={`hero ${status.hue}`} aria-label="Input">
         <div className="hero-main">
           <span className={`orb ${status.hue === "green" ? "live" : ""}`} aria-hidden="true">
@@ -507,7 +523,7 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
               onClick={() => run("set_paused", { paused: !state.paused })}
             >
               <Icon name={state.paused ? "play" : "pause"} />
-              {state.paused ? "Resume" : "Pause"}
+              {!state.paused ? "Pause" : state.pausedByHost ? "Resume" : "Play"}
             </button>
           ) : (
             <button className="btn hero-toggle" onClick={() => run("reconnect")}>
@@ -550,6 +566,8 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
         </footer>
       </section>
 
+      <JumpBar />
+
       {state.pendingApprovals > 0 && (
         <p className="notice warning">
           {state.pendingApprovals} key combination{state.pendingApprovals === 1 ? " needs" : "s need"} your OK before this PC
@@ -565,10 +583,15 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
 
       <TiktokVoices serverUrl={state.serverUrl} />
 
-      <section className="card stack" aria-labelledby="activity-title">
-        <SectionHead id="activity-title" icon="feed" hue="sky" title="Activity">
-          The latest keys chat pressed on this PC, and any it refused.
-        </SectionHead>
+      <Section
+        id="activity"
+        label="Activity"
+        icon="feed"
+        hue="sky"
+        title="Activity"
+        description="The latest keys chat pressed on this PC, and any it refused."
+        summary={state.log.length === 0 ? "Nothing yet" : `Latest: ${keyLabel(state.log[0]!.key)}${state.log[0]!.ok ? "" : ", refused"}`}
+      >
         {state.log.length === 0 ? (
           <p className="empty">Keys appear here as chat presses them.</p>
         ) : (
@@ -584,8 +607,8 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
             ))}
           </ul>
         )}
-      </section>
-    </>
+      </Section>
+    </SectionsProvider>
   );
 }
 
@@ -624,10 +647,15 @@ function TiktokVoices({ serverUrl }: { serverUrl: string | null }) {
   if (!status?.needed && !message) return null;
 
   return (
-    <section className="card stack" aria-labelledby="tiktok-title">
-      <SectionHead id="tiktok-title" icon="voice" hue="pink" title="TikTok voices">
-        Read chat aloud in TikTok's own voices. Sign in to TikTok here and Hyperion uses your account to make the speech.
-      </SectionHead>
+    <Section
+      id="tiktok"
+      label="Voices"
+      icon="voice"
+      hue="pink"
+      title="TikTok voices"
+      description="Read chat aloud in TikTok's own voices. Sign in to TikTok here and Hyperion uses your account to make the speech."
+      summary={signedIn ? "Signed in to TikTok" : "Not signed in"}
+    >
       {message && (
         <div className={`notice ${message.ok ? "info" : "error"}`} role="status">
           {message.text}
@@ -653,7 +681,7 @@ function TiktokVoices({ serverUrl }: { serverUrl: string | null }) {
           </button>
         )}
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -744,11 +772,15 @@ function AllowedKeys({ state, run }: { state: Snapshot; run: Run }) {
   };
 
   return (
-    <section className="card stack" aria-labelledby="keys-title">
-      <SectionHead id="keys-title" icon="commands" hue="indigo" title="Allowed keys on this PC">
-        The server can only press the keys lit up here. Click a key to allow or block it. Key combinations like Ctrl+E are
-        allowed one by one under Commands.
-      </SectionHead>
+    <Section
+      id="keys"
+      label="Keys"
+      icon="commands"
+      hue="indigo"
+      title="Allowed keys on this PC"
+      description="The server can only press the keys lit up here. Click a key to allow or block it. Key combinations like Ctrl+E are allowed one by one under Commands."
+      summary={`${state.allowedKeys.length} of ${state.allKeys.length} keys allowed`}
+    >
       <div className={`keys ${selecting ? "selecting" : ""}`}>
         {order.map((key, i) => {
           // Keys not on the drawn keyboard fill the rows after it, eleven to a row.
@@ -795,7 +827,7 @@ function AllowedKeys({ state, run }: { state: Snapshot; run: Run }) {
           </button>
         </div>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -808,11 +840,16 @@ function Commands({ state, run }: { state: Snapshot; run: Run }) {
   const ready = state.commands.filter((c) => c.enabled && !c.problem && !c.combo);
   const off = state.commands.filter((c) => !c.enabled);
   return (
-    <section className="card stack" aria-labelledby="commands-title">
-      <SectionHead id="commands-title" icon="chat" hue="violet" title={`Commands${state.profileName ? ` for ${state.profileName}` : ""}`}>
-        What chat can trigger, from your dashboard. Key combinations are only pressed once you allow them here, so a change
-        on the dashboard can't add one without your OK.
-      </SectionHead>
+    <Section
+      id="commands"
+      label="Commands"
+      icon="chat"
+      hue="violet"
+      title={`Commands${state.profileName ? ` for ${state.profileName}` : ""}`}
+      description="What chat can trigger, from your dashboard. Key combinations are only pressed once you allow them here, so a change on the dashboard can't add one without your OK."
+      summary={`${state.commands.length} ${state.commands.length === 1 ? "command" : "commands"}`}
+      badge={state.pendingApprovals > 0 ? `${state.pendingApprovals} need${state.pendingApprovals === 1 ? "s" : ""} your OK` : undefined}
+    >
       {rows.length > 0 && (
         <ul className="command-list">
           {rows.map((c) => (
@@ -863,7 +900,7 @@ function Commands({ state, run }: { state: Snapshot; run: Run }) {
           Off on the dashboard: {off.map((c) => c.keyword).join(", ")}
         </p>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -873,11 +910,15 @@ function Macros({ state, run }: { state: Snapshot; run: Run }) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const replaces = state.macros.some((m) => m.name === name.trim());
   return (
-    <section className="card stack" aria-labelledby="macros-title">
-      <SectionHead id="macros-title" icon="commands" hue="indigo" title="Macros">
-        Record keys, clicks and mouse movement in your game, up to a minute, then run them from a command on the dashboard.
-        They stay on this PC, and stop if the game loses focus or you pause.
-      </SectionHead>
+    <Section
+      id="macros"
+      label="Macros"
+      icon="record"
+      hue="indigo"
+      title="Macros"
+      description="Record keys, clicks and mouse movement in your game, up to a minute, then run them from a command on the dashboard. They stay on this PC, and stop if the game loses focus or you pause."
+      summary={state.macros.length === 0 ? "None yet" : `${state.macros.length} ${state.macros.length === 1 ? "macro" : "macros"}`}
+    >
       {!state.macrosSupported ? (
         <p className="notice warning">Recording and playing macros only works on Windows so far.</p>
       ) : state.recording ? (
@@ -931,87 +972,351 @@ function Macros({ state, run }: { state: Snapshot; run: Run }) {
         </ul>
       )}
       {state.macrosSupported && <p className="muted small">Some online games treat recorded input as cheating. Check the game's rules first.</p>}
-    </section>
+    </Section>
   );
 }
 
-// Commands Hyperion sends straight into Minecraft over RCON, set up and kept here. The dashboard can only ask for one by
-// name, and a viewer's name only fills a blank in a command written here.
+// Commands Hyperion sends straight into Minecraft (Java over RCON, Bedrock over /connect), set up and kept here. The
+// dashboard can only ask for one by name, and a viewer's name only fills a blank in a command written here.
+type Draft = GameAction & { editing: string | null };
+// Step-by-step setup for both editions, with sample commands.
+const MINECRAFT_GUIDE = "https://github.com/dawitmek/Hyperion/blob/main/docs/MINECRAFT.md";
+
 function GameActions({ state, run }: { state: Snapshot; run: Run }) {
-  const [draft, setDraft] = useState<(GameAction & { editing: string | null }) | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const ready = state.minecraftJava?.hasPassword ?? false;
-  const blank = (): GameAction & { editing: string | null } => ({ editing: null, name: "", game: "minecraftJava", commands: [], repeat: 1, delayMs: 0 });
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const ready: Record<Game, boolean> = { minecraftJava: state.minecraftJava?.hasPassword ?? false, minecraftBedrock: state.minecraftBedrock.connected };
+  const notReady: Record<Game, string> = { minecraftJava: "Set up Minecraft Java first", minecraftBedrock: "Connect Minecraft Bedrock first" };
+  const firstGame: Game = state.minecraftBedrock.on && !state.minecraftJava ? "minecraftBedrock" : "minecraftJava";
+  const editor = (d: Draft) => <ActionEditor key={d.editing ?? ""} draft={d} setDraft={setDraft} run={run} />;
 
   return (
-    <section className="card stack" aria-labelledby="game-actions-title">
-      <SectionHead id="game-actions-title" icon="play" hue="green" title="Game actions">
-        Commands sent straight into Minecraft Java, like summoning a creeper or giving an item, run from a command on the
-        dashboard. They're set up and kept on this PC, and stop if you pause.
-      </SectionHead>
-      <MinecraftSetup state={state} run={run} />
+    <Section
+      id="game-actions"
+      label="Game actions"
+      icon="cube"
+      hue="green"
+      title="Game actions"
+      description={
+        <>
+          Commands sent straight into Minecraft when chat or a gift asks for them, like summoning a creeper. They're kept on
+          this PC and stop if you pause.{" "}
+          <a href="#" onClick={(e) => (e.preventDefault(), void openUrl(MINECRAFT_GUIDE))}>
+            Setup guide
+          </a>
+        </>
+      }
+      summary={state.gameActions.length === 0 ? "None yet" : `${state.gameActions.length} ${state.gameActions.length === 1 ? "action" : "actions"}`}
+    >
+      <Connections state={state} run={run} />
+      {state.gameActions.length === 0 && !draft && <p className="empty">No actions yet. Make one, then pick it for a command on the dashboard.</p>}
       {state.gameActions.length > 0 && (
-        <ul className="macro-list">
-          {state.gameActions.map((a) => (
-            <li key={a.name}>
-              <strong className="command-word">{a.name}</strong>
-              <span className="muted small">{actionSummary(a)}</span>
-              <span className="macro-buttons">
-                <button className="btn btn-sm" disabled={!ready} title={ready ? "Runs now, as a viewer called Tester" : "Set up Minecraft first"} onClick={() => run("try_game_action", { name: a.name })}>
-                  Try
-                </button>
-                <button className="btn btn-sm" onClick={() => setDraft({ ...a, editing: a.name })}>
-                  Edit
-                </button>
-                {deleting === a.name ? (
-                  <button className="btn btn-sm btn-danger" onClick={() => run("delete_game_action", { name: a.name }).then(() => setDeleting(null))}>
-                    Delete it
+        <ul className="actions">
+          {state.gameActions.map((a) =>
+            draft?.editing === a.name ? (
+              <li key={a.name}>{editor(draft)}</li>
+            ) : (
+              <li key={a.name} className="action">
+                <div className="action-head">
+                  <strong className="action-name">{a.name}</strong>
+                  <GameTag game={a.game} />
+                  <span className="spacer" />
+                  <TryButton disabled={!ready[a.game]} title={ready[a.game] ? "Runs it now, as a viewer called Tester" : notReady[a.game]} onTry={() => run("try_game_action", { name: a.name })} />
+                  <button className="btn btn-ghost btn-sm" aria-label={`Edit ${a.name}`} title="Edit" onClick={() => setDraft({ ...a, editing: a.name })}>
+                    <Icon name="edit" size={15} />
                   </button>
-                ) : (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setDeleting(a.name)}>
-                    Delete
-                  </button>
+                </div>
+                <ol className="action-lines">
+                  {a.commands.slice(0, 3).map((c, i) => (
+                    <li key={i}>
+                      <CommandLine text={c} />
+                    </li>
+                  ))}
+                  {a.commands.length > 3 && <li className="more">and {a.commands.length - 3} more</li>}
+                </ol>
+                {a.repeat > 1 && (
+                  <p className="action-repeat">
+                    <Icon name="repeat" size={13} />
+                    {a.repeat} times{a.delayMs > 0 ? `, ${a.delayMs / 1000} s apart` : ""}
+                  </p>
                 )}
-              </span>
-            </li>
-          ))}
+              </li>
+            ),
+          )}
         </ul>
       )}
-      {draft ? (
-        <ActionEditor draft={draft} setDraft={setDraft} run={run} />
+      {draft && draft.editing === null ? (
+        editor(draft)
       ) : (
-        <div className="row">
-          <button className="btn" onClick={() => setDraft(blank())}>
-            New game action
-          </button>
-        </div>
+        <button className="btn new-action" onClick={() => setDraft({ editing: null, name: "", game: firstGame, commands: [], repeat: 1, delayMs: 0 })}>
+          <Icon name="plus" size={15} />
+          New game action
+        </button>
       )}
-    </section>
+    </Section>
   );
 }
 
-// "2 commands, 5 times, 0.5 s apart"
-function actionSummary(a: GameAction) {
-  const parts = [a.commands.length === 1 ? a.commands[0]! : `${a.commands.length} commands`];
-  if (a.repeat > 1) parts.push(`${a.repeat} times${a.delayMs > 0 ? `, ${a.delayMs / 1000} s apart` : ""}`);
-  return parts.join(", ");
+function GameTag({ game }: { game: Game }) {
+  return game === "minecraftJava" ? <span className="tag orange">Java</span> : <span className="tag sky">Bedrock</span>;
 }
 
-function ActionEditor({
-  draft,
-  setDraft,
-  run,
-}: {
-  draft: GameAction & { editing: string | null };
-  setDraft: (d: (GameAction & { editing: string | null }) | null) => void;
-  run: Run;
-}) {
+// Says "Sent" for a moment, since what happened shows in the game and the activity list rather than here.
+function TryButton({ disabled, title, onTry }: { disabled: boolean; title: string; onTry: () => Promise<boolean> }) {
+  const [sent, setSent] = useState(false);
+  useEffect(() => {
+    if (!sent) return;
+    const timer = setTimeout(() => setSent(false), 1500);
+    return () => clearTimeout(timer);
+  }, [sent]);
+  return (
+    <button className="btn btn-sm try" disabled={disabled} title={title} onClick={() => onTry().then((ok) => ok && setSent(true))}>
+      <Icon name={sent ? "check" : "play"} size={13} />
+      {sent ? "Sent" : "Try"}
+    </button>
+  );
+}
+
+const BLANK = /\{(viewer|count|player)\}/;
+const BLANK_HINTS: { blank: string; hint: string }[] = [
+  { blank: "viewer", hint: "who sent it" },
+  { blank: "count", hint: "how many gifts" },
+  { blank: "player", hint: "you" },
+];
+
+// A command as written, with its blanks as pills.
+function CommandLine({ text }: { text: string }) {
+  const parts = text.split(BLANK);
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <span key={i} className={`blank ${part}`}>
+            {part}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
+// Where actions go: a tile for each game, with what it needs below when it isn't ready.
+function Connections({ state, run }: { state: Snapshot; run: Run }) {
+  const java = state.minecraftJava;
+  const bedrock = state.minecraftBedrock;
+  const [javaOpen, setJavaOpen] = useState(false);
+  // `asked`: the host pressed Test, so the answer is shown in full. Otherwise the tile alone shows it.
+  const [test, setTest] = useState<{ ok: boolean; text: string; asked: boolean } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const connect = `/connect 127.0.0.1:${bedrock.port}`;
+
+  const check = (asked: boolean) => {
+    setTesting(true);
+    setTest(null);
+    invoke<string>("test_minecraft")
+      .then((online) => setTest({ ok: true, text: online, asked }))
+      .catch((e) => setTest({ ok: false, text: String(e), asked }))
+      .finally(() => setTesting(false));
+  };
+  // Checked on opening and after the settings change, so the tile says whether Minecraft is there.
+  const javaKey = java?.hasPassword ? `${java.host}:${java.port}:${java.player}` : null;
+  useEffect(() => {
+    if (javaKey) check(false);
+  }, [javaKey]);
+  const copy = () =>
+    navigator.clipboard.writeText(connect).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+
+  const javaState = !java?.hasPassword
+    ? { hue: "off", text: "Not set up" }
+    : testing
+      ? { hue: "indigo", text: "Testing…" }
+      : test
+        ? test.ok
+          ? { hue: "green", text: "Connected" }
+          : { hue: "red", text: "Can't connect" }
+        : { hue: "indigo", text: "Not checked" };
+  const bedrockState = !bedrock.on
+    ? { hue: "off", text: "Off" }
+    : bedrock.problem
+      ? { hue: "red", text: "Can't listen" }
+      : bedrock.connected
+        ? { hue: "green", text: "Connected" }
+        : { hue: "amber", text: "Waiting" };
+
+  return (
+    <div className="stack">
+      <div className="links">
+        <div className={`link ${javaState.hue}`}>
+          <span className="link-head">
+            <span className="link-dot" aria-hidden="true" />
+            Minecraft Java
+          </span>
+          <strong className="link-state" role="status">
+            {javaState.text}
+          </strong>
+          {test && !test.ok ? (
+            <span className="small link-detail link-problem" title={test.text}>
+              {test.text}
+            </span>
+          ) : (
+            <span className="muted small link-detail">
+              {java?.hasPassword ? `${java.host}:${java.port}${java.player ? `, as ${java.player}` : ""}` : "Through your server's RCON"}
+            </span>
+          )}
+          <span className="link-actions">
+            {java?.hasPassword && (
+              <button className="btn btn-sm" disabled={testing} onClick={() => check(true)}>
+                {test ? "Test again" : "Test"}
+              </button>
+            )}
+            <button className={`btn btn-sm ${java?.hasPassword ? "btn-ghost" : ""}`} aria-expanded={javaOpen} onClick={() => setJavaOpen(!javaOpen)}>
+              {java ? "Change" : "Set up"}
+            </button>
+          </span>
+        </div>
+        <div className={`link ${bedrockState.hue}`}>
+          <span className="link-head">
+            <span className="link-dot" aria-hidden="true" />
+            Minecraft Bedrock
+          </span>
+          <strong className="link-state" role="status">
+            {bedrockState.text}
+          </strong>
+          <span className="muted small link-detail">{bedrock.connected ? "Your world is connected" : bedrock.on ? "For your world to connect" : "Your world connects to this PC"}</span>
+          <span className="link-actions">
+            <button className={`btn btn-sm ${bedrock.on ? "btn-ghost" : ""}`} onClick={() => run("set_bedrock", { on: !bedrock.on })}>
+              {bedrock.on ? "Turn off" : "Turn on"}
+            </button>
+          </span>
+        </div>
+      </div>
+      {test?.asked && (
+        <p className={`notice ${test.ok ? "info" : "error"}`} role="status">
+          {test.ok ? `Minecraft Java answered: ${test.text}` : test.text}
+        </p>
+      )}
+      {javaOpen && <JavaForm state={state} run={run} onDone={() => setJavaOpen(false)} />}
+      {bedrock.on && bedrock.problem && (
+        <p className="notice error" role="status">
+          {bedrock.problem}. Another program may be using that port.
+        </p>
+      )}
+      {bedrock.on && !bedrock.problem && !bedrock.connected && (
+        <div className="link-guide">
+          <strong className="small">Connect Bedrock</strong>
+          <ol className="pair-steps">
+            <li>
+              <span>
+                In Settings, under General, turn off <strong>Require Encrypted Websockets</strong>
+              </span>
+            </li>
+            <li>
+              <span>
+                Open a world with <strong>Allow cheats</strong> on
+              </span>
+            </li>
+            <li>
+              <span className="connect-line">
+                Type <code>{connect}</code> in chat
+                <button className="btn btn-ghost btn-sm" onClick={copy}>
+                  <Icon name={copied ? "check" : "copy"} size={14} />
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </span>
+            </li>
+          </ol>
+          <p className="muted small">Type it again whenever you reopen the world.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Where the Minecraft Java server is. Game actions use its RCON, which only servers have, so the host plays on one.
+function JavaForm({ state, run, onDone }: { state: Snapshot; run: Run; onDone: () => void }) {
+  const saved = state.minecraftJava;
+  const [host, setHost] = useState(saved?.host ?? "localhost");
+  const [port, setPort] = useState(saved?.port ?? state.minecraftDefaultPort);
+  const [password, setPassword] = useState("");
+  const [player, setPlayer] = useState(saved?.player ?? "");
+  return (
+    <form
+      className="stack link-guide"
+      onSubmit={(e) => {
+        e.preventDefault();
+        run("set_minecraft", { host, port, password: password || null, player }).then((ok) => ok && onDone());
+      }}
+    >
+      <p className="muted small">
+        Java game actions go through RCON, which Minecraft servers have and singleplayer doesn't, so play on a server, on this
+        PC or hosted. In its <code>server.properties</code> set <code>enable-rcon=true</code>, an <code>rcon.password</code>{" "}
+        and <code>rcon.port</code>, then restart it.
+      </p>
+      <div className="pair-fields">
+        <label className="field">
+          Server address
+          <input value={host} required onChange={(e) => setHost(e.target.value)} />
+        </label>
+        <label className="field">
+          RCON port
+          <input type="number" min={1} max={65535} value={port} required onChange={(e) => setPort(Number(e.target.value))} />
+        </label>
+        <label className="field">
+          RCON password
+          <input
+            type="password"
+            value={password}
+            autoComplete="off"
+            required={!saved?.hasPassword}
+            placeholder={saved?.hasPassword ? "Saved. Type to change it" : ""}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          Your Minecraft name
+          <input value={player} maxLength={16} placeholder="For {player}" onChange={(e) => setPlayer(e.target.value)} />
+        </label>
+      </div>
+      <div className="row">
+        <button className="btn btn-primary">Save</button>
+        <button type="button" className="btn btn-ghost" onClick={onDone}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ActionEditor({ draft, setDraft, run }: { draft: Draft; setDraft: (d: Draft | null) => void; run: Run }) {
   const [commands, setCommands] = useState(draft.commands.join("\n"));
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const box = useRef<HTMLTextAreaElement>(null);
   const { editing, ...action } = draft;
+  const java = draft.game === "minecraftJava";
+
+  // Puts a blank where the cursor is, and the cursor after it.
+  const insert = (blank: string) => {
+    const el = box.current;
+    if (!el) return;
+    const text = `{${blank}}`;
+    const at = el.selectionStart;
+    setCommands(commands.slice(0, at) + text + commands.slice(el.selectionEnd));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(at + text.length, at + text.length);
+    });
+  };
+
   return (
     <form
       className="stack action-editor"
+      aria-label={editing ? `Edit ${editing}` : "New game action"}
       onSubmit={(e) => {
         e.preventDefault();
         setSaving(true);
@@ -1021,157 +1326,102 @@ function ActionEditor({
           .finally(() => setSaving(false));
       }}
     >
-      <h3 className="command-group-title">{editing ? `Edit ${editing}` : "New game action"}</h3>
-      <label className="field">
-        Name
-        <input value={draft.name} maxLength={64} required placeholder="creeper" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-      </label>
+      <div className="editor-top">
+        <label className="field">
+          Name
+          <input value={draft.name} maxLength={64} required placeholder="creeper" autoFocus={!editing} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        </label>
+        <div className="field">
+          <span id="game-choice">Game</span>
+          <div className="seg" role="radiogroup" aria-labelledby="game-choice">
+            {(Object.keys(GAME_NAMES) as Game[]).map((g) => (
+              <button key={g} type="button" role="radio" aria-checked={draft.game === g} onClick={() => setDraft({ ...draft, game: g })}>
+                {g === "minecraftJava" ? "Java" : "Bedrock"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
       <label className="field">
         Commands, one per line
         <textarea
+          ref={box}
           rows={4}
           value={commands}
           spellCheck={false}
-          placeholder={"execute at {player} run summon creeper ~ ~ ~\nsay {viewer} sent a creeper!"}
+          placeholder={java ? "execute at {player} run summon creeper ~ ~ ~\nsay {viewer} sent a creeper!" : "summon creeper ~ ~ ~\nsay {viewer} sent a creeper!"}
           onChange={(e) => setCommands(e.target.value)}
         />
-        <span className="hint">
-          Blanks filled in for you: {"{viewer}"} (who sent it), {"{count}"} (how many gifts) and {"{player}"} (your Minecraft
-          name). Commands run as the server, so use <code>execute at {"{player}"} run …</code> for anything near you.
-        </span>
       </label>
-      <div className="pair-fields">
-        <label className="field">
-          Repeat
-          <input type="number" min={1} max={100} value={draft.repeat} onChange={(e) => setDraft({ ...draft, repeat: Number(e.target.value) })} />
-        </label>
-        <label className="field">
-          Seconds between repeats
-          <input
-            type="number"
-            min={0}
-            max={10}
-            step={0.1}
-            value={draft.delayMs / 1000}
-            onChange={(e) => setDraft({ ...draft, delayMs: Math.round(Number(e.target.value) * 1000) })}
-          />
-        </label>
+      <div className="blank-bar">
+        {BLANK_HINTS.map(({ blank, hint }) => (
+          <button key={blank} type="button" className="blank-add" title={`Add {${blank}} where the cursor is`} onClick={() => insert(blank)}>
+            <span className={`blank ${blank}`}>{blank}</span>
+            {hint}
+          </button>
+        ))}
+      </div>
+      <p className="hint">
+        {java ? (
+          <>
+            Commands run as the server, so use <code>execute at {"{player}"} run …</code> for anything near you.
+          </>
+        ) : (
+          <>
+            Commands run as you, so <code>~ ~ ~</code> is where you stand.
+          </>
+        )}
+      </p>
+      <div className="repeat-row">
+        <Icon name="repeat" size={15} />
+        Run it
+        <input
+          className="input"
+          type="number"
+          min={1}
+          max={100}
+          aria-label="Times to run it"
+          value={draft.repeat}
+          onChange={(e) => setDraft({ ...draft, repeat: Number(e.target.value) })}
+        />
+        {draft.repeat === 1 ? "time" : "times"}
+        {draft.repeat > 1 && (
+          <>
+            ,
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={10}
+              step={0.1}
+              aria-label="Seconds between each time"
+              value={draft.delayMs / 1000}
+              onChange={(e) => setDraft({ ...draft, delayMs: Math.round(Number(e.target.value) * 1000) })}
+            />
+            seconds apart
+          </>
+        )}
       </div>
       <div className="row">
         <button className="btn btn-primary" disabled={saving}>
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving…" : editing ? "Save changes" : "Save action"}
         </button>
         <button type="button" className="btn btn-ghost" onClick={() => setDraft(null)}>
           Cancel
         </button>
+        <span className="spacer" />
+        {editing &&
+          (deleting ? (
+            <button type="button" className="btn btn-sm btn-danger" onClick={() => run("delete_game_action", { name: editing }).then((ok) => ok && setDraft(null))}>
+              Delete {editing}
+            </button>
+          ) : (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDeleting(true)}>
+              Delete
+            </button>
+          ))}
       </div>
     </form>
-  );
-}
-
-// Where the Minecraft server is. Game actions use its RCON, which only servers have, so the host plays on one.
-function MinecraftSetup({ state, run }: { state: Snapshot; run: Run }) {
-  const saved = state.minecraftJava;
-  const [open, setOpen] = useState(!saved);
-  const [host, setHost] = useState(saved?.host ?? "localhost");
-  const [port, setPort] = useState(saved?.port ?? state.minecraftDefaultPort);
-  const [password, setPassword] = useState("");
-  const [player, setPlayer] = useState(saved?.player ?? "");
-  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
-  const [testing, setTesting] = useState(false);
-
-  const check = () => {
-    setTesting(true);
-    setTest(null);
-    invoke<string>("test_minecraft")
-      .then((online) => setTest({ ok: true, text: `Connected. ${online}` }))
-      .catch((e) => setTest({ ok: false, text: String(e) }))
-      .finally(() => setTesting(false));
-  };
-
-  return (
-    <div className="stack minecraft-setup">
-      <div className="row">
-        <strong>Minecraft Java</strong>
-        {saved?.hasPassword ? (
-          <span className="muted small">
-            {saved.host}:{saved.port}
-            {saved.player ? `, playing as ${saved.player}` : ""}
-          </span>
-        ) : (
-          <span className="tag amber">Not set up</span>
-        )}
-        <span className="spacer" />
-        {saved?.hasPassword && (
-          <button className="btn btn-sm" disabled={testing} onClick={check}>
-            {testing ? "Testing…" : "Test connection"}
-          </button>
-        )}
-        {!open && (
-          <button className="btn btn-sm btn-ghost" onClick={() => setOpen(true)}>
-            Change
-          </button>
-        )}
-      </div>
-      {test && (
-        <p className={`notice ${test.ok ? "info" : "error"}`} role="status">
-          {test.text}
-        </p>
-      )}
-      {open && (
-        <form
-          className="stack"
-          onSubmit={(e) => {
-            e.preventDefault();
-            run("set_minecraft", { host, port, password: password || null, player }).then((saved) => {
-              if (saved) {
-                setOpen(false);
-                setPassword("");
-              }
-            });
-          }}
-        >
-          <p className="muted small">
-            Game actions go through RCON, which Minecraft servers have and singleplayer doesn't, so play on a server, on this PC
-            or hosted. In its <code>server.properties</code> set <code>enable-rcon=true</code>, an <code>rcon.password</code> and{" "}
-            <code>rcon.port</code>, then restart it.
-          </p>
-          <div className="pair-fields">
-            <label className="field">
-              Server address
-              <input value={host} required onChange={(e) => setHost(e.target.value)} />
-            </label>
-            <label className="field">
-              RCON port
-              <input type="number" min={1} max={65535} value={port} required onChange={(e) => setPort(Number(e.target.value))} />
-            </label>
-            <label className="field">
-              RCON password
-              <input
-                type="password"
-                value={password}
-                autoComplete="off"
-                required={!saved?.hasPassword}
-                placeholder={saved?.hasPassword ? "Saved. Type to change it" : ""}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </label>
-            <label className="field">
-              Your Minecraft name
-              <input value={player} maxLength={16} placeholder="For {player}" onChange={(e) => setPlayer(e.target.value)} />
-            </label>
-          </div>
-          <div className="row">
-            <button className="btn btn-primary">Save</button>
-            {saved && (
-              <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-      )}
-    </div>
   );
 }
 

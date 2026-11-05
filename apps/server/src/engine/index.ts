@@ -3,6 +3,7 @@ import { createAnarchy } from './anarchy.js';
 import { decide, spanOf } from './common.js';
 import { createDemocracy } from './democracy.js';
 import { createQueue } from './queue.js';
+import { createRaffle } from './raffle.js';
 import type { Decision, Engine, EngineContext } from './types.js';
 
 export type { EngineConfig, EngineContext, Decision, Engine } from './types.js';
@@ -16,6 +17,7 @@ const modes: Record<Mode, (ctx: EngineContext) => Engine> = {
   anarchy: createAnarchy,
   democracy: createDemocracy,
   queue: createQueue,
+  raffle: createRaffle,
   gift: createGiftOnly,
 };
 

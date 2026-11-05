@@ -5,7 +5,7 @@ import { Auth } from './Auth';
 import { ActivityWindow } from './dashboard/ActivityWindow';
 import { Dashboard } from './dashboard/Dashboard';
 import { HomePage } from './site/HomePage';
-import { DownloadPage, FaqPage, FeaturesPage, HowItWorksPage, SelfHostingPage } from './site/pages';
+import { DownloadPage, FaqPage, FeaturesPage, HowItWorksPage, IntegrationsPage, SelfHostingPage } from './site/pages';
 import { PrivacyPage } from './site/PrivacyPage';
 import { ChangelogPage } from './site/ChangelogPage';
 import { Overlay } from './Overlay';
@@ -44,6 +44,7 @@ function App() {
   if (path === '/login') return <Auth key="login" mode="login" />;
   if (path === '/signup') return <Auth key="signup" mode="signup" />;
   if (path === '/features') return <FeaturesPage />;
+  if (path === '/integrations') return <IntegrationsPage />;
   if (path === '/how-it-works') return <HowItWorksPage />;
   if (path === '/self-hosting') return <SelfHostingPage />;
   if (path === '/faq') return <FaqPage />;

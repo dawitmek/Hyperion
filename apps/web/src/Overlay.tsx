@@ -480,6 +480,27 @@ function ModePanel({ state, clockOffset, avatar }: { state: ModeState; clockOffs
     );
   }
 
+  if (state.mode === 'raffle') {
+    return (
+      <div className="overlay-panel overlay-mode tone-indigo">
+        <Title icon="crowd" end={secondsLeft !== null && <span className="overlay-timer">{secondsLeft}s</span>}>
+          Raffle
+        </Title>
+        <div className="overlay-muted">
+          {state.entrants === 0
+            ? 'Type a command to enter'
+            : `${state.entrants} entered. One wins in ${secondsLeft ?? 0}s`}
+        </div>
+        {state.lastWinner && (
+          <div className="overlay-player">
+            <ViewerAvatar name={state.lastWinner} src={avatar} />
+            {state.lastWinner} won
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (state.mode === 'gift') {
     return (
       <div className="overlay-panel overlay-mode tone-amber">

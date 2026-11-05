@@ -778,10 +778,10 @@ function ActionEditor({
       <Section title="Do" icon="commands" hue="indigo">
         <div className="form-grid">
           <label className="field">
-            Press a command's key
-            <span className="hint">Skips crowd-mode limits. Ties the action to the {host.profileName} profile.</span>
+            Run a command
+            <span className="hint">Its key, macro, chain or game action. Skips crowd-mode limits. Ties the action to the {host.profileName} profile.</span>
             <select className="input" value={draft.keyCommandId ?? ''} onChange={(e) => set({ keyCommandId: e.target.value || null })}>
-              <option value="">No key press</option>
+              <option value="">No command</option>
               {commands.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.keyword}
@@ -800,7 +800,7 @@ function ActionEditor({
             <input type="checkbox" checked={draft.repeatWithCount} onChange={(e) => set({ repeatWithCount: e.target.checked })} />
             <span>
               Once per gift in a streak
-              <small>A streak of 5 roses presses it 5 times, up to {MAX_KEY_REPEATS}.</small>
+              <small>A streak of 5 roses runs it 5 times, up to {MAX_KEY_REPEATS}.</small>
             </span>
           </label>
         )}

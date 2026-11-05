@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Icon } from '../icons';
 
 // Small, static pictures of real Hyperion screens, drawn in HTML so they stay sharp and match the app.
@@ -151,6 +151,9 @@ export function Stage() {
                 <span className="tag pink">Alert</span> mira sent 5 Roses
               </div>
               <div>
+                <span className="tag green">Action</span> nova sent a creeper
+              </div>
+              <div>
                 <span className="tag violet">Level</span> jules reached level 4
               </div>
               <div>
@@ -293,11 +296,22 @@ export function SafetyArt() {
   );
 }
 
+// The companion as it looks today: its status card (the ring pulses while it's ready), then the keys it may press.
 export function CompanionArt() {
   const keys = ['W', 'A', 'S', 'D', 'Q', 'E', 'R', 'F', '1', '2', '3', '4', '↑', '↓', '←', '→'];
   const on = new Set(['W', 'A', 'S', 'D', 'F', '↑']);
   return (
     <div className="art">
+      <div className="art-hero">
+        <span className="art-orb">
+          <span />
+        </span>
+        <span className="art-hero-text">
+          <strong>Ready</strong>
+          <span className="s-muted">Keys go to javaw.exe</span>
+        </span>
+        <span className="art-btn red">Pause</span>
+      </div>
       <div className="s-keygrid">
         {keys.map((k) => (
           <span key={k} className={on.has(k) ? 'on' : ''}>
@@ -305,6 +319,84 @@ export function CompanionArt() {
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+// A command with its blanks as the companion shows them: one colour per blank.
+function Line({ text }: { text: string }) {
+  return (
+    <div>
+      {text.split(/\{(viewer|count|player)\}/).map((part, i) => (i % 2 ? <b key={i} className={`s-blank s-blank-${part}`}>{part}</b> : part))}
+    </div>
+  );
+}
+
+// A game action: a gift runs it, and the companion sends its commands into Minecraft.
+export function GameActionArt() {
+  return (
+    <div className="art">
+      <div className="art-panel art-line">
+        <span className="tag pink">5× Rose</span>
+        <span className="s-muted">runs</span>
+        <span className="art-does">
+          <Icon name="cube" size={12} /> creeper
+        </span>
+      </div>
+      <div className="art-console">
+        <Line text="execute at {player} run summon creeper ~ ~ ~" />
+        <Line text="say {viewer} sent a creeper!" />
+      </div>
+      <div className="art-links">
+        <span>
+          <i /> Minecraft Java
+        </span>
+        <span>
+          <i /> Minecraft Bedrock
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// The Commands page's deck: a tile per command, marked with what it does.
+export function DeckArt() {
+  const tiles: { word: string; does: ReactNode; meta: string; off?: boolean }[] = [
+    { word: 'jump', does: <kbd className="kbd">Space</kbd>, meta: '1s cooldown' },
+    { word: 'left', does: <kbd className="kbd">A</kbd>, meta: '1s cooldown' },
+    {
+      word: 'creeper',
+      does: (
+        <span className="art-does">
+          <Icon name="cube" size={12} /> creeper
+        </span>
+      ),
+      meta: '5s cooldown',
+    },
+    {
+      word: 'spin',
+      does: (
+        <span className="art-does violet">
+          <Icon name="record" size={12} /> spin
+        </span>
+      ),
+      meta: '3s cooldown',
+    },
+    { word: 'combo', does: <span className="art-bars"><i style={{ width: '40%' }} /><i style={{ marginLeft: '45%', width: '55%' }} /></span>, meta: 'Chain of 2' },
+    { word: 'shoot', does: <kbd className="kbd">F</kbd>, meta: 'Off', off: true },
+  ];
+  return (
+    <div className="art-deck">
+      {tiles.map((t) => (
+        <div key={t.word} className={`art-tile ${t.off ? 'off' : ''}`}>
+          <span className="art-line">
+            <strong>{t.word}</strong>
+            <span className={`s-switch ${t.off ? 'off' : ''}`} />
+          </span>
+          {t.does}
+          <span className="s-muted">{t.meta}</span>
+        </div>
+      ))}
     </div>
   );
 }

@@ -10,6 +10,7 @@ export { GITHUB_URL };
 
 const PAGES = [
   { href: '/features', label: 'Features' },
+  { href: '/integrations', label: 'Integrations' },
   { href: '/how-it-works', label: 'How it works' },
   { href: '/self-hosting', label: 'Self-hosting' },
   { href: '/faq', label: 'FAQ' },

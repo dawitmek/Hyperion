@@ -2,11 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Reac
 import { levelForXp, MODES, type LeaderboardEntry, type LiveCard, type ModeState, type StreamStats } from '@hyperion/shared';
 import { api, type Command, type LiveStatus } from '../api';
 import { Link } from '../router';
-import { Card, ErrorNotice, keyLabel, Seg, Spinner, useError, ViewerAvatar } from '../ui';
+import { Card, ErrorNotice, keyLabel, Spinner, useError, ViewerAvatar } from '../ui';
 import { Icon, type IconName } from '../icons';
 import type { PageProps } from './Dashboard';
 import type { Activity, ActivityKind } from './live-feed';
 import { MODE_INFO } from './modes';
+import { ModeTiles } from './ModePicker';
 import { ActivityFeed } from './ActivityFeed';
 import { CARD_LABELS, LiveCards } from './LiveLayout';
 import { Stat } from './AnalyticsPage';
@@ -395,9 +396,7 @@ function CommandsOverview({ host, refreshHost, feed }: PageProps) {
       </div>
       {totalRows > 0 && <RowsHandle rows={shownRows} total={totalRows} grid={grid} onChange={setRows} />}
       <h3 style={{ margin: '24px 0 10px' }}>Crowd mode</h3>
-      <div className="crowd-mode">
-        <Seg label="Crowd mode" value={host.mode} options={MODES.map((m) => [m, MODE_INFO[m].label] as const)} onChange={setMode} />
-      </div>
+      <ModeTiles value={host.mode} onChange={setMode} />
       <p className="muted" style={{ marginTop: 8 }}>
         {MODE_INFO[host.mode].help}
       </p>
@@ -465,6 +464,23 @@ function ModeCard({ host, feed }: PageProps) {
           </div>
         ))}
         {state.tally.length === 0 && <p className="muted">Chat types a command to vote for it.</p>}
+      </div>
+    );
+  }
+
+  if (state?.mode === 'raffle') {
+    return (
+      <div className="card mode-card">
+        <div className="mode-card-head">
+          <div>
+            <h2>{state.endsAt ? 'Raffle open' : 'Waiting for entries'}</h2>
+            <p className="muted small">
+              {state.entrants} {state.entrants === 1 ? 'viewer' : 'viewers'} entered
+              {state.lastWinner && `. Last winner: ${state.lastWinner}`}
+            </p>
+          </div>
+          {state.endsAt && <Countdown endsAt={state.endsAt} windowMs={host.raffleMs} clockOffset={clockOffset} />}
+        </div>
       </div>
     );
   }

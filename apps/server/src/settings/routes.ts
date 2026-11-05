@@ -33,6 +33,7 @@ type Body = {
   mode?: Mode;
   voteWindowMs?: number;
   turnMs?: number;
+  raffleMs?: number;
   giftBoosts?: boolean;
   progression?: boolean;
   levelGating?: boolean;
@@ -84,7 +85,7 @@ export async function sendThemeToCompanions(app: FastifyInstance, hostId: string
 }
 
 // Mode settings belong to the active profile (they differ per game); the rest to the host.
-const PROFILE_FIELDS = ['mode', 'voteWindowMs', 'turnMs', 'giftBoosts'] as const;
+const PROFILE_FIELDS = ['mode', 'voteWindowMs', 'turnMs', 'raffleMs', 'giftBoosts'] as const;
 
 const liveColumn = { type: 'array', items: { enum: LIVE_CARDS }, uniqueItems: true };
 
@@ -104,6 +105,7 @@ export async function settingsRoutes(app: FastifyInstance) {
             mode: { enum: MODES },
             voteWindowMs: { type: 'integer', minimum: 1000, maximum: 30000 },
             turnMs: { type: 'integer', minimum: 5000, maximum: 300000 },
+            raffleMs: { type: 'integer', minimum: 2000, maximum: 300000 },
             giftBoosts: { type: 'boolean' },
             progression: { type: 'boolean' },
             levelGating: { type: 'boolean' },

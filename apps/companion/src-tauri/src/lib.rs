@@ -2,6 +2,7 @@ mod config;
 mod connection;
 mod controller;
 mod device;
+mod bedrock;
 mod game_actions;
 mod input;
 mod keys;
@@ -84,9 +85,9 @@ fn list_windows(ctl: Ctl) -> Vec<GameWindow> {
 
 #[tauri::command]
 fn set_target(ctl: Ctl, process: Option<String>) -> Result<(), String> {
-    // With no game there's nothing to press into, so pause; picking one again waits for Resume.
+    // With no game there's nothing to press into, so pause; picking one again waits for Play.
     if process.is_none() {
-        ctl.set_paused(true);
+        ctl.set_paused(true, false);
     }
     ctl.update_config(|c| c.target_process = process.map(|p| p.to_lowercase()))
 }
@@ -104,9 +105,9 @@ fn set_combo_approved(ctl: Ctl, key: String, approved: bool) -> Result<(), Strin
 #[tauri::command]
 fn set_paused(ctl: Ctl, paused: bool) -> Result<(), String> {
     if !paused && ctl.config().target_process.is_none() {
-        return Err("Pick your game first, then resume".into());
+        return Err("Pick your game first, then press Play".into());
     }
-    ctl.set_paused(paused);
+    ctl.set_paused(paused, true);
     Ok(())
 }
 
@@ -159,6 +160,11 @@ fn try_game_action(ctl: Ctl, name: String) {
 #[tauri::command]
 fn set_minecraft(ctl: Ctl, host: String, port: u16, password: Option<String>, player: String) -> Result<(), String> {
     ctl.set_minecraft(&host, port, password, &player)
+}
+
+#[tauri::command]
+fn set_bedrock(ctl: Ctl, on: bool) -> Result<(), String> {
+    ctl.inner().set_bedrock(on)
 }
 
 #[tauri::command]
@@ -221,7 +227,7 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
                     if shortcut == &panic_key && event.state() == ShortcutState::Pressed {
-                        app.state::<Arc<Controller>>().set_paused(true);
+                        app.state::<Arc<Controller>>().set_paused(true, true);
                     }
                     if shortcut == &controller::stop_key() && event.state() == ShortcutState::Pressed {
                         // Not from inside this handler: stopping unregisters the shortcut that called it.
@@ -238,6 +244,9 @@ pub fn run() {
             app.global_shortcut().register(panic_key)?;
             if controller.config().device_token.is_some() {
                 connection::restart(&controller);
+            }
+            if controller.config().minecraft_bedrock == Some(true) {
+                controller.start_bedrock();
             }
             updater::start(controller.clone());
             controller.watch_permission();
@@ -266,6 +275,7 @@ pub fn run() {
             try_game_action,
             set_minecraft,
             test_minecraft,
+            set_bedrock,
             tiktok_sign_in,
             tiktok_status,
             set_auto_update,
