@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { and, desc, eq } from 'drizzle-orm';
+import { ANALYTICS_RANGES, type AnalyticsRange } from '@hyperion/shared';
 import { streams } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { streamerKey } from '../leaderboard/stats.js';
-import { streamActivity, streamDetail, streamSummaries, streamViewers, viewerActivity, viewerProfile } from './queries.js';
+import { analyticsOverview, streamActivity, streamDetail, streamSummaries, streamViewers, viewerActivity, viewerProfile } from './queries.js';
 
 const VIEWER_KINDS = ['comment', 'gift', 'like', 'follow', 'share', 'join', 'subscribe', 'emote'];
 const HISTORY_KINDS = [...VIEWER_KINDS, 'command'];
@@ -50,6 +51,33 @@ export async function analyticsRoutes(app: FastifyInstance) {
 
   // Real streams, newest first, with their totals.
   app.get('/streams', async (req) => streamSummaries(db, req.hostId));
+
+  // Patterns across the streams in a stretch of time; `account` keeps to one TikTok account.
+  app.get<{ Querystring: { range?: AnalyticsRange; account?: string; tz?: string } }>(
+    '/overview',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            range: { enum: ANALYTICS_RANGES.map((r) => r.id) },
+            account: { type: 'string', minLength: 1, maxLength: 64 },
+            tz: { type: 'string', maxLength: 64, pattern: '^[A-Za-z0-9_/+-]+$' }, // the viewer's time zone, for hours and weekdays
+          },
+        },
+      },
+    },
+    async (req) => {
+      const days = ANALYTICS_RANGES.find((r) => r.id === (req.query.range ?? 'all'))!.days;
+      await app.live.flushRecording(req.hostId); // so a stream that's live counts up to now
+      return analyticsOverview(db, req.hostId, {
+        since: days === null ? undefined : Date.now() - days * 24 * 3600_000,
+        account: req.query.account,
+        timeZone: req.query.tz,
+      });
+    },
+  );
 
   const viewerParams = { type: 'object', properties: { viewer: { type: 'string', minLength: 1, maxLength: 64 } } };
   const account = { type: 'string', minLength: 1, maxLength: 64 };

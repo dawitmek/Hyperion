@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { ALERT_FONTS, ALERT_POSITIONS, WIDGET_STYLE_LIMITS, MAX_LEADERBOARD_SIZE, MAX_MESSAGE_LENGTH, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, SCREEN_LAYOUTS, WIDGET_SPOTS, WIDGET_TYPES, type GoalRaise, type OverlayScreen } from '@hyperion/shared';
+import { ALERT_FONTS, PLAIN_TEXT_PATTERN, ALERT_POSITIONS, WIDGET_STYLE_LIMITS, MAX_LEADERBOARD_SIZE, MAX_MESSAGE_LENGTH, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, SCREEN_LAYOUTS, WIDGET_SPOTS, WIDGET_TYPES, type GoalRaise, type OverlayScreen } from '@hyperion/shared';
 import { hosts, overlayScreens } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { newToken } from '../crypto.js';
@@ -38,7 +38,7 @@ const widgetStyle = {
   },
 };
 const fields = {
-  name: { type: 'string', minLength: 1, maxLength: 40 },
+  name: { type: 'string', minLength: 1, maxLength: 40, pattern: PLAIN_TEXT_PATTERN },
   alerts: { type: 'boolean' },
   feed: { type: 'boolean' },
   leaderboard: { type: 'boolean' },
@@ -70,7 +70,7 @@ const fields = {
         raise: raiseSchema,
         shine: { const: false },
         goalId: { type: 'string', format: 'uuid' },
-        text: { type: 'string', minLength: 1, maxLength: MAX_MESSAGE_LENGTH },
+        text: { type: 'string', minLength: 1, maxLength: MAX_MESSAGE_LENGTH, pattern: PLAIN_TEXT_PATTERN },
         style: widgetStyle,
         size: { type: 'integer', minimum: WIDGET_STYLE_LIMITS.size[0], maximum: WIDGET_STYLE_LIMITS.size[1] },
         pos: {

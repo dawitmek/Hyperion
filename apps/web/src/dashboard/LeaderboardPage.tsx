@@ -99,7 +99,7 @@ function Ranking({ host, entries }: { host: Host; entries: LeaderboardEntry[] })
     <div className="stack">
       <div className="leaderboard-tools">
         {sorts.length > 1 && <Seg label="Rank by" value={sort} options={sorts.map((k) => [k, SORT_LABELS[k]] as const)} onChange={setSortBy} />}
-        <input className="input" type="search" placeholder="Find a viewer" aria-label="Find a viewer" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input className="input" type="search" maxLength={100} placeholder="Find a viewer" aria-label="Find a viewer" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
       {podium.length > 0 && (
         <ol className="podium">

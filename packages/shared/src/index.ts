@@ -393,6 +393,8 @@ export const UI_THEMES = [
   { id: 'solar-dusk', label: 'Solar Dusk' },
   { id: 'graphite-mono', label: 'Graphite Mono' },
   { id: 'sage-mist', label: 'Sage Mist' },
+  { id: 'mocha-cream', label: 'Mocha Cream' },
+  { id: 'tangerine', label: 'Tangerine' },
 ] as const;
 export type UiTheme = (typeof UI_THEMES)[number]['id'];
 export type UiThemeStyle = 'full' | 'colors';
@@ -413,8 +415,31 @@ export const DEFAULT_LIVE_LAYOUT: LiveLayout = { main: ['stream', 'commands', 'f
 
 // 'auto' is the recommended mode: all chat up to this many viewers, prefixed chat above it. A line takes about 4 s, so
 // the overlay can read about 15 a minute, which a stream bigger than this usually out-chats.
+// Text people type: what each kind may contain. Control characters (tabs, line breaks, invisible codes) never belong in
+// a single-line field; the server refuses them and the dashboard drops them as they're typed or pasted.
+export const PLAIN_TEXT_PATTERN = '^[^\\u0000-\\u001f\\u007f]*$';
+export const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
+// A keyword or command viewers type: no spaces or control characters.
+export const KEYWORD_PATTERN = '^[^\\s\\u0000-\\u001f\\u007f]{1,32}$';
+
+// Read-aloud wording: plain text with these {placeholders} and no other braces, so a typo like {veiwer} isn't spoken.
+export const TTS_PLACEHOLDERS = { chat: ['viewer', 'text'], command: ['viewer', 'command'] } as const;
+export const MAX_TTS_TEMPLATE_LENGTH = 200;
+export function templatePattern(placeholders: readonly string[]) {
+  return `^([^{}\\u0000-\\u001f\\u007f]|${placeholders.map((p) => `\\{${p}\\}`).join('|')})*$`;
+}
+// Why `template` can't be used, or null. `needed` must appear in it.
+export function templateProblem(template: string, placeholders: readonly string[], needed: string): string | null {
+  if (!template.includes(`{${needed}}`)) return `Include {${needed}}.`;
+  if (template.length > MAX_TTS_TEMPLATE_LENGTH) return `Keep it to ${MAX_TTS_TEMPLATE_LENGTH} characters.`;
+  if (!new RegExp(templatePattern(placeholders), 'u').test(template)) return `Only ${placeholders.map((p) => `{${p}}`).join(' and ')} can go in braces.`;
+  return null;
+}
+
 // What a voice says for a chat line. Needs {text}; {viewer} is optional, so a host can skip reading names.
 export const DEFAULT_TTS_TEMPLATE = '{viewer} says {text}';
+// What a voice says for a command that fired, when reading commands is on. Needs {command}; {viewer} is optional.
+export const DEFAULT_TTS_COMMAND_TEMPLATE = '{viewer} pressed {command}';
 export const TTS_MODES = ['off', 'auto', 'prefix', 'all'] as const;
 export type TtsMode = (typeof TTS_MODES)[number];
 
@@ -560,6 +585,30 @@ export interface StreamSummary {
   topCommand: string | null;
   topPlayer: string | null;
   topPlayerName: string | null; // their display name
+}
+
+// Patterns across every real stream in a stretch of time (or all of it): when chat is busiest, how many viewers come
+// back, a few rates, and the most used commands and gifts worth the most coins.
+export const ANALYTICS_RANGES = [
+  { id: '7d', label: '7 days', days: 7 },
+  { id: '30d', label: '30 days', days: 30 },
+  { id: '90d', label: '90 days', days: 90 },
+  { id: 'all', label: 'All time', days: null },
+] as const;
+export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number]['id'];
+
+export interface AnalyticsOverview {
+  streams: number;
+  liveMs: number; // time live, summed over the streams
+  viewers: number; // different viewers seen, each counted once however many streams they came to
+  interactors: number; // ... who chatted or sent a gift
+  follows: number;
+  coins: number;
+  loyalty: { once: number; few: number; many: number }; // interactors by how many streams they took part in: 1, 2 to 3, 4 or more
+  // Minutes live and chat and gifts in each hour of each weekday, in the asked time zone; day 0 is Sunday. Only hours with either.
+  activity: { day: number; hour: number; minutes: number; events: number }[];
+  topCommands: { keyword: string; count: number }[];
+  topGifts: { gift: string; count: number; coins: number; image: string | null }[];
 }
 
 export interface StreamDetail {

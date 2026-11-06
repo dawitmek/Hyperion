@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { CLOUD_PROVIDERS, DEFAULT_TTS_TEMPLATE, MAX_LEVEL, TIKTOK_VOICES, VOICE_EFFECTS } from '@hyperion/shared';
+import { CLOUD_PROVIDERS, DEFAULT_TTS_TEMPLATE, MAX_TTS_TEMPLATE_LENGTH, templateProblem, TTS_PLACEHOLDERS, MAX_LEVEL, TIKTOK_VOICES, VOICE_EFFECTS } from '@hyperion/shared';
 import { api, ApiError, type CloudProvider, type Host, type Speech, type TtsEngine, type VoiceEffect } from '../api';
 import { Icon } from '../icons';
 import { SpeechPlayer } from '../speech-player';
 import { findGift, GiftPicker, useGifts } from './GiftPicker';
-import { Card, Choices, ErrorNotice, HueIcon, NumberCell, Scrubber, Seg, TextCell, useError } from '../ui';
+import { Card, Choices, cleanTyped, ErrorNotice, HueIcon, NumberCell, Scrubber, Seg, Switch, TextCell, useError } from '../ui';
 import type { PageProps } from './Dashboard';
 import { previewAudio } from './audio';
 
@@ -78,6 +78,27 @@ export function VoicePage({ host, refreshHost }: PageProps) {
             <NumberCell value={host.ttsAutoMaxViewers} min={0} max={100000} onSave={(ttsAutoMaxViewers) => save({ ttsAutoMaxViewers })} />
           </label>
         )}
+        <Switch
+          checked={host.ttsCommands}
+          onChange={(ttsCommands) => save({ ttsCommands })}
+          hint="Says who pressed what when a command fires, even with chat reading off. At most one every few seconds, so a busy crowd doesn't drown out chat."
+        >
+          Read commands aloud
+        </Switch>
+        {host.ttsCommands && (
+          <label className="field">
+            Read each command as
+            <span className="hint">Use {'{command}'} for the command and, if you like, {'{viewer}'} for who sent it ("Chat" for a democracy vote).</span>
+            <TextCell
+              value={host.ttsCommandTemplate}
+              required
+              label="Command wording"
+              maxLength={MAX_TTS_TEMPLATE_LENGTH}
+              check={(t) => templateProblem(t, TTS_PLACEHOLDERS.command, 'command')}
+              onSave={(ttsCommandTemplate) => save({ ttsCommandTemplate })}
+            />
+          </label>
+        )}
       </Card>
       <VoiceCard host={host} save={save} guard={guard} setError={setError} refreshHost={refreshHost} />
       <GiftUnlock host={host} save={save} />
@@ -89,7 +110,7 @@ export function VoicePage({ host, refreshHost }: PageProps) {
           <div className="form-grid">
             <label className="field">
               Prefix
-              <TextCell value={host.ttsPrefix} required label="Prefix" onSave={(ttsPrefix) => save({ ttsPrefix })} />
+              <TextCell value={host.ttsPrefix} required label="Prefix" maxLength={16} allowed={/\S/} onSave={(ttsPrefix) => save({ ttsPrefix })} />
             </label>
             <label className="field">
               Max length, in characters
@@ -112,11 +133,7 @@ export function VoicePage({ host, refreshHost }: PageProps) {
             )}
           </div>
           <ReadAs template={host.ttsTemplate} onSave={(ttsTemplate) => save({ ttsTemplate })} />
-          <label className="field">
-            Blocked words
-            <span className="hint">Comma-separated. A comment containing one is not read.</span>
-            <TextCell value={host.ttsBlockedWords} label="Blocked words" onSave={(ttsBlockedWords) => save({ ttsBlockedWords })} />
-          </label>
+          <BlockedWords value={host.ttsBlockedWords} onSave={(ttsBlockedWords) => save({ ttsBlockedWords })} />
         </fieldset>
       </Card>
     </div>
@@ -298,7 +315,8 @@ function VoiceCard({
                     autoComplete="off"
                     value={cloudKey}
                     placeholder={host.ttsCloudKeySet ? '••••••••' : 'paste your key'}
-                    onChange={(e) => setCloudKey(e.target.value)}
+                    maxLength={300}
+                    onChange={(e) => setCloudKey(e.target.value.replace(/\s/g, ''))}
                     aria-label="Cloud API key"
                   />
                   <button className="btn" disabled={!cloudKey.trim()} onClick={() => (save({ ttsCloudKey: cloudKey.trim() }), setCloudKey(''))}>
@@ -329,6 +347,8 @@ function VoiceCard({
                         value={host.ttsCloudVoice ?? ''}
                         placeholder={CLOUD_VOICE_HINTS[host.ttsCloudProvider]}
                         label="Cloud voice"
+                        maxLength={100}
+                        allowed={/[A-Za-z0-9_.:-]/}
                         onSave={(v) => save({ ttsCloudVoice: v || null })}
                       />
                     )}
@@ -343,7 +363,14 @@ function VoiceCard({
               {host.ttsCloudProvider === 'azure' && (
                 <label className="field">
                   Region
-                  <TextCell value={host.ttsCloudRegion ?? ''} placeholder="e.g. eastus" label="Azure region" onSave={(v) => save({ ttsCloudRegion: v || null })} />
+                  <TextCell
+                    value={host.ttsCloudRegion ?? ''}
+                    placeholder="e.g. eastus"
+                    label="Azure region"
+                    maxLength={40}
+                    allowed={/[A-Za-z0-9]/}
+                    onSave={(v) => save({ ttsCloudRegion: v.toLowerCase() || null })}
+                  />
                 </label>
               )}
             </>
@@ -397,12 +424,101 @@ function ReadAs({ template, onSave }: { template: string; onSave: (template: str
       {picked === 'custom' && (
         <>
           <span className="hint">Use {'{text}'} for the message and, if you like, {'{viewer}'} for the name.</span>
-          <TextCell value={template} required label="Custom wording" onSave={onSave} />
+          <TextCell
+            value={template}
+            required
+            label="Custom wording"
+            maxLength={MAX_TTS_TEMPLATE_LENGTH}
+            check={(t) => templateProblem(t, TTS_PLACEHOLDERS.chat, 'text')}
+            onSave={onSave}
+          />
         </>
+      )}
+      <span className="hint">
+        Sounds like: “{template.replaceAll('{viewer}', 'Night Owl').replaceAll('{text}', 'hello everyone')}”
+      </span>
+    </div>
+  );
+}
+
+// Words and phrases that stop a comment (or a name) being read: chips to remove, and a box to add more that only opens
+// when asked. Saved as the comma-separated list the server reads.
+function BlockedWords({ value, onSave }: { value: string; onSave: (list: string) => void }) {
+  const [words, setWords] = useState(() => parseWords(value)); // kept here so quick edits build on each other
+  useEffect(() => setWords(parseWords(value)), [value]);
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState('');
+  const [full, setFull] = useState(false);
+  const commit = (next: string[]) => (setWords(next), onSave(next.join(', ')));
+  const add = () => {
+    const fresh = parseWords(text)
+      .map((w) => w.slice(0, MAX_BLOCKED_WORD))
+      .filter((w, i, all) => ![...words, ...all.slice(0, i)].some((x) => x.toLowerCase() === w.toLowerCase()));
+    const next = [...words, ...fresh];
+    // The server keeps the list to so many characters, written out with ", " between.
+    if (next.join(', ').length > MAX_BLOCKED_LIST) return setFull(true);
+    setFull(false);
+    if (fresh.length > 0) commit(next);
+    setText('');
+  };
+  return (
+    <div className="field">
+      Blocked words
+      <span className="hint">A comment containing one is not read. Single words match whole words; phrases match anywhere.</span>
+      {words.length > 0 && (
+        <ul className="unlock-gifts blocked-words">
+          {words.map((w) => (
+            <li key={w}>
+              {w}
+              <button type="button" className="btn btn-ghost btn-sm btn-icon" aria-label={`Unblock ${w}`} onClick={() => (setFull(false), commit(words.filter((x) => x !== w)))}>
+                <Icon name="close" size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {full && (
+        <span className="field-problem" role="alert">
+          The list is full. Remove some words to add more.
+        </span>
+      )}
+      {adding ? (
+        <div className="row blocked-words-add">
+          <input
+            className="input"
+            autoFocus
+            value={text}
+            placeholder="A word or phrase, then Enter. Commas add several."
+            aria-label="Word or phrase to block"
+            maxLength={200}
+            onChange={(e) => (setText(cleanTyped(e.target.value)), setFull(false))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.preventDefault(), add());
+              if (e.key === 'Escape') (setText(''), setAdding(false));
+            }}
+          />
+          <button type="button" className="btn" onClick={() => (add(), setAdding(false))}>
+            Done
+          </button>
+        </div>
+      ) : (
+        <div>
+          <button type="button" className="btn" onClick={() => setAdding(true)}>
+            <Icon name="plus" />
+            {words.length > 0 ? 'Add more' : 'Add blocked words'}
+          </button>
+        </div>
       )}
     </div>
   );
 }
+const MAX_BLOCKED_WORD = 50; // characters in one word or phrase
+const MAX_BLOCKED_LIST = 5000; // the server's limit on the whole list
+const parseWords = (list: string) =>
+  list
+    .split(',')
+    .map((w) => w.trim())
+    .filter(Boolean);
 
 // Who gets read: anyone, or only viewers who sent one of these gifts, for a while or for the rest of the stream.
 function GiftUnlock({ host, save }: { host: Host; save: (patch: SettingsPatch) => void | Promise<unknown> }) {

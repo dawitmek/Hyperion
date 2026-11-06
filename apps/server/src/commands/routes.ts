@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { keyProblem, MAX_CHAIN_DELAY_MS, MAX_CHAIN_STEPS, MAX_LEVEL, POINTS_CHECK, QUEUE_JOIN, type ChainStep } from '@hyperion/shared';
+import { KEYWORD_PATTERN, keyProblem, PLAIN_TEXT_PATTERN, MAX_CHAIN_DELAY_MS, MAX_CHAIN_STEPS, MAX_LEVEL, POINTS_CHECK, QUEUE_JOIN, type ChainStep } from '@hyperion/shared';
 import { commands } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { isUniqueViolation } from '../db/client.js';
@@ -9,10 +9,10 @@ import { activeProfile, sendCommandsToCompanions } from '../profiles/active.js';
 type CommandBody = { keyword: string; key: string; macro?: string | null; gameAction?: string | null; chain?: ChainStep[] | null; holdMs: number; cooldownMs: number; enabled?: boolean; minLevel?: number; cost?: number };
 
 const fields = {
-  keyword: { type: 'string', pattern: '^\\S{1,32}$' },
+  keyword: { type: 'string', pattern: KEYWORD_PATTERN },
   key: { type: 'string', maxLength: 64 }, // a key or combination; keyProblem() checks it. Empty with a macro, game action or chain
-  macro: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
-  gameAction: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
+  macro: { type: ['string', 'null'], minLength: 1, maxLength: 64, pattern: PLAIN_TEXT_PATTERN },
+  gameAction: { type: ['string', 'null'], minLength: 1, maxLength: 64, pattern: PLAIN_TEXT_PATTERN },
   chain: {
     type: ['array', 'null'],
     maxItems: MAX_CHAIN_STEPS,
@@ -20,7 +20,7 @@ const fields = {
       type: 'object',
       additionalProperties: false,
       required: ['keyword', 'delayMs'],
-      properties: { keyword: { type: 'string', minLength: 1, maxLength: 32 }, delayMs: { type: 'integer', minimum: 0, maximum: MAX_CHAIN_DELAY_MS } },
+      properties: { keyword: { type: 'string', pattern: KEYWORD_PATTERN }, delayMs: { type: 'integer', minimum: 0, maximum: MAX_CHAIN_DELAY_MS } },
     },
   },
   holdMs: { type: 'integer', minimum: 10, maximum: 5000 },

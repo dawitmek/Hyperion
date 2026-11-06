@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { GAME_TEMPLATES } from '@hyperion/shared';
+import { GAME_TEMPLATES, PLAIN_TEXT_PATTERN } from '@hyperion/shared';
 import { actions, commands, hosts, profiles } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { isUniqueViolation } from '../db/client.js';
@@ -12,9 +12,9 @@ type CreateBody = Body & { template?: string };
 const COMMAND_COOLDOWN_MS = 1000; // a game template's commands, per viewer
 
 const fields = {
-  name: { type: 'string', minLength: 1, maxLength: 48 },
+  name: { type: 'string', minLength: 1, maxLength: 48, pattern: PLAIN_TEXT_PATTERN },
   // An executable name as the companion lists it, e.g. "gta5.exe" on Windows or "textedit" on macOS. No paths.
-  gameProcess: { type: ['string', 'null'], pattern: '^[^\\\\/:*?"<>|]{1,64}$' },
+  gameProcess: { type: ['string', 'null'], pattern: '^[^\\\\/:*?"<>|\\u0000-\\u001f\\u007f]{1,64}$' },
 } as const;
 
 const idParam = { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } as const;

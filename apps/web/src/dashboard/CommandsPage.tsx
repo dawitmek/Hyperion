@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } fr
 import { BLOCKED_COMBOS, MAX_CHAIN_DELAY_MS, MAX_CHAIN_STEPS, MAX_LEVEL, type ChainStep } from '@hyperion/shared';
 import { api, type Command, type Host } from '../api';
 import { Icon, type IconName } from '../icons';
-import { Card, ConfirmButton, ErrorNotice, KeyCapture, keyLabel, NumberCell, Seg, useError } from '../ui';
+import { Card, cleanTyped, ConfirmButton, ErrorNotice, KeyCapture, keyLabel, NumberCell, Seg, useError } from '../ui';
 import type { PageProps } from './Dashboard';
 import { ModeDetails, ModeTiles } from './ModePicker';
 
@@ -102,7 +102,7 @@ function CommandsCard({ host }: { host: Host }) {
           className="input"
           placeholder="jump"
           value={draft.keyword}
-          onChange={(e) => setDraft({ ...draft, keyword: e.target.value.replace(/\s/g, '') })}
+          onChange={(e) => setDraft({ ...draft, keyword: cleanTyped(e.target.value, /\S/) })}
           required
           maxLength={32}
           autoFocus
@@ -153,7 +153,7 @@ function CommandsCard({ host }: { host: Host }) {
       }
     >
       {commands.length >= SEARCH_FROM && (
-        <input className="input command-search" type="search" placeholder="Find a command" aria-label="Find a command" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="input command-search" type="search" maxLength={100} placeholder="Find a command" aria-label="Find a command" value={search} onChange={(e) => setSearch(e.target.value)} />
       )}
       {view === 'deck' ? (
         <div className="deck-layout">

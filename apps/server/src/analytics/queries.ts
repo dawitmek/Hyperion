@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { levelForXp, type StreamDetail, type StreamEvent, type StreamSummary, type StreamViewer, type ViewerHistoryEvent, type ViewerProfile } from '@hyperion/shared';
+import { levelForXp, type AnalyticsOverview, type StreamDetail, type StreamEvent, type StreamSummary, type StreamViewer, type ViewerHistoryEvent, type ViewerProfile } from '@hyperion/shared';
 import type { Db } from '../db/client.js';
 import { streams, viewerStats } from '../db/schema.js';
 
@@ -297,6 +297,80 @@ export async function streamViewers(db: Db, hostId: string, streamId: string, li
     firstAt: new Date(r.first_at).getTime(),
     lastAt: new Date(r.last_at).getTime(),
   }));
+}
+
+const OVERVIEW_TOP = 8;
+
+// Patterns across the host's real streams that started at or after `since` (ms; every stream when left out), on one
+// TikTok account when given. Viewers are counted once each, however many of those streams they came to. Hours and
+// weekdays are in `timeZone` (an IANA name; UTC when Postgres doesn't know it).
+export async function analyticsOverview(db: Db, hostId: string, opts: { since?: number; account?: string; timeZone?: string } = {}): Promise<AnalyticsOverview> {
+  const picked = sql`
+    select id, started_at, ended_at from streams
+    where host_id = ${hostId} and source = 'tiktok'
+      ${opts.account ? sql`and tiktok_username = ${opts.account}` : sql``}
+      ${opts.since !== undefined ? sql`and started_at >= to_timestamp(${opts.since}::bigint / 1000.0)` : sql``}`;
+  const events = sql`stream_events e where e.stream_id in (select id from s)`;
+  const coins = sql`(e.data->>'count')::int * (e.data->>'diamonds')::int`;
+  const zone = sql`(select coalesce((select name from pg_timezone_names where name = ${opts.timeZone ?? 'UTC'} limit 1), 'UTC') as tz)`;
+
+  const [[totals], [loyalty], activity, commands, gifts] = await Promise.all([
+    db.execute<{ streams: number; live_ms: number; viewers: number; interactors: number; follows: number; coins: number }>(sql`
+      with s as (${picked}),
+      seen as (select e.viewer, bool_or(e.kind in ${PARTICIPATION}) as took_part from ${events} and e.viewer is not null group by 1),
+      t as (
+        select count(*) filter (where e.kind = 'follow') as follows, coalesce(sum(${coins}) filter (where e.kind = 'gift'), 0) as coins
+        from ${events} and e.kind in ('follow', 'gift')
+      )
+      select (select count(*) from s) as streams,
+        (select coalesce(sum(extract(epoch from (coalesce(ended_at, now()) - started_at)) * 1000), 0) from s) as live_ms,
+        (select count(*) from seen) as viewers, (select count(*) filter (where took_part) from seen) as interactors,
+        t.follows, t.coins
+      from t`),
+    db.execute<{ once: number; few: number; many: number }>(sql`
+      with s as (${picked}),
+      p as (select e.viewer, count(distinct e.stream_id) as n from ${events} and e.viewer is not null and e.kind in ${PARTICIPATION} group by 1)
+      select count(*) filter (where n = 1)::int as once, count(*) filter (where n between 2 and 3)::int as few,
+        count(*) filter (where n >= 4)::int as many
+      from p`),
+    // Every minute each stream was live, so a busy hour means busy for the time spent live in it, not just streamed often.
+    db.execute<{ day: number; hour: number; minutes: number; events: number }>(sql`
+      with s as (${picked}), z as ${zone},
+      mins as (
+        select generate_series(date_trunc('minute', started_at), coalesce(ended_at, now()) - interval '1 minute', interval '1 minute') as m from s
+      ),
+      live as (
+        select extract(dow from m at time zone z.tz)::int as day, extract(hour from m at time zone z.tz)::int as hour, count(*)::int as minutes
+        from mins, z group by 1, 2
+      ),
+      busy as (
+        select extract(dow from e.at at time zone z.tz)::int as day, extract(hour from e.at at time zone z.tz)::int as hour, count(*)::int as events
+        from stream_events e, z where e.stream_id in (select id from s) and e.kind in ${PARTICIPATION} group by 1, 2
+      )
+      select coalesce(live.day, busy.day) as day, coalesce(live.hour, busy.hour) as hour,
+        coalesce(live.minutes, 0) as minutes, coalesce(busy.events, 0) as events
+      from live full join busy on busy.day = live.day and busy.hour = live.hour`),
+    db.execute<{ keyword: string; count: number }>(sql`
+      with s as (${picked})
+      select e.data->>'keyword' as keyword, count(*)::int as count from ${events} and e.kind = 'command'
+      group by 1 order by 2 desc, 1 limit ${OVERVIEW_TOP}`),
+    db.execute<{ gift: string; count: number; coins: number; image: string | null }>(sql`
+      with s as (${picked})
+      select e.data->>'gift' as gift, sum((e.data->>'count')::int)::int as count, sum(${coins})::int as coins, max(e.data->>'image') as image
+      from ${events} and e.kind = 'gift' group by 1 order by 3 desc, 2 desc, 1 limit ${OVERVIEW_TOP}`),
+  ]);
+  return {
+    streams: Number(totals!.streams),
+    liveMs: Math.round(Number(totals!.live_ms)),
+    viewers: Number(totals!.viewers),
+    interactors: Number(totals!.interactors),
+    follows: Number(totals!.follows),
+    coins: Number(totals!.coins),
+    loyalty: { once: Number(loyalty!.once), few: Number(loyalty!.few), many: Number(loyalty!.many) },
+    activity: activity.map((a) => ({ day: Number(a.day), hour: Number(a.hour), minutes: Number(a.minutes), events: Number(a.events) })),
+    topCommands: commands.map((c) => ({ keyword: c.keyword, count: Number(c.count) })),
+    topGifts: gifts.map((g) => ({ gift: g.gift, count: Number(g.count), coins: Number(g.coins), image: g.image })),
+  };
 }
 
 // Limits a query on streams `s` to one TikTok account, when given.

@@ -25,7 +25,7 @@ jobs:
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # The companion compares its own version with the newest release tag to offer updates, so a tag that doesn't
       # match the version built into the app would be offered again forever after installing.
       - name: Check the tag matches the app's version
@@ -38,18 +38,18 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME doesn't match tauri.conf.json ($conf) and Cargo.toml ($cargo)"
             exit 1
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.rust-targets }}
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: apps/companion/src-tauri -> target
       - run: npm ci
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -59,6 +59,24 @@ jobs:
           releaseBody: Download the installer for your system below, or use the Download page on the Hyperion site.
           releaseDraft: true
           args: ${{ matrix.args }}
+      # Installed companions only update to an installer signed with this key (its public half is
+      # apps/companion/src-tauri/update-key.pub). Without the secrets this fails, and the release stays a draft.
+      - name: Sign the installer
+        shell: bash
+        working-directory: apps/companion
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#companion-v}"
+          installer=$(find src-tauri/target -path '*/bundle/*' \( -name "*_${version}_*-setup.exe" -o -name "*_${version}_*.dmg" \) | head -n 1)
+          if [ -z "$installer" ]; then echo "::error::No installer to sign"; exit 1; fi
+          npx tauri signer sign "$installer"
+          # GitHub turns the spaces in an asset's name into dots; the updater looks for the installer's name plus .sig.
+          sig="$(basename "$installer" | tr ' ' '.').sig"
+          cp "$installer.sig" "$sig"
+          gh release upload "$GITHUB_REF_NAME" "$sig" --clobber --repo "$GITHUB_REPOSITORY"
 
   publish:
     needs: build

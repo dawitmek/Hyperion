@@ -78,7 +78,7 @@ The first build takes a while, because it downloads the voices. Either way, data
 startup.
 
 The published image is the newest release (`latest`). To stay on one release until you choose to update, add
-`HYPERION_VERSION=0.4.0` (or another version from the
+`HYPERION_VERSION=0.6.0` (or another version from the
 [image's page](https://github.com/users/dawitmek/packages/container/package/hyperion)) to `.env`.
 
 ### 5. Check it's running
@@ -215,7 +215,7 @@ See what a service is doing with `docker compose -f docker/compose.yml --env-fil
 | `TRUST_PROXY` | `loopback,uniquelocal` | Which addresses are your reverse proxy, so rate limits apply per visitor: addresses, ranges, or `loopback` and `uniquelocal` (private networks). The default suits the built-in Caddy or a proxy on the same machine. With no proxy (port published on a LAN), set `none`, or clients could fake their address |
 | `HYPERION_BIND` | `127.0.0.1` | Interface the port is published on; `0.0.0.0` exposes it on the LAN |
 | `HYPERION_PORT` | `3000` | Published port |
-| `HYPERION_VERSION` | `latest` | Which release of the published image to pull, such as `0.4.0` |
+| `HYPERION_VERSION` | `latest` | Which release of the published image to pull, such as `0.6.0` |
 
 Browsers share cookies between servers on the same host name regardless of port, so two Hyperion servers on
 `127.0.0.1:3000` and `127.0.0.1:3131` log each other out in one browser. Use different host names (for example

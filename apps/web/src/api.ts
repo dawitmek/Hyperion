@@ -88,6 +88,8 @@ export interface Host {
   ttsUnlockGifts: string[];
   ttsUnlockMinutes: number;
   ttsTemplate: string;
+  ttsCommands: boolean;
+  ttsCommandTemplate: string;
   ttsCooldownMs: number;
   ttsAutoMaxViewers: number;
   ttsMinLevel: number;

@@ -46,6 +46,8 @@ export interface TtsConfig {
   unlockGifts: string[]; // lowercase; with any, only viewers who sent one are read
   unlockMs: number; // how long each gift unlocks reading for; 0: the rest of the stream
   template: string; // what's said, with {viewer} and {text}
+  commands: boolean; // also read each command that fires, whatever the mode
+  commandTemplate: string; // what's said for one, with {viewer} and {command}
   cooldownMs: number;
   autoMaxViewers: number; // auto mode: all chat up to this many viewers, prefixed chat above
   minLevel: number;
@@ -73,7 +75,7 @@ export type ActionOutput =
       fx: AlertFx | null;
     }
   | { type: 'effect'; effect: ScreenEffect; amount: number; speed: number; color: string | null; screen: string | null }
-  | { type: 'tts'; viewer: string; text: string; spoken: string }
+  | { type: 'tts'; viewer: string; text: string; spoken: string; command?: boolean } // command: a fired command, read even with chat reading off
   | { type: 'key'; keyword: string; viewer: string; repeats: number; count: number } // count: the gift's, else 1
   | { type: 'points'; viewer: string; amount: number };
 
@@ -134,6 +136,14 @@ function containsBlocked(text: string, blocked: string[]) {
   const words = new Set(lower.split(/[^\p{L}\p{N}']+/u));
   // Single words match whole words only (so "ass" doesn't block "class"); phrases match anywhere.
   return blocked.some((b) => (b.includes(' ') ? lower.includes(b) : words.has(b)));
+}
+
+// What's said for a command that fired. `viewer` is a display name, or null for a democracy vote (read as "Chat"). A
+// name the voice can't say, or with a blocked word in it, is read as "Someone".
+export function commandSpeech(cfg: Pick<TtsConfig, 'commandTemplate' | 'blockedWords'>, viewer: string | null, keyword: string) {
+  const name = viewer === null ? 'Chat' : cleanForSpeech(viewer);
+  const said = viewer === null || (SAYABLE.test(name) && !containsBlocked(name, cfg.blockedWords)) ? name : 'Someone';
+  return fillTemplate(cfg.commandTemplate, { viewer: said, command: keyword });
 }
 
 export const showsAlert = (a: Pick<ActionRule, 'text' | 'sound' | 'soundMediaId' | 'media' | 'alertFx'>) =>
@@ -215,7 +225,7 @@ export function createActions(ctx: ActionContext) {
       case 'top_gifters':
         return ctx.topGifters().slice(0, TOP_GIFTERS).includes(viewer);
       case 'viewer':
-        return action.audienceViewer?.toLowerCase() === viewer.toLowerCase();
+        return action.audienceViewer?.replace(/^@/, '').toLowerCase() === viewer.toLowerCase(); // typed with or without its @
     }
   }
 

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { formatKey, keyProblem, type Modifier } from '@hyperion/shared';
+import { CONTROL_CHARS, formatKey, keyProblem, type Modifier } from '@hyperion/shared';
 import { ApiError } from './api';
 import { Icon, type IconName } from './icons';
 
@@ -157,6 +157,11 @@ function useSavedText(value: string) {
   return { text, setText, revert: () => setText(value), save };
 }
 
+// Drops what a single-line field can never hold (control characters), and anything `allowed` doesn't match, one
+// character at a time, so a paste keeps what it can.
+export const cleanTyped = (text: string, allowed?: RegExp) =>
+  [...text.replace(CONTROL_CHARS, '')].filter((c) => !allowed || allowed.test(c)).join('');
+
 export function TextCell({
   value,
   onSave,
@@ -164,6 +169,9 @@ export function TextCell({
   placeholder,
   required,
   type,
+  maxLength,
+  allowed,
+  check,
 }: {
   value: string;
   onSave: (v: string) => Promise<unknown> | void;
@@ -171,22 +179,37 @@ export function TextCell({
   placeholder?: string;
   required?: boolean;
   type?: string;
+  maxLength: number;
+  allowed?: RegExp; // the characters it takes, one at a time; others are dropped as typed
+  check?: (v: string) => string | null; // why it can't be saved, shown under it; it isn't saved until fixed
 }) {
   const { text, setText, revert, save } = useSavedText(value);
+  const [problem, setProblem] = useState<string | null>(null);
   return (
-    <input
-      className="input"
-      type={type}
-      value={text}
-      placeholder={placeholder}
-      aria-label={label}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
-        const next = text.trim();
-        if (next === value || (required && !next)) return revert();
-        void save(() => onSave(next));
-      }}
-    />
+    <>
+      <input
+        className="input"
+        type={type}
+        value={text}
+        placeholder={placeholder}
+        aria-label={label}
+        aria-invalid={problem ? true : undefined}
+        maxLength={maxLength}
+        onChange={(e) => (setText(cleanTyped(e.target.value, allowed)), setProblem(null))}
+        onBlur={() => {
+          const next = text.trim();
+          if (next === value || (required && !next)) return (revert(), setProblem(null));
+          const wrong = next ? (check?.(next) ?? null) : null;
+          if (wrong) return setProblem(wrong);
+          void save(() => onSave(next));
+        }}
+      />
+      {problem && (
+        <span className="field-problem" role="alert">
+          {problem}
+        </span>
+      )}
+    </>
   );
 }
 

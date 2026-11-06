@@ -345,11 +345,18 @@ impl Controller {
     }
 
     /// Follows the dashboard's active profile. The host can still pick another game here until the next switch.
+    /// A new game from the server waits for Play, so the dashboard (or a stolen account) can't point keys at another
+    /// program while they're going out.
     pub fn apply_profile(&self, name: String, game_process: Option<String>) -> Result<(), String> {
         let game_process = game_process.map(|p| p.to_lowercase());
         *self.profile.lock().unwrap() = (Some(name), game_process.clone());
         match game_process {
-            Some(process) => self.update_config(|c| c.target_process = Some(process)),
+            Some(process) => {
+                if self.config().target_process.as_deref() != Some(process.as_str()) {
+                    self.set_paused(true, false);
+                }
+                self.update_config(|c| c.target_process = Some(process))
+            }
             None => {
                 self.emit();
                 Ok(())

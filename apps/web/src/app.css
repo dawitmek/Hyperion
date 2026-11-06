@@ -98,8 +98,9 @@ html:has(.app) { overscroll-behavior-y: none; }
 .live-editor-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 .live-editor-head p { margin: 0; }
 /* An action's trigger, with its reset-to-defaults button beside it */
-.trigger-row { display: flex; gap: 8px; }
-.trigger-row select { flex: 1; min-width: 0; }
+.new-goal { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line-strong); border-radius: calc(12px * var(--radius-scale)); background: var(--panel2); }
+.new-goal .row { gap: 8px; flex-wrap: nowrap; }
+.new-goal .row select { flex: 1; min-width: 0; }
 
 /* The card picker while editing the Live page: a tile per card not on the page, panels then numbers. */
 .live-picker { display: flex; flex-direction: column; gap: 8px; }
@@ -413,52 +414,68 @@ fieldset:disabled * { cursor: not-allowed; }
 .card-clickable:hover { border-color: var(--line-strong); }
 .activity-dialog { width: min(640px, calc(100vw - 32px)); max-width: none; max-height: min(760px, calc(100vh - 48px)); padding: 20px; border: 1px solid var(--line-strong); border-radius: calc(18px * var(--radius-scale)); background: var(--panel); color: var(--ink); box-sizing: border-box; }
 .activity-dialog::backdrop { background: rgba(5, 6, 10, 0.65); }
-/* The stream controls in the corner of every page but Live (LiveDock.tsx): a pill, or a small panel. */
-.live-dock, .live-dock-pill { --tone: var(--muted); position: fixed; right: 20px; bottom: 20px; z-index: 20; box-sizing: border-box; border: 1px solid var(--line-strong);
-  background: var(--panel); color: var(--ink); box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.45); }
+/* The stream controls in the corner of every page but Live (LiveDock.tsx): a pill, or a small panel. Frosted glass
+   lit from the top corner in the stream's colour: red live, amber in test mode, grey offline. */
+.live-dock, .live-dock-pill { --tone: var(--muted); position: fixed; right: 20px; bottom: 20px; z-index: 20; box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--tone) 28%, var(--line-strong)); color: var(--ink);
+  background: color-mix(in srgb, var(--panel) 84%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
 .live-dock.red, .live-dock-pill.red { --tone: var(--red); }
 .live-dock.amber, .live-dock-pill.amber { --tone: var(--amber); }
 .live-dock .dot, .live-dock-pill .dot { color: var(--tone); }
-.live-dock-pill { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 999px; font: 500 14px var(--font); cursor: pointer; }
-.live-dock-pill.red, .live-dock-pill.amber { border-color: color-mix(in srgb, var(--tone) 55%, var(--line-strong)); }
+.live-dock-pill { display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 16px 0 14px; border-radius: 999px; font: 600 14px var(--font); cursor: pointer;
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--tone) 16%, transparent), transparent 70%); }
+.live-dock-pill .num { color: var(--muted); font-weight: 500; }
 .live-dock-pill svg { color: var(--muted); transform: rotate(180deg); }
-.live-dock { display: flex; flex-direction: column; gap: 12px; width: 300px; padding: 14px; border-radius: calc(16px * var(--radius-scale));
-  border-top: 3px solid var(--tone); }
+.live-dock { display: flex; flex-direction: column; gap: 14px; width: 320px; padding: 16px; border-radius: calc(20px * var(--radius-scale));
+  background-image: radial-gradient(280px 140px at 0% 0%, color-mix(in srgb, var(--tone) 20%, transparent), transparent 70%); }
 .live-dock-head { display: flex; align-items: center; gap: 8px; }
-.live-dock-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0; }
-.live-dock-stats div { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 6px 8px; border-radius: calc(8px * var(--radius-scale)); background: var(--panel2); }
-.live-dock-stats dt { color: var(--muted); font-size: 11px; }
-.live-dock-stats dd { margin: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; font-size: 15px; }
-.live-dock-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.live-dock-row select.input { width: auto; min-height: 32px; padding-top: 2px; padding-bottom: 2px; font-size: 13px; }
-.live-dock-companion { --tone: var(--amber); display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
+.live-dock-status { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 12px 5px 10px; border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 15%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent); font-size: 13px; }
+.live-dock-status strong { font-weight: 650; }
+.live-dock-status .num { color: var(--muted); font-weight: 500; }
+.live-dock-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.live-dock-stats div { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 10px 12px; border-radius: calc(12px * var(--radius-scale));
+  background: color-mix(in srgb, var(--panel2) 70%, transparent); border: 1px solid var(--line); }
+.live-dock-stats dt { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.live-dock-stats dt span { display: inline-flex; }
+.live-dock-stats dd { margin: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 650; font-size: 20px; letter-spacing: -0.02em; }
+.live-dock-group { display: flex; flex-direction: column; border-radius: calc(12px * var(--radius-scale)); border: 1px solid var(--line); background: color-mix(in srgb, var(--panel2) 50%, transparent); }
+.live-dock-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 0 8px 0 12px; }
+.live-dock-row + .live-dock-row { border-top: 1px solid var(--line); }
+.live-dock-row select.input { width: auto; min-height: 30px; padding-top: 2px; padding-bottom: 2px; font-size: 13px; font-weight: 500; }
+.live-dock-companion { --tone: var(--amber); display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; padding: 3px 10px; border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 14%, transparent); font-size: 12.5px; font-weight: 600; }
 .live-dock-companion.on { --tone: var(--green); }
-.live-dock-companion .dot { color: var(--tone); }
+.live-dock-companion .dot { color: var(--tone); width: 7px; height: 7px; }
 .live-dock-actions { display: flex; gap: 8px; }
-.live-dock-actions .btn { flex: 1; }
-.live-dock-link { align-self: center; }
+.live-dock-actions .btn { flex: 1; min-height: 42px; border-radius: calc(12px * var(--radius-scale)); }
+.live-dock-link { display: inline-flex; align-items: center; gap: 4px; align-self: center; color: var(--muted); text-decoration: none; font-weight: 500; transition: color 0.15s; }
+.live-dock-link:hover { color: var(--ink); }
+.live-dock-link svg { transform: rotate(-90deg); transition: transform 0.15s; }
+.live-dock-link:hover svg { transform: rotate(-90deg) translateY(2px); }
 /* Opening grows the panel out of the corner the pill sits in, and closing shrinks it back; the pill then pops in. */
 .live-dock { transform-origin: bottom right; }
-.live-dock.enter { animation: dock-open 0.26s cubic-bezier(0.2, 0.9, 0.3, 1.15); }
-.live-dock.closing { animation: dock-close 0.18s ease-in forwards; pointer-events: none; }
-.live-dock.enter > * { animation: dock-rise 0.32s ease-out both; }
-.live-dock.enter > :nth-child(2) { animation-delay: 0.04s; }
-.live-dock.enter > :nth-child(3) { animation-delay: 0.08s; }
-.live-dock.enter > :nth-child(4) { animation-delay: 0.12s; }
-.live-dock.enter > :nth-child(n + 5) { animation-delay: 0.16s; }
+.live-dock.enter { animation: dock-open 0.2s cubic-bezier(0.34, 1.4, 0.64, 1); }
+.live-dock.closing { animation: dock-close 0.12s cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
+.live-dock.enter > * { animation: dock-rise 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.live-dock.enter > :nth-child(2) { animation-delay: 0.02s; }
+.live-dock.enter > :nth-child(3) { animation-delay: 0.04s; }
+.live-dock.enter > :nth-child(4) { animation-delay: 0.06s; }
+.live-dock.enter > :nth-child(n + 5) { animation-delay: 0.08s; }
 .live-dock.closing > * { animation: none; }
 .live-dock-pill { transform-origin: bottom right; transition: transform 0.15s, box-shadow 0.15s; }
 .live-dock-pill:hover { transform: translateY(-2px); box-shadow: 0 20px 44px -12px rgba(0, 0, 0, 0.5); }
-.live-dock-pill.enter { animation: dock-pill-in 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.3); }
+.live-dock-pill.enter { animation: dock-pill-in 0.18s cubic-bezier(0.34, 1.4, 0.64, 1); }
 .live-dock-pill svg { transition: transform 0.2s; }
 .live-dock-pill:hover svg { transform: rotate(180deg) translateY(2px); }
 /* While live, the pill breathes in the stream's colour so it's noticed from the corner of an eye. */
 .live-dock-pill.red, .live-dock-pill.amber { animation: dock-glow 2.4s ease-in-out infinite; }
-.live-dock-pill.enter.red, .live-dock-pill.enter.amber { animation: dock-pill-in 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.3), dock-glow 2.4s ease-in-out 0.24s infinite; }
-@keyframes dock-open { from { opacity: 0; transform: translateY(10px) scale(0.6); } to { opacity: 1; transform: none; } }
-@keyframes dock-close { to { opacity: 0; transform: translateY(10px) scale(0.6); } }
-@keyframes dock-rise { from { opacity: 0; transform: translateY(6px); } }
-@keyframes dock-pill-in { from { opacity: 0; transform: scale(0.7); } }
+.live-dock-pill.enter.red, .live-dock-pill.enter.amber { animation: dock-pill-in 0.18s cubic-bezier(0.34, 1.4, 0.64, 1), dock-glow 2.4s ease-in-out 0.18s infinite; }
+@keyframes dock-open { from { opacity: 0; transform: translateY(8px) scale(0.88); } to { opacity: 1; transform: none; } }
+@keyframes dock-close { to { opacity: 0; transform: translateY(6px) scale(0.92); } }
+@keyframes dock-rise { from { opacity: 0; transform: translateY(4px); } }
+@keyframes dock-pill-in { from { opacity: 0; transform: scale(0.85); } }
 @keyframes dock-glow {
   0%, 100% { box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.45), 0 0 0 0 color-mix(in srgb, var(--tone) 0%, transparent); }
   50% { box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.45), 0 0 0 5px color-mix(in srgb, var(--tone) 22%, transparent); }
@@ -499,6 +516,21 @@ fieldset:disabled * { cursor: not-allowed; }
 /* Analytics page */
 .analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; align-items: start; }
 .card h3 { font-size: 15px; margin-top: 4px; }
+/* Analytics cards (the page and a stream's report): a title that stands apart from the charts under it, with an accent
+   bar and a rule below, and a border clear enough to tell cards and tiles side by side apart. */
+.analytics-page .card-head h2 { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+.analytics-page .card-head h2::before { content: ''; flex: none; width: 4px; height: 22px; border-radius: 2px; background: var(--indigo-fill); }
+.analytics-page .card-head { padding-bottom: 14px; border-bottom: 1px solid var(--line-strong); }
+.analytics-page .card, .analytics-page .overview .stat-tile { border: 1px solid var(--line-strong); }
+/* The side-by-side parts inside a card (Top commands and Top gifts, the charts across streams) get an outline too. */
+.analytics-page .card .analytics-grid > div { min-width: 0; padding: 16px; border: 1px solid var(--line-strong); border-radius: calc(14px * var(--radius-scale)); }
+/* Side-by-side charts that each have a heading, a description and a chart (Across your streams): the three share rows,
+   so a shorter description doesn't pull its chart up out of line with the others. */
+.analytics-grid.aligned > div { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 6px; align-content: start; }
+.analytics-grid.aligned > div > h3 { margin-top: 0; }
+/* Small stat tiles inside a card (Patterns, a stream's report) stretch to fill the row, with room between them. */
+.analytics-page .card .stat-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
+.analytics-page .card .stat-tiles .stat-tile { padding: 14px 16px; }
 .stat-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .live-metrics { margin-bottom: 20px; }
 .details-toggle { display: flex; margin: 14px auto 0; }
@@ -860,6 +892,12 @@ label.btn.disabled { opacity: 0.6; pointer-events: none; }
 .unlock-gifts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .unlock-gifts li { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 8px; border: 1px solid var(--line-strong); border-radius: calc(10px * var(--radius-scale)); font-size: 13px; font-weight: 600; }
 .unlock-gifts img { width: 32px; height: 32px; object-fit: contain; }
+.blocked-words li { padding-left: 12px; font-weight: 500; }
+.blocked-words-add { gap: 8px; }
+.blocked-words-add .input { flex: 1; }
+/* A typed value that can't be saved as it is (TextCell's check), said under the field. */
+.field-problem { color: var(--red); font-size: 13px; font-weight: 500; }
+.input[aria-invalid='true'] { border-color: var(--red); }
 .font-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; max-height: 236px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
 .font-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: calc(10px * var(--radius-scale)); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color 0.15s; }
 .font-tile:hover { border-color: var(--indigo-fill); }

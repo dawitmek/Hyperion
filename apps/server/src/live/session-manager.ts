@@ -6,7 +6,7 @@ import { commands, goals, hosts, streamEvents, streams } from '../db/schema.js';
 import { StreamStatsTracker } from './stream-stats.js';
 import { ViewerGauge } from './viewer-gauge.js';
 import { StreamRecorder } from './recorder.js';
-import { cleanForSpeech, createActions, parseBlockedWords, type ActionContext, type ActionOutput } from '../actions/engine.js';
+import { cleanForSpeech, commandSpeech, createActions, parseBlockedWords, type ActionContext, type ActionOutput } from '../actions/engine.js';
 import { loadActionRules } from '../actions/load.js';
 import { voiceConfig, type SpeechService, type VoiceConfig } from '../tts/speech.js';
 import { activeProfile } from '../profiles/active.js';
@@ -24,6 +24,7 @@ const DEFAULT_ALERT_MS = 5000;
 const STATS_FLUSH_MS = 5000;
 const CHAT_POINTS_EVERY_MS = 60_000; // chatting earns points at most this often per viewer
 const POINTS_CHECK_COOLDOWN_MS = 10_000; // per viewer, so !points can't flood the overlay
+const COMMAND_SPEECH_GAP_MS = 3000; // commands read aloud at most this often
 
 // How viewers earn points, and whether they can check them. Null when the host has points off.
 interface PointsConfig {
@@ -59,6 +60,7 @@ interface LiveSession {
   stats: StreamStatsTracker;
   lastStats: string; // what overlays last got, so unchanged stats aren't resent
   presses: Map<string, number>; // keyword -> times fired this stream, for the dashboard (a number per command)
+  lastCommandSpoken: number; // when a command was last read aloud
 }
 
 export class LiveError extends Error {
@@ -180,6 +182,7 @@ export class SessionManager {
       stats: new StreamStatsTracker(goalRows),
       lastStats: '',
       presses: new Map(),
+      lastCommandSpoken: 0,
     };
     adapter.onEvent((event) => this.onEvent(hostId, session, event));
     adapter.onRoomStats((room) => {
@@ -367,7 +370,10 @@ export class SessionManager {
       if (output.type === 'tts' || output.speak) this.debug.write(area, hostId, 'dropped, the stream ended first', { text: output.text });
       return; // stopped while earlier speech was being made
     }
-    if (output.type === 'tts' && session.actionCtx.config.tts.mode === 'off') {
+    if (output.type === 'tts' && output.command && !session.actionCtx.config.tts.commands) {
+      return this.debug.write(area, hostId, 'dropped, reading commands was turned off', { text: output.text });
+    }
+    if (output.type === 'tts' && !output.command && session.actionCtx.config.tts.mode === 'off') {
       return this.debug.write(area, hostId, 'dropped, reading chat was turned off', { viewer: output.viewer, text: output.text });
     }
     if (output.type === 'alert' && !session.actionCtx.config.actions.some((a) => a.id === output.action && a.enabled)) {
@@ -440,6 +446,17 @@ export class SessionManager {
       ...this.avatar(hostId, decision.viewer),
     });
     for (const [viewerId, newLevel] of levelUps) this.levelUp(hostId, session, viewerId, newLevel);
+    this.readCommand(hostId, session, decision.keyword, via === 'vote' ? null : this.stats.nameOf(hostId, decision.viewer));
+  }
+
+  // Reads a command that fired aloud, when that's on. Commands can fire many times a second, so one is read at most
+  // every few seconds, and not while other speech is still being made: chat and alerts come first.
+  private readCommand(hostId: string, session: LiveSession, keyword: string, viewer: string | null) {
+    const cfg = session.actionCtx.config.tts;
+    const now = Date.now();
+    if (!cfg.commands || session.waiting > 0 || now - session.lastCommandSpoken < COMMAND_SPEECH_GAP_MS) return;
+    session.lastCommandSpoken = now;
+    this.perform(hostId, session, [{ type: 'tts', viewer: viewer ?? 'Chat', text: keyword, spoken: commandSpeech(cfg, viewer, keyword), command: true }]);
   }
 
   // Points for what a viewer did, and the answer to !points.
@@ -544,6 +561,8 @@ export class SessionManager {
         unlockGifts: host.ttsUnlockGifts.map((g) => g.trim().toLowerCase()),
         unlockMs: host.ttsUnlockMinutes * 60_000,
         template: host.ttsTemplate,
+        commands: host.ttsCommands,
+        commandTemplate: host.ttsCommandTemplate,
         cooldownMs: host.ttsCooldownMs,
         autoMaxViewers: host.ttsAutoMaxViewers,
         minLevel: host.ttsMinLevel,

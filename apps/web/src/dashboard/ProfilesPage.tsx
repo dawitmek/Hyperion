@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { GAME_TEMPLATES } from '@hyperion/shared';
 import { api, type Profile } from '../api';
-import { Card, ErrorNotice, TextCell, useError } from '../ui';
+import { Card, cleanTyped, ErrorNotice, TextCell, useError } from '../ui';
 import type { PageProps } from './Dashboard';
+
+// A program's file name, as the companion lists it: no folders, and none of the characters file names can't have.
+const GAME_PROCESS_CHAR = /[^\\/:*?"<>|]/;
 
 export function ProfilesPage({ host, refreshHost }: PageProps) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -63,10 +66,17 @@ export function ProfilesPage({ host, refreshHost }: PageProps) {
             {profiles.map((p) => (
               <tr key={p.id}>
                 <td>
-                  <TextCell value={p.name} required onSave={(v) => patch(p.id, { name: v })} label="Profile name" />
+                  <TextCell value={p.name} required maxLength={48} onSave={(v) => patch(p.id, { name: v })} label="Profile name" />
                 </td>
                 <td>
-                  <TextCell value={p.gameProcess ?? ''} placeholder="none" onSave={(v) => patch(p.id, { gameProcess: v || null })} label="Game process" />
+                  <TextCell
+                    value={p.gameProcess ?? ''}
+                    placeholder="none"
+                    maxLength={64}
+                    allowed={GAME_PROCESS_CHAR}
+                    onSave={(v) => patch(p.id, { gameProcess: v || null })}
+                    label="Game process"
+                  />
                 </td>
                 <td className="actions">
                   {p.active ? (
@@ -98,8 +108,15 @@ export function ProfilesPage({ host, refreshHost }: PageProps) {
             ))}
           </optgroup>
         </select>
-        <input className="input" placeholder="New profile name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={48} aria-label="New profile name" />
-        <input className="input" placeholder="Game process (optional)" value={gameProcess} onChange={(e) => setGameProcess(e.target.value)} aria-label="Game process" />
+        <input className="input" placeholder="New profile name" value={name} onChange={(e) => setName(cleanTyped(e.target.value))} required maxLength={48} aria-label="New profile name" />
+        <input
+          className="input"
+          placeholder="Game process (optional)"
+          value={gameProcess}
+          maxLength={64}
+          onChange={(e) => setGameProcess(cleanTyped(e.target.value, GAME_PROCESS_CHAR))}
+          aria-label="Game process"
+        />
         <button className="btn btn-primary">Add profile</button>
       </form>
     </Card>

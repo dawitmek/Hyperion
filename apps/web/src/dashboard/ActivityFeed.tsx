@@ -286,7 +286,7 @@ export function ActivityFeed({
           )}
           <div className="activity-filters">
             {!fixedKinds && <KindChips coded filters={FILTERS} kinds={chosenKinds} onChange={setKinds} />}
-            <input className="input activity-search" type="search" placeholder="Search viewers" aria-label="Search viewers by name or ID" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="input activity-search" type="search" maxLength={64} placeholder="Search viewers" aria-label="Search viewers by name or ID" value={search} onChange={(e) => setSearch(e.target.value)} />
             {!fixed && pastStreams.length > 0 && (
               <select className="input activity-stream" aria-label="Stream" value={selected} onChange={(e) => setSelected(e.target.value)}>
                 <option value="latest">{status.live ? 'This stream' : 'Latest session'}</option>

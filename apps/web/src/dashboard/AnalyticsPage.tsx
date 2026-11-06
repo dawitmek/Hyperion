@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { StreamDetail, StreamSummary, StreamViewer } from '@hyperion/shared';
+import { ANALYTICS_RANGES, type AnalyticsOverview, type AnalyticsRange, type StreamDetail, type StreamSummary, type StreamViewer } from '@hyperion/shared';
 import { api, type LiveStatus } from '../api';
-import { Card, Spinner, ViewerAvatar } from '../ui';
+import { Card, Seg, Spinner, ViewerAvatar } from '../ui';
 import { Icon, type IconName } from '../icons';
 import { Link, navigate, usePath } from '../router';
 import { BarList, ColumnChart, Sparkline, type Series } from './charts';
@@ -48,7 +48,7 @@ export function AnalyticsPage({ host, status }: PageProps) {
   const picked = account ?? mine;
   const shown = picked ? streams.filter((s) => s.tiktokUsername === picked) : streams;
   return (
-    <div className="stack">
+    <div className="stack analytics-page">
       {accounts.length > 1 && (
         <label className="row account-picker">
           <span className="muted">TikTok account</span>
@@ -65,6 +65,7 @@ export function AnalyticsPage({ host, status }: PageProps) {
       {shown.length > 0 && (
         <>
           <Overview streams={shown} />
+          <AllStreams account={picked} live={status.live} />
           <Trends streams={shown} onSelect={(id) => navigate(streamPath(id))} />
           <StreamList streams={shown} showAccount={accounts.length > 1 && !picked} />
         </>
@@ -90,7 +91,7 @@ function StreamPage({ id, streams, detail, status }: { id: string; streams: Stre
   const newer = same[at - 1];
   const older = same[at + 1];
   return (
-    <div className="stack">
+    <div className="stack analytics-page">
       <nav className="stream-nav" aria-label="Streams">
         <Link href="/dashboard/analytics" className="btn btn-ghost btn-sm">
           <span aria-hidden="true">‹</span> All streams
@@ -108,6 +109,140 @@ function StreamPage({ id, streams, detail, status }: { id: string; streams: Stre
         )}
       </nav>
       <StreamReport key={id} detail={detail} previous={older} status={status} />
+    </div>
+  );
+}
+
+const RANGE_OPTIONS = ANALYTICS_RANGES.map((r) => [r.id, r.label] as const);
+
+const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const hourName = (hour: number) => new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: 'numeric' });
+const dayName = (day: number, weekday: 'short' | 'long') => new Date(2023, 0, 1 + day).toLocaleDateString([], { weekday }); // 1 Jan 2023 was a Sunday
+const percent = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : '—');
+const oneDecimal = (n: number) => Math.round(n * 10) / 10;
+
+// Patterns across every stream in a stretch of time, which no single stream shows: when chat is busiest, whether
+// viewers come back, a few rates, and the most used commands and gifts worth the most coins.
+function AllStreams({ account, live }: { account: string; live: boolean }) {
+  const [range, setRange] = useState<AnalyticsRange>('all');
+  const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
+  useEffect(() => {
+    const query = new URLSearchParams({ range, tz: TIME_ZONE, ...(account && { account }) });
+    void api<AnalyticsOverview>('GET', `/analytics/overview?${query}`).then(setOverview);
+  }, [range, account, live]);
+  const label = ANALYTICS_RANGES.find((r) => r.id === range)!.label;
+  const o = overview;
+  const hours = o ? o.liveMs / 3_600_000 : 0;
+  const cameBack = o ? o.loyalty.few + o.loyalty.many : 0;
+  return (
+    <Card
+      title="Patterns"
+      description={
+        o &&
+        (o.streams === 0
+          ? `No streams in the last ${label}.`
+          : `Across ${number(o.streams)} ${o.streams === 1 ? 'stream' : 'streams'}${range === 'all' ? '' : ` in the last ${label}`}, ${duration(o.liveMs)} live.`)
+      }
+      actions={<Seg label="Time range" value={range} options={RANGE_OPTIONS} onChange={setRange} />}
+    >
+      {!o ? (
+        <Spinner />
+      ) : o.streams === 0 ? null : (
+        <>
+          <div className="stat-tiles">
+            <Stat icon="live" hue="red" label="Average stream" value={duration(o.liveMs / o.streams)} />
+            <Stat icon="coin" hue="teal" label="Coins per hour live" value={hours > 0 ? number(Math.round(o.coins / hours)) : '—'} />
+            <Stat icon="follower" hue="pink" label="Follows per 100 viewers" value={o.viewers > 0 ? oneDecimal((o.follows / o.viewers) * 100).toString() : '—'} />
+            <Stat icon="crowd" hue="indigo" label="Viewers who interact" value={percent(o.interactors, o.viewers)} note="chatted or sent a gift" />
+            <Stat icon="leaderboard" hue="violet" label="Came back" value={percent(cameBack, o.interactors)} note="of interactors took part in 2+ streams" />
+          </div>
+          <div className="analytics-grid">
+            <BusiestTimes activity={o.activity} />
+            <div>
+              <h3>Loyalty</h3>
+              <p className="muted small">How many of your streams each interactor took part in.</p>
+              {o.streams < 2 ? (
+                <p className="empty">Shows once there's more than one stream in this range.</p>
+              ) : (
+                <BarList
+                  caption="Interactors by streams taken part in"
+                  series={[{ name: 'Interactors', slot: 2 }]}
+                  rows={[
+                    { label: 'One stream', values: [o.loyalty.once], value: `${number(o.loyalty.once)} (${percent(o.loyalty.once, o.interactors)})` },
+                    { label: '2 to 3 streams', values: [o.loyalty.few], value: `${number(o.loyalty.few)} (${percent(o.loyalty.few, o.interactors)})` },
+                    { label: '4 or more', values: [o.loyalty.many], value: `${number(o.loyalty.many)} (${percent(o.loyalty.many, o.interactors)})` },
+                  ]}
+                />
+              )}
+            </div>
+          </div>
+          <div className="analytics-grid">
+            <div>
+              <h3>Top commands</h3>
+              {o.topCommands.length === 0 ? (
+                <p className="empty">No key presses yet.</p>
+              ) : (
+                <BarList
+                  caption="Most used commands"
+                  series={[{ name: 'Key presses', slot: 1 }]}
+                  rows={o.topCommands.map((c) => ({ label: c.keyword, values: [c.count], value: number(c.count) }))}
+                />
+              )}
+            </div>
+            <div>
+              <h3>Top gifts</h3>
+              {o.topGifts.length === 0 ? (
+                <p className="empty">No gifts yet.</p>
+              ) : (
+                <BarList
+                  caption="Gifts by total coins"
+                  series={[{ name: 'Coins', slot: 3 }]}
+                  rows={o.topGifts.map((g) => ({ label: g.gift, icon: <GiftImage src={g.image} />, values: [g.coins], value: `${number(g.coins)} (${number(g.count)} sent)` }))}
+                />
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+// Chat and gifts per minute live, by hour of the day and by weekday, in this computer's time zone. Per minute live, so
+// an hour you stream in often doesn't look busy just for that.
+function BusiestTimes({ activity }: { activity: AnalyticsOverview['activity'] }) {
+  const sum = (key: (a: AnalyticsOverview['activity'][number]) => number, count: number) =>
+    Array.from({ length: count }, (_, i) => {
+      const cells = activity.filter((a) => key(a) === i);
+      const minutes = cells.reduce((n, a) => n + a.minutes, 0);
+      const events = cells.reduce((n, a) => n + a.events, 0);
+      return { minutes, rate: minutes > 0 ? oneDecimal(events / minutes) : 0 };
+    });
+  const byHour = sum((a) => a.hour, 24);
+  const byDay = sum((a) => a.day, 7);
+  const best = (list: { rate: number }[]) => list.reduce((b, x, i) => (x.rate > list[b]!.rate ? i : b), 0);
+  const bestHour = best(byHour);
+  const bestDay = best(byDay);
+  const extra = (minutes: number) => [minutes > 0 ? `${duration(minutes * 60_000)} live` : 'Not live then'];
+  return (
+    <div>
+      <h3>When chat is busiest</h3>
+      <p className="muted small">
+        Chat and gifts per minute live, in your time zone.
+        {byDay[bestDay]!.rate > 0 && ` Busiest on ${dayName(bestDay, 'long')}s, and around ${hourName(bestHour)}.`}
+      </p>
+      <ColumnChart
+        caption="Chat and gifts per minute live, by hour of the day"
+        height={120}
+        series={[{ name: 'Per minute', slot: 1 }]}
+        columns={byHour.map((h, hour) => ({ label: hourName(hour), tick: hour % 6 === 0 ? hourName(hour) : undefined, values: [h.rate], extra: extra(h.minutes) }))}
+      />
+      <ColumnChart
+        caption="Chat and gifts per minute live, by weekday"
+        height={120}
+        series={[{ name: 'Per minute', slot: 2 }]}
+        columns={byDay.map((d, day) => ({ label: dayName(day, 'long'), tick: dayName(day, 'short'), values: [d.rate], extra: extra(d.minutes) }))}
+      />
     </div>
   );
 }
@@ -174,7 +309,7 @@ function Trends({ streams, selected, onSelect }: { streams: StreamSummary[]; sel
         `${number(latest.viewers)} viewers in your latest stream${change === null ? '' : `, ${change >= 0 ? `${change}% more` : `${-change}% fewer`} than the one before`}. ${number(latest.participants)} interacted.`
       }
     >
-      <div className="analytics-grid">
+      <div className="analytics-grid aligned">
         <div>
           <h3>Viewers</h3>
           <p className="muted small">Seen joining or doing anything. Quiet viewers already there aren't counted, so peak can be higher.</p>

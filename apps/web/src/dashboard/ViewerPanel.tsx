@@ -201,7 +201,7 @@ export function ViewerPanel({ viewer, live, onClose }: { viewer: string; live: b
                     <Icon name="search" size={16} />
                     <input
                       className="input"
-                      type="search"
+                      type="search" maxLength={100}
                       placeholder="Search chat, gifts and commands"
                       aria-label="Search this viewer's activity"
                       value={typed}

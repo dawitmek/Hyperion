@@ -1,9 +1,9 @@
 // The window's sections: each one folds away to its title and a one-line summary, and a bar that sticks to the top
-// jumps to any of them. Which ones are folded is remembered on this PC.
+// jumps to any of them. Every section starts folded; which ones were opened is remembered on this PC.
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 
-const FOLDED_KEY = "hyperion.companion.folded";
+const OPENED_KEY = "hyperion.companion.opened";
 
 interface Entry {
   id: string;
@@ -14,7 +14,7 @@ interface Entry {
 }
 
 interface Sections {
-  folded: Set<string>;
+  opened: Set<string>;
   toggle: (id: string) => void;
   open: (id: string) => void;
   entries: Entry[];
@@ -23,37 +23,35 @@ interface Sections {
 
 const SectionsContext = createContext<Sections | null>(null);
 
-function savedFolded(): Set<string> {
+function savedOpened(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(FOLDED_KEY) ?? "[]") as string[]);
+    return new Set(JSON.parse(localStorage.getItem(OPENED_KEY) ?? "[]") as string[]);
   } catch {
     return new Set();
   }
 }
 
 export function SectionsProvider({ children }: { children: ReactNode }) {
-  const [folded, setFolded] = useState(savedFolded);
+  const [opened, setOpened] = useState(savedOpened);
   const [entries, setEntries] = useState<Entry[]>([]);
   const save = (next: Set<string>) => {
-    setFolded(next);
+    setOpened(next);
     try {
-      localStorage.setItem(FOLDED_KEY, JSON.stringify([...next]));
+      localStorage.setItem(OPENED_KEY, JSON.stringify([...next]));
     } catch {
       // Not remembered on this PC; the section still folds.
     }
   };
   const value: Sections = {
-    folded,
+    opened,
     toggle: (id) => {
-      const next = new Set(folded);
+      const next = new Set(opened);
       if (!next.delete(id)) next.add(id);
       save(next);
     },
     open: (id) => {
-      if (!folded.has(id)) return;
-      const next = new Set(folded);
-      next.delete(id);
-      save(next);
+      if (opened.has(id)) return;
+      save(new Set(opened).add(id));
     },
     entries,
     register: (entry) => {
@@ -91,8 +89,8 @@ export function Section({
   badge?: string;
   children: ReactNode;
 }) {
-  const { folded, toggle, register } = useSections();
-  const closed = folded.has(id);
+  const { opened, toggle, register } = useSections();
+  const closed = !opened.has(id);
   useEffect(() => register({ id, label, icon, hue, badge }), [id, label, icon, hue, badge]);
   return (
     <section id={`section-${id}`} className={`card stack section ${closed ? "folded" : ""}`} aria-labelledby={`${id}-title`}>
@@ -123,7 +121,7 @@ export function Section({
 
 // Chips for every section on screen, in the window's order. The one being read is lit.
 export function JumpBar() {
-  const { entries, open, folded } = useSections();
+  const { entries, open, opened } = useSections();
   const [current, setCurrent] = useState<string | null>(null);
   const [target, setTarget] = useState<string | null>(null); // the section being jumped to
   const [more, setMore] = useState({ left: false, right: false }); // chips scrolled out of sight on either side
@@ -182,7 +180,7 @@ export function JumpBar() {
     section?.querySelector<HTMLElement>(".section-toggle")?.focus({ preventScroll: true });
     setCurrent(target);
     setTarget(null);
-  }, [target, folded]);
+  }, [target, opened]);
 
   const jump = (id: string) => {
     open(id);

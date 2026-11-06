@@ -12,6 +12,8 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
+use tokio_tungstenite::tungstenite::http::StatusCode;
 
 pub const PORT: u16 = 19131;
 const WAIT: Duration = Duration::from_secs(5);
@@ -55,24 +57,28 @@ impl Bedrock {
             };
             loop {
                 let Ok((stream, _)) = listener.accept().await else { continue };
-                let Ok(Ok(ws)) = timeout(WAIT, tokio_tungstenite::accept_async(stream)).await else { continue };
-                // The newest /connect wins, in case the old one is gone without saying so.
-                let id = this.links.fetch_add(1, Ordering::SeqCst);
-                let (commands, queue) = mpsc::channel(1);
-                let (this2, changed2) = (this.clone(), changed.clone());
-                let task = spawn(async move {
-                    serve(ws, queue).await;
-                    let mut link = this2.link.lock().unwrap();
-                    if link.as_ref().is_some_and(|l| l.id == id) {
-                        *link = None;
-                        drop(link);
-                        changed2();
+                // Each handshake on its own, so one that never finishes doesn't hold up the game's.
+                let (this, changed) = (this.clone(), changed.clone());
+                spawn(async move {
+                    let Ok(Ok(ws)) = timeout(WAIT, tokio_tungstenite::accept_hdr_async(stream, not_a_browser)).await else { return };
+                    // The newest /connect wins, in case the old one is gone without saying so.
+                    let id = this.links.fetch_add(1, Ordering::SeqCst);
+                    let (commands, queue) = mpsc::channel(1);
+                    let (this2, changed2) = (this.clone(), changed.clone());
+                    let task = spawn(async move {
+                        serve(ws, queue).await;
+                        let mut link = this2.link.lock().unwrap();
+                        if link.as_ref().is_some_and(|l| l.id == id) {
+                            *link = None;
+                            drop(link);
+                            changed2();
+                        }
+                    });
+                    if let Some(old) = this.link.lock().unwrap().replace(Link { id, commands, task }) {
+                        old.task.abort();
                     }
+                    changed();
                 });
-                if let Some(old) = this.link.lock().unwrap().replace(Link { id, commands, task }) {
-                    old.task.abort();
-                }
-                changed();
             }
         });
         *self.listener.lock().unwrap() = Some(task);
@@ -104,6 +110,18 @@ impl Bedrock {
         commands.send((command.to_string(), reply)).await.map_err(|_| gone())?;
         answer.await.map_err(|_| gone())?
     }
+}
+
+/// Browsers always say which page opened a WebSocket and Minecraft never does, so a web page can't pose as the game,
+/// take its place and read the commands meant for it.
+#[allow(clippy::result_large_err)] // the shape tungstenite's callback takes
+fn not_a_browser(request: &Request, response: Response) -> Result<Response, ErrorResponse> {
+    if request.headers().contains_key("origin") {
+        let mut refused = ErrorResponse::new(Some("Only Minecraft can connect here".into()));
+        *refused.status_mut() = StatusCode::FORBIDDEN;
+        return Err(refused);
+    }
+    Ok(response)
 }
 
 /// Sends each command and waits for its answer. Ends when the game leaves.
@@ -242,6 +260,25 @@ mod tests {
         while bedrock.connected() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+        bedrock.stop();
+    }
+
+    #[tokio::test]
+    async fn web_pages_cannot_take_the_games_place() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let bedrock = Arc::new(Bedrock::default());
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        bedrock.start(port, || {});
+        let mut page = format!("ws://127.0.0.1:{port}").into_client_request().unwrap();
+        page.headers_mut().insert("origin", "https://example.com".parse().unwrap());
+        let refused = loop {
+            match tokio_tungstenite::connect_async(page.clone()).await {
+                Err(tokio_tungstenite::tungstenite::Error::Io(_)) => tokio::time::sleep(Duration::from_millis(20)).await, // not listening yet
+                other => break other,
+            }
+        };
+        assert!(matches!(refused, Err(tokio_tungstenite::tungstenite::Error::Http(ref r)) if r.status() == 403), "{refused:?}");
+        assert!(!bedrock.connected());
         bedrock.stop();
     }
 }

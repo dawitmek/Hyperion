@@ -47,7 +47,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
         <ErrorNotice error={error} />
         <label className="field">
           Email
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+          <input type="email" value={email} maxLength={254} onChange={(e) => setEmail(e.target.value.trim())} required autoComplete="email" />
         </label>
         <label className="field">
           Password
@@ -57,6 +57,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             minLength={8}
+            maxLength={128}
             required
             autoComplete={login ? 'current-password' : 'new-password'}
           />

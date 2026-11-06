@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { MAX_MEDIA_BYTES, MAX_MEDIA_TOTAL_BYTES, type MediaItem, type MediaKind } from '@hyperion/shared';
+import { PLAIN_TEXT_PATTERN, MAX_MEDIA_BYTES, MAX_MEDIA_TOTAL_BYTES, type MediaItem, type MediaKind } from '@hyperion/shared';
 import { actions, hiddenMedia, media } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { sniff } from './sniff.js';
 
 const idParam = { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } as const;
-const name = { type: 'string', minLength: 1, maxLength: 100 } as const;
+const name = { type: 'string', minLength: 1, maxLength: 100, pattern: PLAIN_TEXT_PATTERN } as const;
 const listed = {
   id: media.id,
   name: media.name,

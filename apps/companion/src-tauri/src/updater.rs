@@ -56,6 +56,7 @@ struct Release {
     asset_name: String,
     asset_url: String,
     asset_size: Option<u64>,
+    signature_url: String, // the installer's .sig, made with the release key
 }
 
 #[derive(Default)]
@@ -266,6 +267,7 @@ async fn latest() -> Result<Option<Release>, String> {
             asset_name: "fake-update".into(),
             asset_url: String::new(),
             asset_size: None,
+            signature_url: String::new(),
         }));
     }
     let response = client()?
@@ -289,28 +291,32 @@ fn newest(releases: &[GithubRelease], current: &str, os: &str) -> Option<Release
         .filter_map(|r| {
             let version = r.tag_name.strip_prefix(TAG_PREFIX)?;
             let parsed = parse_version(version)?;
-            let asset = installer(&r.assets, os)?;
-            Some((parsed, r, version, asset))
+            let (asset, signature) = installer(&r.assets, os)?;
+            Some((parsed, r, version, asset, signature))
         })
         .max_by(|a, b| a.0.cmp(&b.0))
-        .filter(|(_, _, version, _)| is_newer(version, current))
-        .map(|(_, r, version, asset)| Release {
+        .filter(|(_, _, version, _, _)| is_newer(version, current))
+        .map(|(_, r, version, asset, signature)| Release {
             version: version.to_string(),
             notes_url: r.html_url.clone(),
             asset_name: asset.name.clone(),
             asset_url: asset.browser_download_url.clone(),
             asset_size: asset.size,
+            signature_url: signature.browser_download_url.clone(),
         })
 }
 
-/// The installer the release workflow makes for each system: an NSIS setup .exe for Windows, a universal .dmg for macOS.
-fn installer<'a>(assets: &'a [GithubAsset], os: &str) -> Option<&'a GithubAsset> {
+/// The installer the release workflow makes for each system (an NSIS setup .exe for Windows, a universal .dmg for
+/// macOS) and its signature. Releases from before installers were signed have none, and aren't offered.
+fn installer<'a>(assets: &'a [GithubAsset], os: &str) -> Option<(&'a GithubAsset, &'a GithubAsset)> {
     let suffix = match os {
         "windows" => "-setup.exe",
         "macos" => ".dmg",
         _ => return None,
     };
-    assets.iter().find(|a| a.name.ends_with(suffix))
+    let asset = assets.iter().find(|a| a.name.ends_with(suffix))?;
+    let signature = assets.iter().find(|a| a.name == format!("{}.sig", asset.name))?;
+    Some((asset, signature))
 }
 
 /// "1.2.3" as [1, 2, 3], ignoring anything after a - or +. Missing parts count as 0.
@@ -375,13 +381,45 @@ async fn download(ctl: &Arc<Controller>, release: &Release) -> Result<PathBuf, S
     }
     out.flush().map_err(|e| format!("Couldn't save the update: {e}"))?;
     drop(out);
-    // GitHub lists each file's size; anything else is a cut-off or tampered download.
+    // GitHub lists each file's size; anything else is a cut-off download.
     if total.is_some_and(|t| t != done) {
         let _ = std::fs::remove_file(&part);
         return Err("The download was incomplete. Try again".into());
     }
+    // Only an installer signed with the release key runs, so whoever gets into the GitHub repository or the release
+    // workflow still can't put their own program on this PC.
+    let signature = client()?
+        .get(&release.signature_url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("Couldn't download the update's signature: {e}"))?
+        .text()
+        .await
+        .map_err(|e| format!("Couldn't download the update's signature: {e}"))?;
+    let data = std::fs::read(&part).map_err(|e| format!("Couldn't check the update: {e}"))?;
+    if let Err(error) = verify(&data, &signature) {
+        let _ = std::fs::remove_file(&part);
+        return Err(format!("The update isn't signed by Hyperion, so it wasn't installed ({error})"));
+    }
     std::fs::rename(&part, &file).map_err(|e| format!("Couldn't save the update: {e}"))?;
     Ok(file)
+}
+
+/// The release key's public half, as `tauri signer generate` writes it. Installers are signed in
+/// .github/workflows/release-companion.yml with the private half.
+const UPDATE_KEY: &str = include_str!("../update-key.pub");
+
+/// Whether `signature` (a `tauri signer sign` .sig: base64 of a minisign signature) signs `data` with the release key.
+fn verify(data: &[u8], signature: &str) -> Result<(), String> {
+    use base64::Engine;
+    let text = |b64: &str| -> Result<String, String> {
+        let bytes = base64::engine::general_purpose::STANDARD.decode(b64.trim()).map_err(|e| e.to_string())?;
+        String::from_utf8(bytes).map_err(|e| e.to_string())
+    };
+    let key = minisign_verify::PublicKey::decode(&text(UPDATE_KEY)?).map_err(|e| e.to_string())?;
+    let signature = minisign_verify::Signature::decode(&text(signature)?).map_err(|e| e.to_string())?;
+    key.verify(data, &signature, true).map_err(|e| e.to_string())
 }
 
 /// Lets go of every key, starts the installer and quits so it can replace this app. It starts the new version.
@@ -508,7 +546,8 @@ mod tests {
             prerelease: false,
             assets: assets
                 .iter()
-                .map(|name| GithubAsset { name: name.to_string(), browser_download_url: format!("https://example.com/{name}"), size: Some(10) })
+                .flat_map(|name| [name.to_string(), format!("{name}.sig")])
+                .map(|name| GithubAsset { browser_download_url: format!("https://example.com/{name}"), name, size: Some(10) })
                 .collect(),
         }
     }
@@ -540,6 +579,29 @@ mod tests {
         assert_eq!((mac.version.as_str(), mac.asset_name.as_str()), ("0.5.0", "Hyperion.Companion_0.5.0_universal.dmg"));
         assert!(newest(&releases, "0.5.0", "macos").is_none());
         assert!(newest(&releases, "0.3.0", "linux").is_none());
+    }
+
+    #[test]
+    fn skips_releases_without_a_signature() {
+        let mut unsigned = release("companion-v0.6.0", &["a.dmg"]);
+        unsigned.assets.retain(|a| !a.name.ends_with(".sig"));
+        assert!(newest(&[unsigned], "0.3.0", "macos").is_none());
+        let signed = newest(&[release("companion-v0.6.0", &["a.dmg"])], "0.3.0", "macos").unwrap();
+        assert_eq!(signed.signature_url, "https://example.com/a.dmg.sig");
+    }
+
+    /// A file signed with the real release key by `tauri signer sign`, so this also checks update-key.pub is the
+    /// key the workflow signs with.
+    const SIGNED: &[u8] = include_bytes!("../test-fixtures/signed.txt");
+    const SIGNATURE: &str = include_str!("../test-fixtures/signed.txt.sig");
+
+    #[test]
+    fn installs_only_what_the_release_key_signed() {
+        assert_eq!(verify(SIGNED, SIGNATURE), Ok(()));
+        let mut tampered = SIGNED.to_vec();
+        tampered[0] ^= 1;
+        assert!(verify(&tampered, SIGNATURE).is_err());
+        assert!(verify(SIGNED, "not a signature").is_err());
     }
 
     #[test]

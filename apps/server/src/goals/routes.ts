@@ -1,13 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { GOAL_METRICS, GOAL_WIDGET_SPOT, MAX_WIDGETS, type Goal, type GoalMetric, type GoalRaise } from '@hyperion/shared';
+import { GOAL_METRICS, PLAIN_TEXT_PATTERN, GOAL_WIDGET_SPOT, MAX_WIDGETS, type Goal, type GoalMetric, type GoalRaise } from '@hyperion/shared';
 import { goals, overlayScreens } from '../db/schema.js';
 import { raiseSchema, toScreen } from '../screens/routes.js';
 import { requireHost } from '../auth/session.js';
 
 type Body = { name: string; metric: GoalMetric; target: number; enabled?: boolean; raise?: GoalRaise | null };
 const fields = {
-  name: { type: 'string', minLength: 1, maxLength: 40 },
+  name: { type: 'string', minLength: 1, maxLength: 40, pattern: PLAIN_TEXT_PATTERN },
   metric: { enum: GOAL_METRICS },
   target: { type: 'integer', minimum: 1, maximum: 100_000_000 },
   enabled: { type: 'boolean' },

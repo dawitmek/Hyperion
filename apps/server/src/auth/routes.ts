@@ -90,6 +90,8 @@ export async function authRoutes(app: FastifyInstance) {
         ttsUnlockGifts: hosts.ttsUnlockGifts,
         ttsUnlockMinutes: hosts.ttsUnlockMinutes,
         ttsTemplate: hosts.ttsTemplate,
+        ttsCommands: hosts.ttsCommands,
+        ttsCommandTemplate: hosts.ttsCommandTemplate,
         ttsCooldownMs: hosts.ttsCooldownMs,
         ttsAutoMaxViewers: hosts.ttsAutoMaxViewers,
         ttsMinLevel: hosts.ttsMinLevel,

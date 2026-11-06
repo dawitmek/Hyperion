@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { AddressInfo } from 'node:net';
 import type { RouteOptions } from 'fastify';
 import { WebSocket } from 'ws';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { ALERT_PRESETS, BUILT_IN_MEDIA, PROTOCOL_VERSION, WIDGET_PRESETS, type Gift, type MediaItem } from '@hyperion/shared';
 import { seedLibrary } from '../src/media/library.js';
 import { buildApp } from '../src/app.js';
@@ -727,6 +727,27 @@ describe('voice changes mid-stream', () => {
     await api(cookie, 'POST', '/api/live/stop');
   });
 
+  it('reads commands that fire aloud when asked, even with chat reading off, and not too often', async () => {
+    const { cookie } = await signUp();
+    const me = (await api(cookie, 'GET', '/api/auth/me')).json();
+    expect(me).toMatchObject({ ttsCommands: false, ttsCommandTemplate: '{viewer} pressed {command}' });
+    expect((await api(cookie, 'PATCH', '/api/settings', { ttsCommandTemplate: 'someone pressed a key' })).statusCode).toBe(400); // needs {command}
+    await api(cookie, 'PATCH', '/api/settings', { ttsMode: 'off', ttsEngine: 'espeak', ttsCommands: true });
+    await api(cookie, 'POST', '/api/live/start', { source: 'simulated' });
+    const overlay = connect(`/ws/overlay?token=${me.overlayToken}`);
+    await overlay.drain(100); // live + mode + leaderboard
+    await api(cookie, 'POST', '/api/live/simulate', { viewer: 'alice', text: 'jump' });
+    expect((await overlay.drain()).filter((m: any) => m.type === 'tts')).toMatchObject([
+      { type: 'tts', viewer: 'alice', text: 'jump', speech: { kind: 'espeak', text: 'alice pressed jump' } },
+    ]);
+    // Another right after waits its turn: it isn't read.
+    await api(cookie, 'POST', '/api/live/simulate', { viewer: 'bob', text: 'run' });
+    const after = await overlay.drain();
+    expect(after.filter((m: any) => m.type === 'command')).toHaveLength(1);
+    expect(after.filter((m: any) => m.type === 'tts')).toEqual([]);
+    await api(cookie, 'POST', '/api/live/stop');
+  });
+
   it('cuts off read-aloud chat the moment reading chat is turned off, and reads nothing after', async () => {
     const { cookie } = await signUp();
     const me = (await api(cookie, 'GET', '/api/auth/me')).json();
@@ -1084,6 +1105,28 @@ describe('stream activity and analytics', () => {
     expect((await api(b.cookie, 'GET', '/api/analytics/streams')).json()[0]).toMatchObject({ participants: 1, newParticipants: 1 });
     expect((await api(a.cookie, 'GET', `/api/analytics/streams/${other}`)).statusCode).toBe(404);
     expect((await api(a.cookie, 'GET', `/api/analytics/activity?stream=${other}`)).json()).toEqual({ stream: null, events: [] });
+
+    // Patterns across streams: each viewer once, however many streams they came to.
+    const overview = async (cookie: string, query = '') => (await api(cookie, 'GET', `/api/analytics/overview${query}`)).json();
+    const all = await overview(a.cookie);
+    expect(all).toMatchObject({ streams: 3, liveMs: 3 * 3600_000, viewers: 4, interactors: 4, follows: 0, coins: 1 });
+    expect(all.loyalty).toEqual({ once: 2, few: 2, many: 0 }); // jules and nova once; kai twice and mira three times
+    // Each stream was live an hour, and every chat line and gift lands in some hour of some weekday.
+    const sumOf = (key: 'minutes' | 'events') => all.activity.reduce((n: number, c: Record<string, number>) => n + c[key], 0);
+    expect(sumOf('minutes')).toBe(180);
+    expect(sumOf('events')).toBe(9); // 8 chat lines and the gift
+    expect(all.topCommands).toEqual([{ keyword: 'jump', count: 1 }]);
+    expect(all.topGifts).toEqual([{ gift: '50% Rose', count: 1, coins: 1, image: 'https://cdn.test/rose.png' }]);
+    // A time zone shifts hours, not totals; an unknown one is taken as UTC.
+    const tokyo = await overview(a.cookie, '?tz=Asia/Tokyo');
+    expect(tokyo.activity.reduce((n: number, c: { minutes: number }) => n + c.minutes, 0)).toBe(180);
+    expect((await overview(a.cookie, '?tz=Nowhere/Land')).activity).toEqual(all.activity);
+    expect(await overview(a.cookie, '?account=main_account')).toMatchObject({ streams: 2, viewers: 4, coins: 0, topGifts: [] });
+    expect(await overview(a.cookie, '?range=7d')).toMatchObject({ streams: 3 });
+    await app.db.update(streams).set({ startedAt: new Date(Date.now() - 10 * day) }).where(eq(streams.id, giftStream));
+    expect(await overview(a.cookie, '?range=7d')).toMatchObject({ streams: 2, viewers: 4, coins: 0, topGifts: [] });
+    expect(await overview(b.cookie)).toMatchObject({ streams: 1, viewers: 1 });
+    expect((await api(a.cookie, 'GET', '/api/analytics/overview?range=1y')).statusCode).toBe(400);
   });
 });
 
@@ -1842,5 +1885,30 @@ describe('endpoint protection', () => {
     for (let i = 0; i < 600; i++) expect((await health()).statusCode).toBe(200);
     expect((await health()).statusCode).toBe(429);
     await limited.close();
+  });
+});
+
+describe('text people type', () => {
+  it('refuses control characters, stray placeholders and over-long text, and takes ordinary text', async () => {
+    const { cookie } = await signUp();
+    const status = async (method: 'POST' | 'PATCH', url: string, body: object) => (await api(cookie, method, url, body)).statusCode;
+    // Wording: only its own {placeholders}, and the one it needs.
+    expect(await status('PATCH', '/api/settings', { ttsTemplate: '{viewer}: {text}!' })).toBe(200);
+    expect(await status('PATCH', '/api/settings', { ttsTemplate: '{veiwer} says {text}' })).toBe(400);
+    expect(await status('PATCH', '/api/settings', { ttsTemplate: '{text} {' })).toBe(400);
+    expect(await status('PATCH', '/api/settings', { ttsCommandTemplate: '{viewer} used {command}' })).toBe(200);
+    expect(await status('PATCH', '/api/settings', { ttsCommandTemplate: '{viewer} used {command} {text}' })).toBe(400);
+    expect(await status('PATCH', '/api/settings', { ttsTemplate: `${'a'.repeat(200)}{text}` })).toBe(400);
+    // Control characters, in names, word lists and keywords.
+    expect(await status('PATCH', '/api/settings', { ttsBlockedWords: 'spoiler, bad word' })).toBe(200);
+    expect(await status('PATCH', '/api/settings', { ttsBlockedWords: 'spoiler\u0000' })).toBe(400);
+    expect(await status('POST', '/api/profiles', { name: 'Minecraft — survival' })).toBe(201);
+    expect(await status('POST', '/api/profiles', { name: 'Mine\ncraft' })).toBe(400);
+    expect(await status('POST', '/api/commands', { keyword: 'spin', key: 'KeyQ', holdMs: 100, cooldownMs: 0 })).toBe(201);
+    expect(await status('POST', '/api/commands', { keyword: 'sp\u0007in', key: 'KeyQ', holdMs: 100, cooldownMs: 0 })).toBe(400);
+    // Shapes: cloud voices and keys.
+    expect(await status('PATCH', '/api/settings', { ttsCloudVoice: 'en-US-Neural2-F' })).toBe(200);
+    expect(await status('PATCH', '/api/settings', { ttsCloudVoice: 'en US <voice>' })).toBe(400);
+    expect(await status('PATCH', '/api/settings', { ttsCloudKey: 'has a space' })).toBe(400);
   });
 });

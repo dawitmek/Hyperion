@@ -30,6 +30,8 @@ export const hosts = pgTable('hosts', {
   ttsUnlockGifts: jsonb('tts_unlock_gifts').$type<string[]>().notNull().default([]), // with any, only viewers who sent one are read
   ttsUnlockMinutes: integer('tts_unlock_minutes').notNull().default(0), // per gift; 0: the rest of the stream
   ttsTemplate: text('tts_template').notNull().default('{viewer} says {text}'),
+  ttsCommands: boolean('tts_commands').notNull().default(false), // also read each command that fires
+  ttsCommandTemplate: text('tts_command_template').notNull().default('{viewer} pressed {command}'),
   ttsCooldownMs: integer('tts_cooldown_ms').notNull().default(15000), // per viewer
   ttsAutoMaxViewers: integer('tts_auto_max_viewers').notNull().default(25), // auto mode: all chat up to this many viewers
   ttsMinLevel: integer('tts_min_level').notNull().default(1), // only enforced with progression on

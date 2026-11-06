@@ -85,9 +85,11 @@ export function LiveDock({ host, refreshHost, status, setStatus, feed }: PagePro
       onAnimationEnd={(e) => e.target === e.currentTarget && closed()}
     >
       <div className="live-dock-head">
-        <span className={`dot ${status.live ? 'live' : ''}`} aria-hidden="true" />
-        <strong>{status.live ? (test ? 'Test mode' : 'Live on TikTok') : 'Offline'}</strong>
-        {time && <span className="num muted">{time}</span>}
+        <span className="live-dock-status">
+          <span className={`dot ${status.live ? 'live' : ''}`} aria-hidden="true" />
+          <strong>{status.live ? (test ? 'Test mode' : 'Live on TikTok') : 'Offline'}</strong>
+          {time && <span className="num">{time}</span>}
+        </span>
         <span className="spacer" />
         <button className="btn btn-ghost btn-sm btn-icon" onClick={collapse} disabled={closing} aria-expanded="true" aria-label="Hide stream controls" title="Hide">
           <Icon name="chevron" size={14} />
@@ -96,41 +98,45 @@ export function LiveDock({ host, refreshHost, status, setStatus, feed }: PagePro
 
       {stats && (
         <dl className="live-dock-stats">
-          <div>
-            <dt>Viewers</dt>
-            <dd className="num">{stats.viewers.toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Followers</dt>
-            <dd className="num">+{stats.follows.toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Likes</dt>
-            <dd className="num">{stats.likes.toLocaleString()}</dd>
-          </div>
-          <div>
-            <dt>Coins</dt>
-            <dd className="num">{stats.diamonds.toLocaleString()}</dd>
-          </div>
+          {(
+            [
+              ['Viewers', 'eye', 'sky', stats.viewers.toLocaleString()],
+              ['Followers', 'follower', 'pink', `+${stats.follows.toLocaleString()}`],
+              ['Likes', 'heart', 'red', stats.likes.toLocaleString()],
+              ['Coins', 'coin', 'teal', stats.diamonds.toLocaleString()],
+            ] as const
+          ).map(([label, icon, hue, value]) => (
+            <div key={label}>
+              <dt>
+                <span style={{ color: `var(--${hue})` }}>
+                  <Icon name={icon} size={13} />
+                </span>
+                {label}
+              </dt>
+              <dd className="num">{value}</dd>
+            </div>
+          ))}
         </dl>
       )}
 
-      <label className="live-dock-row">
-        <span className="muted small">Crowd mode</span>
-        <select className="input" value={host.mode} onChange={(e) => setMode(e.target.value as Mode)}>
-          {MODES.map((m) => (
-            <option key={m} value={m}>
-              {MODE_INFO[m].label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="live-dock-row">
-        <span className="muted small">Companion</span>
-        <span className={`live-dock-companion ${status.companionsOnline > 0 ? 'on' : ''}`}>
-          <span className="dot" aria-hidden="true" />
-          {status.companionsOnline > 0 ? `${status.companionsOnline} connected` : 'Not connected'}
-        </span>
+      <div className="live-dock-group">
+        <label className="live-dock-row">
+          <span className="muted small">Crowd mode</span>
+          <select className="input" value={host.mode} onChange={(e) => setMode(e.target.value as Mode)}>
+            {MODES.map((m) => (
+              <option key={m} value={m}>
+                {MODE_INFO[m].label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="live-dock-row">
+          <span className="muted small">Companion</span>
+          <span className={`live-dock-companion ${status.companionsOnline > 0 ? 'on' : ''}`}>
+            <span className="dot" aria-hidden="true" />
+            {status.companionsOnline > 0 ? `${status.companionsOnline} connected` : 'Not connected'}
+          </span>
+        </div>
       </div>
 
       <ErrorNotice error={error} />
@@ -147,9 +153,11 @@ export function LiveDock({ host, refreshHost, status, setStatus, feed }: PagePro
               title={host.tiktokUsername ? undefined : 'Add your TikTok username in Settings first'}
               onClick={start('tiktok')}
             >
+              <Icon name="live" size={15} />
               {busy ? 'Connecting…' : 'Go live'}
             </button>
             <button className="btn" disabled={busy} onClick={start('simulated')}>
+              <Icon name="play" size={14} />
               Test mode
             </button>
           </>
@@ -157,6 +165,7 @@ export function LiveDock({ host, refreshHost, status, setStatus, feed }: PagePro
       </div>
       <Link href="/dashboard" className="small live-dock-link">
         Open the Live page
+        <Icon name="chevron" size={12} />
       </Link>
     </section>
   );

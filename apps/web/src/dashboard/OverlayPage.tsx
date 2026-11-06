@@ -7,7 +7,7 @@ import { alertPlace, LAYOUT_CANVAS, LAYOUT_SAFE, linkedWidget, useClearOfWidgets
 import { alertHandleCorner, dragAlert, dragAlertSize, dragResize } from './alert-drag';
 import { ColorField } from './AlertLookEditor';
 import { SpotPad, type PadSpot } from './SpotPad';
-import { AmountField, Card, Switch, ConfirmButton, ErrorNotice, HueIcon, NumberCell, Scrubber, TextCell, useError, type Hue } from '../ui';
+import { AmountField, Card, cleanTyped, Switch, ConfirmButton, ErrorNotice, HueIcon, NumberCell, Scrubber, TextCell, useError, type Hue } from '../ui';
 import { Icon, type IconName } from '../icons';
 import { DEFAULT_JAR_DIAMONDS, GiftBus, usePreview, Widget, type ChatLine } from '../overlay-widgets';
 import type { PageProps } from './Dashboard';
@@ -52,7 +52,7 @@ export function OverlayPage({ host, refreshHost }: PageProps) {
               autoFocus
               placeholder="Overlay name, e.g. Alerts corner"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => setName(cleanTyped(e.target.value))}
               required
               maxLength={40}
               aria-label="New overlay name"
@@ -315,7 +315,7 @@ function WidgetLinksCard({ main, goals, reload }: { main: Screen; goals: Goal[];
     >
       <input
         className="input"
-        type="search"
+        type="search" maxLength={100}
         placeholder="Find a widget, like chat or coins"
         aria-label="Find a widget"
         value={search}
@@ -682,7 +682,7 @@ function PositionDialog({
                 value={current.text ?? DEFAULT_MESSAGE}
                 required
                 maxLength={MAX_MESSAGE_LENGTH}
-                onChange={(e) => place(picked, { text: e.target.value })}
+                onChange={(e) => place(picked, { text: cleanTyped(e.target.value) })}
               />
             </label>
           )}
@@ -852,7 +852,7 @@ function WidgetPicker({ options, goals, onAdd }: { options: WidgetChoice[]; goal
   );
 }
 
-const METRIC_LABELS: Record<GoalMetric, string> = { likes: 'Likes', follows: 'Follows', shares: 'Shares', diamonds: 'Coins', subscriptions: 'Subscriptions' };
+export const METRIC_LABELS: Record<GoalMetric, string> = { likes: 'Likes', follows: 'Follows', shares: 'Shares', diamonds: 'Coins', subscriptions: 'Subscriptions' };
 const METRIC_ICONS: Record<GoalMetric, { icon: IconName; hue: Hue }> = {
   likes: { icon: 'heart', hue: 'pink' },
   follows: { icon: 'follower', hue: 'sky' },
@@ -936,7 +936,7 @@ function GoalsCard({ goals, reload: load }: { goals: Goal[]; reload: () => Promi
                     </label>
                   </td>
                   <td>
-                    <TextCell value={g.name} required label="Goal name" onSave={(name) => update(g.id, { name })} />
+                    <TextCell value={g.name} required maxLength={40} label="Goal name" onSave={(name) => update(g.id, { name })} />
                   </td>
                   <td>
                     <span className="with-icon">
@@ -968,7 +968,7 @@ function GoalsCard({ goals, reload: load }: { goals: Goal[]; reload: () => Promi
         </div>
       )}
       <form className="row add-row" onSubmit={add}>
-        <input className="input" placeholder="Goal name, e.g. Like goal" value={draft.name} maxLength={40} onChange={(e) => setDraft({ ...draft, name: e.target.value })} aria-label="New goal name" />
+        <input className="input" placeholder="Goal name, e.g. Like goal" value={draft.name} maxLength={40} onChange={(e) => setDraft({ ...draft, name: cleanTyped(e.target.value) })} aria-label="New goal name" />
         <select className="input" value={draft.metric} onChange={(e) => setDraft({ ...draft, metric: e.target.value as GoalMetric })} aria-label="What the new goal counts">
           {GOAL_METRICS.map((m) => (
             <option key={m} value={m}>
@@ -1138,7 +1138,7 @@ function ScreenCard({ screen, goals, alertStyle, reload, refreshHost }: { screen
       <div className="form-grid">
         <label className="field">
           Name
-          <TextCell value={screen.name} required label="Screen name" onSave={(name) => save({ name })} />
+          <TextCell value={screen.name} required maxLength={40} label="Screen name" onSave={(name) => save({ name })} />
         </label>
         <div className="field">
           Made for

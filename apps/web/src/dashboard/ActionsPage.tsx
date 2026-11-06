@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { ACTION_TRIGGERS, ALERT_SOUNDS, BUILT_IN_MEDIA, AUDIENCES, DEFAULT_ALERT_STYLE, MAX_KEY_REPEATS, MAX_MEDIA_TOTAL_BYTES, type AlertFx, type AlertSound, type AlertStyle, type ServerToOverlay } from '@hyperion/shared';
+import { ACTION_TRIGGERS, ALERT_SOUNDS, BUILT_IN_MEDIA, AUDIENCES, DEFAULT_ALERT_STYLE, GOAL_METRICS, type GoalMetric, MAX_KEY_REPEATS, MAX_MEDIA_TOTAL_BYTES, type AlertFx, type AlertSound, type AlertStyle, type ServerToOverlay } from '@hyperion/shared';
 import { api, uploadMedia, type Action, type ActionTrigger, type Audience, type Command, type Goal, type Host, type MediaItem, type Screen } from '../api';
 import { playSound } from '../sounds';
-import { Card, ConfirmButton, ErrorNotice, HueIcon, Scrubber, useError, type Hue } from '../ui';
+import { Card, cleanTyped, ConfirmButton, ErrorNotice, HueIcon, Scrubber, useError, type Hue } from '../ui';
 import { Icon, type IconName } from '../icons';
 import { alertPlace, useClearOfWidgets } from '../Overlay';
 import { coinCount, findGift, GiftPicker, useGifts } from './GiftPicker';
@@ -12,7 +12,7 @@ import { ALERT_EFFECT_LABELS, AlertContent, alertFxClass, alertFxStyle } from '.
 import { AlertEffectFields, EffectFields } from './EffectFields';
 import { AlertLookEditor } from './AlertLookEditor';
 import { GiftBus, usePreview } from '../overlay-widgets';
-import { canvasStyle, FadedWidgets, stageProps, useStageFit } from './OverlayPage';
+import { canvasStyle, FadedWidgets, METRIC_LABELS, stageProps, useStageFit } from './OverlayPage';
 import { alertHandleCorner, dragAlert, dragAlertSize } from './alert-drag';
 import { playAlertPreview, previewAudio } from './audio';
 import { Link } from '../router';
@@ -282,7 +282,7 @@ const newDraft = (): Draft => ({
   alertStyle: null,
   useAlertStyle2: false,
   keyCommandId: null,
-  repeatWithCount: false,
+  repeatWithCount: true, // a gift streak presses its key once per gift: a streak of 5 roses is 5 presses
   points: 0,
   screenId: null,
 });
@@ -322,7 +322,8 @@ function ActionsCard({ host, media, actions, setActions }: { host: Host; media: 
     return (id ? api('PATCH', `/actions/${id}`, body) : api('POST', '/actions', body)).then(() => (setEditing(null), load()));
   };
   const update = (id: string, patch: Partial<Action>) => guard(() => api('PATCH', `/actions/${id}`, patch).then(load))();
-  const context = { host, commands, media, screens, goals };
+  const addGoal = (goal: Goal) => setGoals((now) => [...now, goal]);
+  const context = { host, commands, media, screens, goals, addGoal };
 
   return (
     <Card
@@ -461,6 +462,78 @@ function describeDoes(a: Action, commands: Command[], media: MediaItem[], host: 
   return does;
 }
 
+// A goal made from an action's editor, for when the one it should run on doesn't exist yet. Like one made on the Stream
+// overlay page, it gets its own widget on the main screen.
+function NewGoal({ onAdded }: { onAdded: (goal: Goal) => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<{ name: string; metric: GoalMetric; target: number }>({ name: '', metric: 'likes', target: 1000 });
+  const [busy, setBusy] = useState(false);
+  const { error, guard } = useError();
+  if (!open) {
+    return (
+      <div>
+        <button type="button" className="btn btn-sm" onClick={() => setOpen(true)}>
+          <Icon name="plus" size={14} />
+          New goal
+        </button>
+      </div>
+    );
+  }
+  // Not a <form>: it sits inside the action's form, and Enter here shouldn't save the action.
+  const create = guard(async () => {
+    setBusy(true);
+    try {
+      const goal = await api<Goal>('POST', '/goals', { ...draft, name: draft.name.trim() || `${METRIC_LABELS[draft.metric]} goal` });
+      onAdded(goal);
+      setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  });
+  return (
+    <div className="new-goal">
+      <input
+        className="input"
+        autoFocus
+        placeholder={`${METRIC_LABELS[draft.metric]} goal`}
+        aria-label="New goal name"
+        maxLength={40}
+        value={draft.name}
+        onChange={(e) => setDraft({ ...draft, name: cleanTyped(e.target.value) })}
+        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), create())}
+      />
+      <div className="row">
+        <select className="input" aria-label="What the new goal counts" value={draft.metric} onChange={(e) => setDraft({ ...draft, metric: e.target.value as GoalMetric })}>
+          {GOAL_METRICS.map((m) => (
+            <option key={m} value={m}>
+              {METRIC_LABELS[m]}
+            </option>
+          ))}
+        </select>
+        <input
+          className="input short"
+          type="number"
+          min={1}
+          max={100_000_000}
+          aria-label="New goal target"
+          value={draft.target}
+          onChange={(e) => setDraft({ ...draft, target: Math.max(1, Number(e.target.value) || 1) })}
+          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), create())}
+        />
+      </div>
+      <ErrorNotice error={error} />
+      <div className="row">
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={create}>
+          {busy ? 'Adding…' : 'Add goal'}
+        </button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ActionEditor({
   title,
   initial,
@@ -469,6 +542,7 @@ function ActionEditor({
   media,
   screens,
   goals,
+  addGoal,
   onSave,
   onCancel,
 }: {
@@ -479,6 +553,7 @@ function ActionEditor({
   media: MediaItem[];
   screens: Screen[];
   goals: Goal[];
+  addGoal: (goal: Goal) => void;
   onSave: (draft: Draft) => Promise<unknown>;
   onCancel: () => void;
 }) {
@@ -492,8 +567,17 @@ function ActionEditor({
       localStorage.setItem(EDITOR_LAYOUT_KEY, sideBySide ? 'stacked' : 'tabs');
     } catch {} // only means it isn't remembered
   };
-  // Changing the trigger changes nothing else, in case it was a slip; the reset button beside it puts in its defaults.
-  const pickTrigger = (trigger: ActionTrigger) => setDraft((d) => ({ ...d, trigger }));
+  // Each trigger keeps its own name, text, sound and settings while the editor is open: switching shows the new one's
+  // (its defaults, or what was written for it earlier), so the preview follows, and switching back finds the writing
+  // still there. Reset puts back the current trigger's defaults.
+  const perTrigger = useRef(new Map<ActionTrigger, Partial<Draft>>());
+  const triggerFields = (d: Draft) => Object.fromEntries(Object.keys(triggerDefaults(d.trigger, host.hiddenSounds)).map((k) => [k, d[k as keyof Draft]])) as Partial<Draft>;
+  const pickTrigger = (trigger: ActionTrigger) =>
+    setDraft((d) => {
+      if (trigger === d.trigger) return d;
+      perTrigger.current.set(d.trigger, triggerFields(d));
+      return { ...d, ...(perTrigger.current.get(trigger) ?? triggerDefaults(trigger, host.hiddenSounds)), trigger };
+    });
   const resetToTrigger = () => setDraft((d) => ({ ...d, ...triggerDefaults(d.trigger, host.hiddenSounds) }));
   const look = useLook(draft);
   const { main, second } = useContext(HostLooks);
@@ -515,6 +599,20 @@ function ActionEditor({
     set(value.startsWith('file:') ? { sound: null, soundMediaId: value.slice(5) } : { sound: (value || null) as Draft['sound'], soundMediaId: null });
 
 
+  // Puts back the current trigger's own name, text, sound and settings; beside Save, since it's about the whole draft.
+  const reset = !atDefaults(draft, host.hiddenSounds) && (
+    <ConfirmButton
+      className="btn btn-ghost"
+      label="Reset to this trigger's defaults"
+      title={`Reset to the defaults for “${TRIGGERS[draft.trigger].label}”`}
+      message={`Put back the name, alert text, sound and trigger settings for “${TRIGGERS[draft.trigger].label}”? The look, effects and key press stay. Nothing is saved until you save the action.`}
+      confirmLabel="Reset"
+      onConfirm={resetToTrigger}
+    >
+      <Icon name="refresh" size={14} />
+      Reset to defaults
+    </ConfirmButton>
+  );
   const preview = (
         <div className="look-preview">
           <AlertPreview key={replays} draft={draft} media={media} />
@@ -525,30 +623,13 @@ function ActionEditor({
         <div className="form-grid">
           <div className="field">
             <label htmlFor="action-trigger">Does this</label>
-            {draft.trigger !== initial.trigger && !atDefaults(draft, host.hiddenSounds) && (
-              <span className="hint">The name, text and sound are still from “{TRIGGERS[initial.trigger].label}”. Reset to use this trigger's.</span>
-            )}
-            <div className="trigger-row">
-              <select id="action-trigger" className="input" value={draft.trigger} onChange={(e) => pickTrigger(e.target.value as ActionTrigger)}>
-                {ACTION_TRIGGERS.map((t) => (
-                  <option key={t} value={t}>
-                    {TRIGGERS[t].label}
-                  </option>
-                ))}
-              </select>
-              {!atDefaults(draft, host.hiddenSounds) && (
-                <ConfirmButton
-                  className="btn btn-icon"
-                  label="Reset to this trigger's defaults"
-                  title={`Reset to the defaults for “${TRIGGERS[draft.trigger].label}”`}
-                  message={`Put back the name, alert text, sound and trigger settings for “${TRIGGERS[draft.trigger].label}”? The look, effects and key press stay. Nothing is saved until you save the action.`}
-                  confirmLabel="Reset"
-                  onConfirm={resetToTrigger}
-                >
-                  <Icon name="refresh" />
-                </ConfirmButton>
-              )}
-            </div>
+            <select id="action-trigger" className="input" value={draft.trigger} onChange={(e) => pickTrigger(e.target.value as ActionTrigger)}>
+              {ACTION_TRIGGERS.map((t) => (
+                <option key={t} value={t}>
+                  {TRIGGERS[t].label}
+                </option>
+              ))}
+            </select>
           </div>
           {draft.trigger === 'gift' && (
             <>
@@ -592,18 +673,21 @@ function ActionEditor({
             </>
           )}
           {draft.trigger === 'goal' && (
-            <label className="field">
-              Goal
-              <span className="hint">{goals.length === 0 ? 'Add a goal on the Stream overlay page first.' : 'Runs once a stream, when it\'s reached.'}</span>
-              <select className="input" required value={draft.goalId ?? ''} onChange={(e) => set({ goalId: e.target.value || null })}>
-                <option value="">Pick a goal</option>
-                {goals.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="field">
+              <label htmlFor="action-goal">Goal</label>
+              <span className="hint">{goals.length === 0 ? 'You have no goals yet. Make one here.' : "Runs once a stream, when it's reached."}</span>
+              {goals.length > 0 && (
+                <select id="action-goal" className="input" required value={draft.goalId ?? ''} onChange={(e) => set({ goalId: e.target.value || null })}>
+                  <option value="">Pick a goal</option>
+                  {goals.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {!draft.goalId && <NewGoal onAdded={(goal) => (addGoal(goal), set({ goalId: goal.id }))} />}
+            </div>
           )}
           {draft.trigger === 'command' && (
             <label className="field">
@@ -615,7 +699,7 @@ function ActionEditor({
                 maxLength={32}
                 value={draft.command ?? ''}
                 placeholder="!dance"
-                onChange={(e) => set({ command: e.target.value.replace(/\s/g, '') || null })}
+                onChange={(e) => set({ command: cleanTyped(e.target.value, /\S/) || null })}
               />
             </label>
           )}
@@ -640,7 +724,13 @@ function ActionEditor({
             <label className="field">
               Viewer
               <span className="hint">Their TikTok username.</span>
-              <input className="input" required maxLength={64} value={draft.audienceViewer ?? ''} onChange={(e) => set({ audienceViewer: text(e.target.value) })} />
+              <input
+                className="input"
+                required
+                maxLength={64}
+                value={draft.audienceViewer ?? ''}
+                onChange={(e) => set({ audienceViewer: text(cleanTyped(e.target.value, /[A-Za-z0-9_.@]/)) })}
+              />
             </label>
           )}
           <label className="field">
@@ -675,7 +765,7 @@ function ActionEditor({
         <label className="field">
           Alert text
           <span className="hint">Placeholders: {TRIGGERS[draft.trigger].placeholders}. Empty shows no text.</span>
-          <input className="input" maxLength={200} value={draft.text ?? ''} onChange={(e) => set({ text: e.target.value || null })} />
+          <input className="input" maxLength={200} value={draft.text ?? ''} onChange={(e) => set({ text: cleanTyped(e.target.value) || null })} />
         </label>
 {!sideBySide && preview}
         <div className="form-grid">
@@ -832,7 +922,7 @@ function ActionEditor({
       <ErrorNotice error={error} />
       <label className="field">
         Name
-        <input className="input" value={draft.name} maxLength={60} placeholder={TRIGGERS[draft.trigger].label} onChange={(e) => set({ name: e.target.value })} />
+        <input className="input" value={draft.name} maxLength={60} placeholder={TRIGGERS[draft.trigger].label} onChange={(e) => set({ name: cleanTyped(e.target.value) })} />
       </label>
 
       {sideBySide ? (
@@ -886,6 +976,8 @@ function ActionEditor({
       )}
 
       <div className="action-editor-foot">
+        {reset}
+        <span className="spacer" />
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
           Cancel
         </button>
@@ -1191,7 +1283,7 @@ function MediaTile({
             maxLength={100}
             aria-label="File name"
             value={naming}
-            onChange={(e) => setNaming(e.target.value)}
+            onChange={(e) => setNaming(cleanTyped(e.target.value))}
             onBlur={finish}
             onKeyDown={(e) => (e.key === 'Enter' ? finish() : e.key === 'Escape' && setNaming(null))}
           />

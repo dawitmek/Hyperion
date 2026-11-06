@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_KEY_REPEATS, type ViewerEvent } from '@hyperion/shared';
-import { createActions, fillTemplate, parseBlockedWords, type ActionContext, type ActionRule, type TtsConfig } from '../src/actions/engine.js';
+import { commandSpeech, createActions, fillTemplate, parseBlockedWords, type ActionContext, type ActionRule, type TtsConfig } from '../src/actions/engine.js';
 
 let nextId = 0;
 const rule = (r: Partial<ActionRule> & Pick<ActionRule, 'trigger'>): ActionRule => ({
@@ -39,7 +39,7 @@ const rule = (r: Partial<ActionRule> & Pick<ActionRule, 'trigger'>): ActionRule 
   ...r,
 });
 
-const baseTts: TtsConfig = { mode: 'prefix', prefix: '!tts', maxLength: 150, maxWords: 0, unlockGifts: [], unlockMs: 0, template: '{viewer} says {text}', cooldownMs: 0, autoMaxViewers: 25, minLevel: 1, blockedWords: [] };
+const baseTts: TtsConfig = { mode: 'prefix', prefix: '!tts', maxLength: 150, maxWords: 0, unlockGifts: [], unlockMs: 0, template: '{viewer} says {text}', commands: false, commandTemplate: '{viewer} pressed {command}', cooldownMs: 0, autoMaxViewers: 25, minLevel: 1, blockedWords: [] };
 
 function setup(
   actions: ActionRule[],
@@ -428,5 +428,16 @@ describe('chat text-to-speech options', () => {
     expect(say('!tts hello')?.text).toBe('hello');
     clock.now = 20 * min;
     expect(say('!tts hello')).toBeNull();
+  });
+});
+
+describe('reading commands aloud', () => {
+  const cfg = { commandTemplate: '{viewer} pressed {command}', blockedWords: ['badword'] };
+  it('names who sent it, "Chat" for a vote, and "Someone" for a name that can\'t or shouldn\'t be said', () => {
+    expect(commandSpeech(cfg, 'Night Owl', 'jump')).toBe('Night Owl pressed jump');
+    expect(commandSpeech(cfg, null, 'left')).toBe('Chat pressed left');
+    expect(commandSpeech(cfg, '🔥🔥', 'jump')).toBe('Someone pressed jump');
+    expect(commandSpeech(cfg, 'badword king', 'jump')).toBe('Someone pressed jump');
+    expect(commandSpeech({ ...cfg, commandTemplate: '{command}!' }, 'alice', 'jump')).toBe('jump!');
   });
 });

@@ -140,12 +140,12 @@ body { background: var(--aurora), var(--ground); background-repeat: no-repeat; m
 .command-chip .command-word { max-width: 140px; }
 .command-off { padding-top: 10px; border-top: 1px solid var(--line); }
 
-/* The game picker: program icons beside their names. */
+/* The game picker: program icons beside their names. Its list opens over the section bar below it (z-index 10). */
 .picker { position: relative; }
 .field .picker-button { display: flex; align-items: center; gap: 10px; width: 100%; height: auto; min-height: 52px; padding: 7px 12px; text-align: left; cursor: pointer; }
 .picker-button > svg { flex: none; margin-left: auto; color: var(--muted); transition: transform 0.15s; }
 .picker-button[aria-expanded='true'] > svg { transform: rotate(180deg); }
-.picker-list { position: absolute; z-index: 10; top: calc(100% + 6px); left: 0; right: 0; display: flex; flex-direction: column; gap: 2px;
+.picker-list { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; right: 0; display: flex; flex-direction: column; gap: 2px;
   max-height: 290px; overflow-y: auto; padding: 6px; border-radius: calc(14px * var(--radius-scale)); border: 1px solid var(--line-strong); background: var(--panel);
   box-shadow: 0 22px 50px -18px rgba(0, 0, 0, 0.55); animation: picker-in 0.14s ease-out; }
 @keyframes picker-in { from { opacity: 0; transform: translateY(-4px); } }

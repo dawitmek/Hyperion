@@ -32,7 +32,12 @@ export function SettingsPage({ host, refreshHost }: PageProps) {
             <label className="field">
               TikTok username
               <span className="hint">Each account keeps its own leaderboard and viewer points. Switching back brings them back.</span>
-              <input value={username} onChange={(e) => (setUsername(e.target.value), setSaved(false))} placeholder="@yourname" />
+              <input
+                value={username}
+                maxLength={25}
+                onChange={(e) => (setUsername(e.target.value.replace(/[^A-Za-z0-9_.@]/g, '')), setSaved(false))}
+                placeholder="@yourname"
+              />
             </label>
             <label className="field">
               Max key presses per second
@@ -69,6 +74,8 @@ const SWATCHES: Record<UiTheme, { light: string[]; dark: string[]; note: string 
   'solar-dusk': { light: ['#fdfbf7', '#f1e9da', '#b45309', '#ca8a04'], dark: ['#1c1917', '#292524', '#f97316', '#0ea5e9'], note: 'Parchment and amber, with Oxanium and sharp corners.' },
   'graphite-mono': { light: ['#ffffff', '#f0f0f0', '#171717', '#3b82f6'], dark: ['#171717', '#262626', '#e5e5e5', '#3b82f6'], note: 'Black, white and grays with a blue accent, with DM Sans and soft corners.' },
   'sage-mist': { light: ['#fdfdfd', '#f5f5f5', '#afbea5', '#495940'], dark: ['#070503', '#1e1a14', '#afbea5', '#495940'], note: 'Sage and olive on white or near-black, with Plus Jakarta Sans and round corners.' },
+  'mocha-cream': { light: ['#f9f9f9', '#efefef', '#644a40', '#ffdfb5'], dark: ['#111111', '#222222', '#ffe0c2', '#393028'], note: 'Mocha brown and peach cream on light gray or near-black, with medium corners.' },
+  tangerine: { light: ['#e8ebed', '#ffffff', '#e05d38', '#86a7c8'], dark: ['#1c2433', '#2a3040', '#e05d38', '#5a7ca6'], note: 'Tangerine and slate blue on cool gray or deep navy, with Inter.' },
 };
 
 // The dashboard's and companion's look. Applies at once, here and on the paired companions.

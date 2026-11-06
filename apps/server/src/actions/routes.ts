@@ -23,6 +23,8 @@ import {
   type AlertSound,
   type AlertStyle,
   type Audience,
+  KEYWORD_PATTERN,
+  PLAIN_TEXT_PATTERN,
 } from '@hyperion/shared';
 import { actions, commands, goals, hosts, media, overlayScreens, profiles } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
@@ -80,22 +82,22 @@ type Body = {
 
 const nullableId = { type: ['string', 'null'], format: 'uuid' } as const;
 const fields = {
-  name: { type: 'string', minLength: 1, maxLength: 60 },
+  name: { type: 'string', minLength: 1, maxLength: 60, pattern: PLAIN_TEXT_PATTERN },
   enabled: { type: 'boolean' },
   profileId: nullableId,
   trigger: { enum: ACTION_TRIGGERS },
-  giftName: { type: ['string', 'null'], maxLength: 64 },
+  giftName: { type: ['string', 'null'], maxLength: 64, pattern: PLAIN_TEXT_PATTERN },
   minDiamonds: { type: ['integer', 'null'], minimum: 1, maximum: 10_000_000 },
   likeStep: { type: ['integer', 'null'], minimum: 1, maximum: 1_000_000 },
   likeGrowth: { type: ['number', 'null'], exclusiveMinimum: 1, maximum: 100 },
-  command: { type: ['string', 'null'], pattern: '^\\S{1,32}$' },
+  command: { type: ['string', 'null'], pattern: KEYWORD_PATTERN },
   goalId: nullableId,
   audience: { enum: AUDIENCES },
-  audienceViewer: { type: ['string', 'null'], maxLength: 64 },
+  audienceViewer: { type: ['string', 'null'], pattern: '^@?[A-Za-z0-9_.]{1,64}$' }, // a TikTok username
   cooldownMs: { type: 'integer', minimum: 0, maximum: 3_600_000 },
   viewerCooldownMs: { type: 'integer', minimum: 0, maximum: 3_600_000 },
   random: { type: 'boolean' },
-  text: { type: ['string', 'null'], maxLength: 200 },
+  text: { type: ['string', 'null'], maxLength: 200, pattern: PLAIN_TEXT_PATTERN },
   sound: { enum: [...ALERT_SOUNDS, null] },
   soundMediaId: nullableId,
   mediaId: nullableId,

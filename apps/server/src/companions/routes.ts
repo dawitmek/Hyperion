@@ -4,6 +4,7 @@ import { and, eq, gt } from 'drizzle-orm';
 import { companions, hosts, pairingCodes } from '../db/schema.js';
 import { newToken, sha256 } from '../crypto.js';
 import { requireHost } from '../auth/session.js';
+import { PLAIN_TEXT_PATTERN } from '@hyperion/shared';
 import { synthesizeTiktok, TiktokError } from '../tts/tiktok.js';
 
 const PAIRING_TTL_MS = 10 * 60 * 1000;
@@ -46,7 +47,7 @@ export async function companionRoutes(app: FastifyInstance) {
           required: ['code', 'name'],
           properties: {
             code: { type: 'string', minLength: 6, maxLength: 6 },
-            name: { type: 'string', minLength: 1, maxLength: 64 },
+            name: { type: 'string', minLength: 1, maxLength: 64, pattern: PLAIN_TEXT_PATTERN },
             hostname: DEVICE_FIELD,
             platform: DEVICE_FIELD,
           },

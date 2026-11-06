@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { BADGES, type Badge, type RoomStats, type ViewerEvent } from '@hyperion/shared';
+import { BADGES, PLAIN_TEXT_PATTERN, type Badge, type RoomStats, type ViewerEvent } from '@hyperion/shared';
 import { requireHost } from '../auth/session.js';
 import { LiveError, type Source } from './session-manager.js';
 
@@ -61,9 +61,9 @@ export async function liveRoutes(app: FastifyInstance) {
           additionalProperties: false,
           oneOf: [{ required: ['viewer', 'text'] }, { required: ['viewer', 'gift'] }, { required: ['viewer', 'event'] }, { required: ['viewers'] }],
           properties: {
-            viewer: { type: 'string', minLength: 1, maxLength: 64 },
-            text: { type: 'string', minLength: 1, maxLength: 200 },
-            gift: { type: 'string', minLength: 1, maxLength: 64 },
+            viewer: { type: 'string', minLength: 1, maxLength: 64, pattern: PLAIN_TEXT_PATTERN },
+            text: { type: 'string', minLength: 1, maxLength: 200, pattern: PLAIN_TEXT_PATTERN },
+            gift: { type: 'string', minLength: 1, maxLength: 64, pattern: PLAIN_TEXT_PATTERN },
             event: { enum: ['follow', 'share', 'join', 'like', 'subscribe', 'emote'] },
             count: { type: 'integer', minimum: 1, maximum: 1000 },
             diamonds: { type: 'integer', minimum: 0, maximum: 100000 },

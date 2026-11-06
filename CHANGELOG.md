@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-06
+
+Patterns across streams, commands read aloud, and a safer companion.
+
+### Added
+- Patterns on Analytics, across your streams in the last 7, 30 or 90 days or all time: the hours of each weekday chat is busiest (in your time zone), how many viewers interact and how many come back for another stream, coins per hour live, follows per 100 viewers, the average stream, the most used commands and the gifts worth the most coins.
+- Reading commands aloud, on the Voice page: the voice says each command that fires, in wording of your own ("{viewer} pressed {command}" by default), whether chat reading is on or not. One is read at most every 3 seconds and never over chat or alerts. Democracy votes are read as "Chat", and a name the voice can't say as "Someone".
+- A New goal button in an action's editor, for when the goal it should run on doesn't exist yet. Like a goal made on the Stream overlay page, it gets its own widget on the main screen.
+- Two themes: Mocha Cream and Tangerine.
+
+### Changed
+- Blocked words on the Voice page are chips you can remove one at a time, with a box to add more.
+- A new gift action that presses a key presses it once per gift in a streak by default, so a streak of 5 roses is 5 presses.
+- Read-aloud wording only takes its own blanks, so a typo like {veiwer} is refused when you save rather than spoken.
+- The live dock's numbers each have an icon and colour.
+- The companion's game picker lists the programs you used most recently first, and leaves out the companion itself.
+- The companion's sections all start folded. The ones you open stay open next time.
+
+### Fixed
+- An action for one viewer matches them whether their username was typed with its @ or without.
+
+### Security
+- The companion only installs updates signed with Hyperion's release key, and doesn't offer a release without a signature. The release workflow's build steps are pinned to exact versions.
+- When the dashboard switches to a profile for a different game, the companion pauses until you press Play, so keys can't be sent to another program without you knowing.
+- The companion's Minecraft Bedrock connection turns away web pages, so a site open in your browser can't pose as the game and read the commands meant for it.
+- Text fields across the dashboard and server refuse invisible characters like tabs and line breaks, and the dashboard drops them as you type or paste. Cloud voice keys and voice names are checked for the right shape.
+
 ## [0.5.0] - 2026-11-05
 
 Game integrations, starting with Minecraft, and a raffle crowd mode.
@@ -70,6 +97,7 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/dawitmek/Hyperion/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dawitmek/Hyperion/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dawitmek/Hyperion/compare/v0.3.1...v0.4.0

@@ -5,6 +5,7 @@
 @import '@fontsource-variable/oxanium';
 @import '@fontsource-variable/dm-sans';
 @import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource-variable/inter';
 
 /* Legacy: the default theme as it first was, with plain black and white where it now takes its indigo: the main
    button, lines and tracks, the sidebar, and dark mode's backgrounds. Everything else is the default's. */
@@ -330,3 +331,192 @@
   word-spacing: 0.08em;
 }
 :root:where([data-mode='dark'])[data-theme='sage-mist'][data-theme-style='full'] { --shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.35); }
+
+/* Mocha Cream: mocha brown as the action color with peach cream accents on light gray; in dark mode the cream
+   becomes the action color on near-black. */
+:root[data-theme='mocha-cream'] {
+  --ground: #f9f9f9;
+  --panel: #fcfcfc;
+  --panel2: #efefef;
+  --line: #d8d8d8;
+  --line-strong: #c4c4c4;
+  --ink: #202020;
+  --muted: #646464;
+  --meter: #e8e8e8;
+  --solid-bg: #644a40;
+  --solid-ink: #ffffff;
+  --aurora: radial-gradient(900px 380px at 78% -8%, rgba(100, 74, 64, 0.1), transparent 70%),
+    radial-gradient(700px 320px at 40% -12%, rgba(255, 223, 181, 0.35), transparent 70%);
+  --red: #e54d2e;
+  --red-soft: #fbe4de;
+  --indigo: #644a40;
+  --indigo-fill: #644a40;
+  --indigo-soft: #ffdfb5;
+  --key-ink: #582d1d;
+  --key-edge: #ffdfb5;
+  --brand-gradient: linear-gradient(135deg, #ffdfb5 0%, #644a40 100%);
+  --edge-gradient: linear-gradient(90deg, #644a40, #ffdfb5);
+  --plasma: linear-gradient(90deg, #ffe6c4 0%, #ffdfb5 40%, #644a40 100%);
+  --usage-gradient: linear-gradient(90deg, #ffdfb5, #644a40);
+  --avatar-gradient: linear-gradient(135deg, #ffdfb5, #644a40);
+  --accent-gradient: linear-gradient(180deg, #745a4f, #644a40);
+  --accent-ink: #ffffff;
+  --accent-shadow: rgba(100, 74, 64, 0.35);
+  --glow-rgb: 100, 74, 64;
+  --sb-bg: #fbfbfb;
+  --sb-ink: #252525;
+  --sb-muted: #646464;
+  --sb-line: #ebebeb;
+  --sb-hover: rgba(0, 0, 0, 0.04);
+  --sb-active: rgba(100, 74, 64, 0.1);
+  --sb-focus: #b5b5b5;
+  --sb-marker: #343434;
+}
+:root[data-theme='mocha-cream'] .sidebar {
+  --red: #d7263d; --indigo: #644a40; --pink: #c0267a; --violet: #7444cc; --sky: #0a6cb4; --teal: #0a7a78; --orange: #b0500c; --green: #16824a;
+}
+:root[data-theme='mocha-cream'] .content-glow .s-blob-1 { --c: 255, 223, 181; }
+:root[data-theme='mocha-cream'] .content-glow .s-blob-2 { --c: 100, 74, 64; }
+:root[data-theme='mocha-cream'] .content-glow .s-blob-3 { --c: 255, 230, 196; }
+:root[data-theme='mocha-cream'] .content-glow .s-blob-4 { --c: 102, 73, 62; }
+:root[data-theme='mocha-cream'] .content-glow .s-blob-5 { --c: 232, 232, 232; }
+:root[data-theme='mocha-cream'] .content-glow .s-blob-pointer { --c: 255, 223, 181; }
+
+:root:where([data-mode='dark'])[data-theme='mocha-cream'] {
+  --ground: #111111;
+  --panel: #191919;
+  --panel2: #222222;
+  --line: #2a2a2a;
+  --line-strong: #484848;
+  --ink: #eeeeee;
+  --muted: #b4b4b4;
+  --meter: #2a2a2a;
+  --solid-bg: #ffe0c2;
+  --solid-ink: #081a1b;
+  --aurora: radial-gradient(900px 380px at 78% -8%, rgba(255, 224, 194, 0.1), transparent 70%),
+    radial-gradient(700px 320px at 40% -12%, rgba(102, 73, 62, 0.16), transparent 70%);
+  --red: #e54d2e;
+  --red-soft: rgba(229, 77, 46, 0.16);
+  --indigo: #ffe0c2;
+  --indigo-fill: #ffe0c2;
+  --indigo-soft: #393028;
+  --key-ink: #ffe0c2;
+  --key-edge: #42382e;
+  --brand-gradient: linear-gradient(135deg, #ffe0c2 0%, #66493e 100%);
+  --edge-gradient: linear-gradient(90deg, #66493e, #ffe0c2);
+  --plasma: linear-gradient(90deg, #66493e 0%, #c9a483 50%, #ffe0c2 100%);
+  --usage-gradient: linear-gradient(90deg, #66493e, #ffe0c2);
+  --avatar-gradient: linear-gradient(135deg, #ffe0c2, #66493e);
+  --accent-gradient: linear-gradient(180deg, #ffe9d4, #ffe0c2);
+  --accent-ink: #081a1b;
+  --accent-shadow: rgba(0, 0, 0, 0.5);
+  --glow-rgb: 255, 224, 194;
+  --sb-bg: #18181b;
+  --sb-ink: #f4f4f5;
+  --sb-muted: #b4b4b4;
+  --sb-line: #27272a;
+  --sb-hover: rgba(255, 255, 255, 0.04);
+  --sb-active: #27272a;
+  --sb-focus: #d4d4d8;
+  --sb-marker: #ffe0c2;
+}
+:root:where([data-mode='dark'])[data-theme='mocha-cream'] .sidebar {
+  --red: #ff8a96; --indigo: #ffe0c2; --pink: #f78bc0; --violet: #c3a8ff; --sky: #7cc4f8; --teal: #62dad4; --orange: #ffae74; --green: #6fe0a2;
+}
+
+/* Full theme: the spec's 0.5rem corners. It sets no font or shadows, so those stay the default's. */
+:root[data-theme='mocha-cream'][data-theme-style='full'] {
+  --radius-scale: 0.67;
+}
+
+/* Tangerine: tangerine as the action color with slate blue accents, on cool gray or deep navy. Tangerine text is
+   a shade darker in light mode (and lighter in dark) than the fill so it stays readable. */
+:root[data-theme='tangerine'] {
+  --ground: #e8ebed;
+  --panel: #ffffff;
+  --panel2: #f3f4f6;
+  --line: #dcdfe2;
+  --line-strong: #c6cace;
+  --ink: #333333;
+  --muted: #6b7280;
+  --meter: #e5e7eb;
+  --solid-bg: #e05d38;
+  --solid-ink: #ffffff;
+  --aurora: radial-gradient(900px 380px at 78% -8%, rgba(224, 93, 56, 0.12), transparent 70%),
+    radial-gradient(700px 320px at 40% -12%, rgba(134, 167, 200, 0.18), transparent 70%);
+  --red: #ef4444;
+  --red-soft: #fde8e8;
+  --indigo: #c44a26;
+  --indigo-fill: #e05d38;
+  --indigo-soft: #fbe4dc;
+  --key-ink: #1e3a8a;
+  --key-edge: #d6e4f0;
+  --brand-gradient: linear-gradient(135deg, #eea591 0%, #e05d38 100%);
+  --edge-gradient: linear-gradient(90deg, #e05d38, #86a7c8);
+  --plasma: linear-gradient(90deg, #eea591 0%, #e05d38 45%, #5a7ca6 100%);
+  --usage-gradient: linear-gradient(90deg, #86a7c8, #5a7ca6);
+  --avatar-gradient: linear-gradient(135deg, #e05d38, #334c82);
+  --accent-gradient: linear-gradient(180deg, #e86d4a, #e05d38);
+  --accent-ink: #ffffff;
+  --accent-shadow: rgba(224, 93, 56, 0.5);
+  --glow-rgb: 224, 93, 56;
+  --sb-bg: #dddfe2;
+  --sb-ink: #333333;
+  --sb-muted: #6b7280;
+  --sb-line: #e5e7eb;
+  --sb-hover: rgba(0, 0, 0, 0.04);
+  --sb-active: #d6e4f0;
+  --sb-focus: #e05d38;
+  --sb-marker: #e05d38;
+}
+:root[data-theme='tangerine'] .sidebar {
+  --red: #d7263d; --indigo: #c44a26; --pink: #c0267a; --violet: #7444cc; --sky: #0a6cb4; --teal: #0a7a78; --orange: #b0500c; --green: #16824a;
+}
+:root[data-theme='tangerine'] .content-glow .s-blob-1 { --c: 224, 93, 56; }
+:root[data-theme='tangerine'] .content-glow .s-blob-2 { --c: 134, 167, 200; }
+:root[data-theme='tangerine'] .content-glow .s-blob-3 { --c: 238, 165, 145; }
+:root[data-theme='tangerine'] .content-glow .s-blob-4 { --c: 90, 124, 166; }
+:root[data-theme='tangerine'] .content-glow .s-blob-5 { --c: 51, 76, 130; }
+:root[data-theme='tangerine'] .content-glow .s-blob-pointer { --c: 238, 165, 145; }
+
+:root:where([data-mode='dark'])[data-theme='tangerine'] {
+  --ground: #1c2433;
+  --panel: #2a3040;
+  --panel2: #262b38;
+  --line: #3d4354;
+  --line-strong: #4d5466;
+  --ink: #e5e5e5;
+  --muted: #a3a3a3;
+  --meter: #3d4354;
+  --solid-bg: #e05d38;
+  --solid-ink: #ffffff;
+  --aurora: radial-gradient(900px 380px at 78% -8%, rgba(224, 93, 56, 0.14), transparent 70%),
+    radial-gradient(700px 320px at 40% -12%, rgba(90, 124, 166, 0.16), transparent 70%);
+  --red: #ef4444;
+  --red-soft: rgba(239, 68, 68, 0.16);
+  --indigo: #f07a58;
+  --indigo-fill: #e05d38;
+  --indigo-soft: rgba(224, 93, 56, 0.18);
+  --key-ink: #bfdbfe;
+  --key-edge: #2a3656;
+  --accent-gradient: linear-gradient(180deg, #e86d4a, #d9532e);
+  --accent-shadow: rgba(224, 93, 56, 0.6);
+  --sb-bg: #2a303f;
+  --sb-ink: #e5e5e5;
+  --sb-muted: #a3a3a3;
+  --sb-line: #3d4354;
+  --sb-hover: rgba(255, 255, 255, 0.04);
+  --sb-active: #2a3656;
+  --sb-focus: #e05d38;
+  --sb-marker: #e05d38;
+}
+:root:where([data-mode='dark'])[data-theme='tangerine'] .sidebar {
+  --red: #ff8a96; --indigo: #f07a58; --pink: #f78bc0; --violet: #c3a8ff; --sky: #7cc4f8; --teal: #62dad4; --orange: #ffae74; --green: #6fe0a2;
+}
+
+/* Full theme: Inter, the spec's 0.75rem corners and a light drop shadow. */
+:root[data-theme='tangerine'][data-theme-style='full'] {
+  --font: 'Inter Variable', system-ui, sans-serif;
+  --radius-scale: 1;
+  --shadow: 0 1px 3px 0 hsl(0 0% 0% / 0.1);
+}

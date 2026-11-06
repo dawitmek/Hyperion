@@ -319,8 +319,11 @@ mod imp {
         unsafe {
             let _ = EnumWindows(Some(collect), LPARAM(&mut windows as *mut _ as isize));
         }
-        windows.sort_by(|a, b| a.process.cmp(&b.process));
-        windows.dedup_by(|a, b| a.process == b.process);
+        // EnumWindows goes front to back, so the most recently focused program comes first. Each program once, at its
+        // frontmost window, and not this app, which is in front whenever its picker is open.
+        let own = std::env::current_exe().ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()));
+        let mut seen = std::collections::HashSet::new();
+        windows.retain(|w| Some(&w.process) != own.as_ref() && seen.insert(w.process.clone()));
         windows
     }
 }
@@ -441,23 +444,54 @@ mod imp {
         process_name(app.processIdentifier())
     }
 
-    // Apps with a Dock icon; macOS only shares window titles with Screen Recording permission, so use app names.
+    // The processes with windows on screen, front to back: the most recently focused first. Owner ids and layers are
+    // shared without Screen Recording permission (titles aren't). Layer 0 is ordinary windows, not the menu bar or Dock.
+    fn front_to_back() -> Vec<i32> {
+        use core_foundation::base::CFType;
+        use core_foundation::number::CFNumber;
+        use core_graphics::window::{copy_window_info, kCGNullWindowID, kCGWindowLayer, kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly, kCGWindowOwnerPID};
+        let Some(list) = copy_window_info(kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID) else {
+            return Vec::new();
+        };
+        let (pid_key, layer_key) = unsafe { (CFString::wrap_under_get_rule(kCGWindowOwnerPID), CFString::wrap_under_get_rule(kCGWindowLayer)) };
+        let number = |info: &CFDictionary<CFString, CFType>, key: &CFString| info.find(key).and_then(|v| v.downcast::<CFNumber>()).and_then(|n| n.to_i64());
+        let mut pids = Vec::new();
+        for item in list.iter() {
+            let info: CFDictionary<CFString, CFType> = unsafe { CFDictionary::wrap_under_get_rule(*item as CFDictionaryRef) };
+            if number(&info, &layer_key) != Some(0) {
+                continue;
+            }
+            if let Some(pid) = number(&info, &pid_key).and_then(|p| i32::try_from(p).ok()) {
+                if !pids.contains(&pid) {
+                    pids.push(pid);
+                }
+            }
+        }
+        pids
+    }
+
+    // Apps with a Dock icon, the most recently focused first (then those with no window on screen, by name), and not
+    // this app, which is in front whenever its picker is open. macOS only shares window titles with Screen Recording
+    // permission, so use app names.
     pub fn list_windows() -> Vec<GameWindow> {
-        let mut windows: Vec<GameWindow> = NSWorkspace::sharedWorkspace()
+        let order = front_to_back();
+        let own = std::process::id() as i32;
+        let mut windows: Vec<(usize, GameWindow)> = NSWorkspace::sharedWorkspace()
             .runningApplications()
             .iter()
-            .filter(|app| app.activationPolicy() == NSApplicationActivationPolicy::Regular)
+            .filter(|app| app.activationPolicy() == NSApplicationActivationPolicy::Regular && app.processIdentifier() != own)
             .filter_map(|app| {
                 let path = process_path(app.processIdentifier())?;
                 let process = Path::new(&path).file_name()?.to_string_lossy().to_lowercase();
                 let title = app.localizedName().map(|n| n.to_string()).unwrap_or_else(|| process.clone());
                 let icon = super::cached_icon(&path, || app_icon(&app));
-                Some(GameWindow { title, process, icon })
+                let rank = order.iter().position(|&pid| pid == app.processIdentifier()).unwrap_or(usize::MAX);
+                Some((rank, GameWindow { title, process, icon }))
             })
             .collect();
-        windows.sort_by(|a, b| a.process.cmp(&b.process));
-        windows.dedup_by(|a, b| a.process == b.process);
-        windows
+        windows.sort_by(|(a_rank, a), (b_rank, b)| a_rank.cmp(b_rank).then_with(|| a.process.cmp(&b.process)));
+        let mut seen = std::collections::HashSet::new();
+        windows.into_iter().filter(|(_, w)| seen.insert(w.process.clone())).map(|(_, w)| w).collect()
     }
 }
 

@@ -1,0 +1,2 @@
+ALTER TABLE "hosts" ADD COLUMN "tts_commands" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "hosts" ADD COLUMN "tts_command_template" text DEFAULT '{viewer} pressed {command}' NOT NULL;

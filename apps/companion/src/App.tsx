@@ -7,6 +7,9 @@ import "./App.css";
 import { Icon } from "./icons";
 import { JumpBar, Section, SectionsProvider } from "./sections";
 
+// Invisible codes (tabs, line breaks) never belong in a one-line field; they're dropped as typed or pasted.
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
+
 interface LogEntry {
   key: string;
   ok: boolean;
@@ -462,7 +465,7 @@ function PairForm({ run, defaultServer }: { run: Run; defaultServer: string | nu
         <input
           className="code-input"
           value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
           maxLength={6}
           placeholder="••••••"
           autoFocus
@@ -472,11 +475,11 @@ function PairForm({ run, defaultServer }: { run: Run; defaultServer: string | nu
       <div className="pair-fields">
         <label className="field">
           Server address
-          <input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} required />
+          <input value={serverUrl} maxLength={200} onChange={(e) => setServerUrl(e.target.value.replace(/\s/g, ""))} required />
         </label>
         <label className="field">
           Device name
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
+          <input value={name} maxLength={64} onChange={(e) => setName(e.target.value.replace(CONTROL_CHARS, ""))} required />
         </label>
       </div>
       <button className="btn btn-primary btn-lg" disabled={busy}>
@@ -939,7 +942,7 @@ function Macros({ state, run }: { state: Snapshot; run: Run }) {
             run("start_recording", { name }).then(() => setName(""));
           }}
         >
-          <input className="input" value={name} maxLength={64} required placeholder="Macro name, like spin" aria-label="Macro name" onChange={(e) => setName(e.target.value)} />
+          <input className="input" value={name} maxLength={64} required placeholder="Macro name, like spin" aria-label="Macro name" onChange={(e) => setName(e.target.value.replace(CONTROL_CHARS, ""))} />
           <button className="btn btn-primary" disabled={!state.targetProcess} title={state.targetProcess ? undefined : "Pick your game first: only input in the game is recorded"}>
             {replaces ? "Record over it" : "Record"}
           </button>
@@ -1260,7 +1263,7 @@ function JavaForm({ state, run, onDone }: { state: Snapshot; run: Run; onDone: (
       <div className="pair-fields">
         <label className="field">
           Server address
-          <input value={host} required onChange={(e) => setHost(e.target.value)} />
+          <input value={host} required maxLength={253} onChange={(e) => setHost(e.target.value.replace(/\s/g, ""))} />
         </label>
         <label className="field">
           RCON port
@@ -1274,12 +1277,13 @@ function JavaForm({ state, run, onDone }: { state: Snapshot; run: Run; onDone: (
             autoComplete="off"
             required={!saved?.hasPassword}
             placeholder={saved?.hasPassword ? "Saved. Type to change it" : ""}
-            onChange={(e) => setPassword(e.target.value)}
+            maxLength={128}
+            onChange={(e) => setPassword(e.target.value.replace(CONTROL_CHARS, ""))}
           />
         </label>
         <label className="field">
           Your Minecraft name
-          <input value={player} maxLength={16} placeholder="For {player}" onChange={(e) => setPlayer(e.target.value)} />
+          <input value={player} maxLength={16} placeholder="For {player}" onChange={(e) => setPlayer(e.target.value.replace(/[^A-Za-z0-9_]/g, ""))} />
         </label>
       </div>
       <div className="row">
@@ -1329,7 +1333,7 @@ function ActionEditor({ draft, setDraft, run }: { draft: Draft; setDraft: (d: Dr
       <div className="editor-top">
         <label className="field">
           Name
-          <input value={draft.name} maxLength={64} required placeholder="creeper" autoFocus={!editing} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          <input value={draft.name} maxLength={64} required placeholder="creeper" autoFocus={!editing} onChange={(e) => setDraft({ ...draft, name: e.target.value.replace(CONTROL_CHARS, "") })} />
         </label>
         <div className="field">
           <span id="game-choice">Game</span>
@@ -1350,6 +1354,7 @@ function ActionEditor({ draft, setDraft, run }: { draft: Draft; setDraft: (d: Dr
           value={commands}
           spellCheck={false}
           placeholder={java ? "execute at {player} run summon creeper ~ ~ ~\nsay {viewer} sent a creeper!" : "summon creeper ~ ~ ~\nsay {viewer} sent a creeper!"}
+          maxLength={20_020} // 20 commands of up to 1,000 characters; the app checks each
           onChange={(e) => setCommands(e.target.value)}
         />
       </label>

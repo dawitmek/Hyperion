@@ -627,12 +627,12 @@ function TestConsole() {
       </div>
       <ErrorNotice error={error} />
       <form className="row" onSubmit={comment}>
-        <input className="input" value={viewer} onChange={(e) => setViewer(e.target.value)} aria-label="Viewer name" placeholder="Viewer" />
-        <input className="input" value={text} onChange={(e) => setText(e.target.value)} aria-label="Comment" placeholder="Comment" />
+        <input className="input" value={viewer} maxLength={64} onChange={(e) => setViewer(e.target.value)} aria-label="Viewer name" placeholder="Viewer" />
+        <input className="input" value={text} maxLength={200} onChange={(e) => setText(e.target.value)} aria-label="Comment" placeholder="Comment" />
         <button className="btn btn-primary">Send comment</button>
       </form>
       <div className="row">
-        <input className="input" value={gift} onChange={(e) => setGift(e.target.value)} aria-label="Gift name" placeholder="Gift name" />
+        <input className="input" value={gift} maxLength={64} onChange={(e) => setGift(e.target.value)} aria-label="Gift name" placeholder="Gift name" />
         <input
           className="input short"
           style={{ flex: 'none', minWidth: 0 }}

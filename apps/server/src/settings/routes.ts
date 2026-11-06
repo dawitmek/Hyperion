@@ -4,6 +4,10 @@ import { actions, hosts, profiles } from '../db/schema.js';
 import {
   ALERT_SOUNDS,
   CLOUD_PROVIDERS,
+  MAX_TTS_TEMPLATE_LENGTH,
+  PLAIN_TEXT_PATTERN,
+  templatePattern,
+  TTS_PLACEHOLDERS,
   MODES,
   TTS_ENGINES,
   TTS_MODES,
@@ -50,6 +54,8 @@ type Body = {
   ttsUnlockGifts?: string[];
   ttsUnlockMinutes?: number;
   ttsTemplate?: string;
+  ttsCommands?: boolean;
+  ttsCommandTemplate?: string;
   ttsCooldownMs?: number;
   ttsAutoMaxViewers?: number;
   ttsMinLevel?: number;
@@ -119,14 +125,21 @@ export async function settingsRoutes(app: FastifyInstance) {
             ttsPrefix: { type: 'string', pattern: '^\\S{1,16}$' },
             ttsMaxLength: { type: 'integer', minimum: 10, maximum: 300 },
             ttsMaxWords: { type: 'integer', minimum: 0, maximum: 100 },
-            ttsUnlockGifts: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 64 } },
+            ttsUnlockGifts: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 64, pattern: PLAIN_TEXT_PATTERN } },
             ttsUnlockMinutes: { type: 'integer', minimum: 0, maximum: 1440 },
-            ttsTemplate: { type: 'string', maxLength: 200, pattern: '\\{text\\}' },
+            // Plain wording with only its own {placeholders}, and the one it can't do without.
+            ttsTemplate: { type: 'string', maxLength: MAX_TTS_TEMPLATE_LENGTH, allOf: [{ pattern: '\\{text\\}' }, { pattern: templatePattern(TTS_PLACEHOLDERS.chat) }] },
+            ttsCommands: { type: 'boolean' },
+            ttsCommandTemplate: {
+              type: 'string',
+              maxLength: MAX_TTS_TEMPLATE_LENGTH,
+              allOf: [{ pattern: '\\{command\\}' }, { pattern: templatePattern(TTS_PLACEHOLDERS.command) }],
+            },
             ttsCooldownMs: { type: 'integer', minimum: 0, maximum: 600000 },
             ttsAutoMaxViewers: { type: 'integer', minimum: 0, maximum: 100000 },
             ttsMinLevel: { type: 'integer', minimum: 1, maximum: 99 },
-            ttsBlockedWords: { type: 'string', maxLength: 5000 },
-            ttsVoice: { type: ['string', 'null'], maxLength: 200 },
+            ttsBlockedWords: { type: 'string', maxLength: 5000, pattern: PLAIN_TEXT_PATTERN },
+            ttsVoice: { type: ['string', 'null'], maxLength: 200, pattern: PLAIN_TEXT_PATTERN },
             ttsEngine: { enum: TTS_ENGINES },
             ttsEspeakVoice: { type: 'string', pattern: '^[a-z]{2,3}(-[a-z0-9]{2,8})*$' },
             ttsPiperVoice: { type: ['string', 'null'], pattern: '^[A-Za-z0-9_.-]{1,100}$' },
@@ -134,9 +147,9 @@ export async function settingsRoutes(app: FastifyInstance) {
             ttsEffect: { enum: VOICE_EFFECTS },
             ttsVolume: { type: 'integer', minimum: 0, maximum: 100 },
             ttsCloudProvider: { enum: [...CLOUD_PROVIDERS, null] },
-            ttsCloudKey: { type: ['string', 'null'], maxLength: 300 },
+            ttsCloudKey: { type: ['string', 'null'], pattern: '^\\S{1,300}$' }, // keys have no spaces
             ttsCloudRegion: { type: ['string', 'null'], pattern: '^[a-z0-9]{1,40}$' },
-            ttsCloudVoice: { type: ['string', 'null'], maxLength: 100 },
+            ttsCloudVoice: { type: ['string', 'null'], pattern: '^[A-Za-z0-9_.:-]{1,100}$' }, // e.g. en-US-Neural2-F, or an ElevenLabs id
             ttsTiktokVoice: { type: ['string', 'null'], pattern: '^[a-z0-9_]{1,60}$' },
             // Only clearing: the session itself comes from the companion (POST /api/companions/tiktok-session).
             ttsTiktokSession: { type: 'null' },
