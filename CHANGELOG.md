@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-07
+
+Fixes from a security review of signup and password recovery.
+
+### Added
+- An email when your password is changed or reset, with a link to reset it if it wasn't you (on servers with email set up).
+
+### Security
+- Changing or resetting a password cancels every link already emailed for the account, so a reset link someone else asked for stops working.
+- At most one confirmation, reset or "you already have an account" email goes to an address every 2 minutes, however many times it's asked for.
+- Wrong current passwords when changing your password count toward the same 15-minute pause as wrong logins.
+- A login with an email that has no account takes as long as a wrong password, so timing can't show who has an account.
+- On servers with email set up, signing up with an email that already has an account looks the same as a new signup, and the owner gets an email about it.
+
 ## [0.7.0] - 2026-11-07
 
 Account security: closing signups, password change and reset, and sign out everywhere.
@@ -115,7 +129,8 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/dawitmek/Hyperion/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dawitmek/Hyperion/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dawitmek/Hyperion/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dawitmek/Hyperion/compare/v0.4.0...v0.5.0

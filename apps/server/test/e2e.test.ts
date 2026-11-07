@@ -304,6 +304,31 @@ describe('account security', () => {
     expect((await api(second, 'GET', '/api/auth/me')).statusCode).toBe(401);
   });
 
+  it('counts wrong current passwords toward the same pause as logins', async () => {
+    const { cookie } = await signUp('guess@example.com');
+    const change = (currentPassword: string) => api(cookie, 'POST', '/api/auth/password', { currentPassword, newPassword: 'whatever123' });
+    for (let i = 0; i < 10; i++) expect((await change(`guess number ${i}`)).statusCode).toBe(400);
+    expect((await change('correct horse')).statusCode).toBe(429);
+    expect((await login('guess@example.com', 'correct horse')).statusCode).toBe(429);
+  });
+
+  it('takes about as long to refuse an email with no account as a wrong password', async () => {
+    await signUp('timing@example.com');
+    const time = async (email: string) => {
+      const start = performance.now();
+      await login(email, 'wrong password');
+      return performance.now() - start;
+    };
+    let known = 0;
+    let unknown = 0;
+    for (let i = 0; i < 4; i++) {
+      unknown += await time(`nobody-${i}@example.com`);
+      known += await time('timing@example.com');
+    }
+    // Both check a password hash. Without that, an unknown email answered several times faster.
+    expect(unknown / known).toBeGreaterThan(0.5);
+  });
+
   it('stops guessing one account from many addresses, without blocking other accounts', async () => {
     await signUp('target@example.com');
     await signUp('bystander@example.com');
@@ -335,7 +360,10 @@ describe('account security', () => {
     afterAll(async () => {
       await mailApp?.close();
     });
-    beforeEach(() => void sent.splice(0));
+    beforeEach(() => {
+      sent.splice(0);
+      mailApp.emailCooldown.clear();
+    });
 
     it('makes new accounts confirm their email before signing in', async () => {
       expect((await mailApp.inject({ method: 'GET', url: '/api/auth/config' })).json()).toEqual({ signups: true, email: true });
@@ -350,7 +378,11 @@ describe('account security', () => {
       // A wrong password doesn't reveal that the account is waiting.
       expect((await post('/api/auth/login', { email: 'new@example.com', password: 'wrong password' })).statusCode).toBe(401);
 
-      // Asking again replaces the first link.
+      // Asking again right away sends nothing (one email per 2 minutes); once that's passed, it replaces the first link.
+      expect((await post('/api/auth/resend-verification', { email: 'new@example.com' })).statusCode).toBe(200);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(sent).toEqual([]);
+      mailApp.emailCooldown.clear();
       expect((await post('/api/auth/resend-verification', { email: 'new@example.com' })).statusCode).toBe(200);
       const again = await nextLink();
       expect((await post('/api/auth/verify-email', { token: mail.token })).statusCode).toBe(400);
@@ -385,6 +417,60 @@ describe('account security', () => {
       expect((await post('/api/auth/login', { email: 'forgot@example.com', password: 'battery staple' })).statusCode).toBe(200);
     });
 
+    // Signs up and confirms, then returns a session and clears the confirmation email.
+    const confirmed = async (email: string) => {
+      await post('/api/auth/signup', { email, password: 'correct horse' });
+      const session = sessionOf(await post('/api/auth/verify-email', { token: (await nextLink()).token }))!;
+      mailApp.emailCooldown.clear();
+      return session;
+    };
+
+    it("cancels links already sent when the password changes, and says it changed", async () => {
+      const session = await confirmed('cancel@example.com');
+      // A reset link someone else asked for while they had the inbox...
+      await post('/api/auth/forgot-password', { email: 'cancel@example.com' });
+      const stolen = await nextLink();
+      // ...stops working once the owner changes their password.
+      const change = await mailApp.inject({
+        method: 'POST', url: '/api/auth/password', payload: { currentPassword: 'correct horse', newPassword: 'owner new pass' }, headers: { cookie: session }, remoteAddress: nextAddress(),
+      });
+      expect(change.statusCode).toBe(200);
+      await vi.waitFor(() => expect(sent.map((m) => m.subject)).toEqual(['Your Hyperion password was changed']));
+      expect((await post('/api/auth/reset-password', { token: stolen.token, password: 'attacker pass' })).statusCode).toBe(400);
+      expect((await post('/api/auth/login', { email: 'cancel@example.com', password: 'owner new pass' })).statusCode).toBe(200);
+    });
+
+    it('sends at most one email of a kind per address every 2 minutes, with the same answer every time', async () => {
+      await confirmed('flood@example.com');
+      for (let i = 0; i < 20; i++) expect((await post('/api/auth/forgot-password', { email: 'flood@example.com' })).json()).toEqual({ ok: true });
+      await new Promise((r) => setTimeout(r, 200));
+      expect(sent.map((m) => m.subject)).toEqual(['Reset your Hyperion password']);
+    });
+
+    it("doesn't say at signup that an email is taken; it emails the owner instead", async () => {
+      await confirmed('taken@example.com');
+      const again = await post('/api/auth/signup', { email: 'taken@example.com', password: 'attacker pass' });
+      expect([again.statusCode, again.json(), sessionOf(again)]).toEqual([201, { verify: true }, undefined]);
+      await vi.waitFor(() => expect(sent).toHaveLength(1));
+      expect([sent[0]!.to, sent[0]!.subject]).toEqual(['taken@example.com', 'You already have a Hyperion account']);
+      // Nothing about the account changed.
+      expect((await post('/api/auth/login', { email: 'taken@example.com', password: 'correct horse' })).statusCode).toBe(200);
+      expect((await post('/api/auth/login', { email: 'taken@example.com', password: 'attacker pass' })).statusCode).toBe(401);
+    });
+
+    it('tells the owner by email when the password is changed or reset', async () => {
+      const session = await confirmed('notice@example.com');
+      await mailApp.inject({
+        method: 'POST', url: '/api/auth/password', payload: { currentPassword: 'correct horse', newPassword: 'battery staple' }, headers: { cookie: session }, remoteAddress: nextAddress(),
+      });
+      await vi.waitFor(() => expect(sent).toHaveLength(1));
+      expect([sent[0]!.to, sent[0]!.subject]).toEqual(['notice@example.com', 'Your Hyperion password was changed']);
+      sent.splice(0);
+      await post('/api/auth/forgot-password', { email: 'notice@example.com' });
+      await post('/api/auth/reset-password', { token: (await nextLink()).token, password: 'third password' });
+      await vi.waitFor(() => expect(sent.map((m) => m.subject)).toEqual(['Your Hyperion password was changed']));
+    });
+
     it("refuses an expired link, and a reset unlocks an account that's had too many wrong passwords", async () => {
       await post('/api/auth/signup', { email: 'locked@example.com', password: 'correct horse' });
       await nextLink();
@@ -396,6 +482,7 @@ describe('account security', () => {
       await mailApp.db.execute(sql`UPDATE email_tokens SET expires_at = now() - interval '1 second'`);
       expect((await post('/api/auth/reset-password', { token: expired.token, password: 'battery staple' })).statusCode).toBe(400);
 
+      mailApp.emailCooldown.clear();
       await post('/api/auth/forgot-password', { email: 'locked@example.com' });
       expect((await post('/api/auth/reset-password', { token: (await nextLink()).token, password: 'battery staple' })).statusCode).toBe(200);
       // The reset also confirmed the email, since the link went to it.

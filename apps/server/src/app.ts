@@ -30,7 +30,7 @@ import { mediaFileRoute, mediaRoutes } from './media/routes.js';
 import { screenRoutes } from './screens/routes.js';
 import { goalRoutes } from './goals/routes.js';
 import { Piper } from './tts/piper.js';
-import { smtpMailer, type Mailer } from './auth/mail.js';
+import { EmailCooldown, smtpMailer, type Mailer } from './auth/mail.js';
 import { LoginLimiter } from './auth/login-limit.js';
 import { requestSerializer } from './redact.js';
 import { SpeechService } from './tts/speech.js';
@@ -54,6 +54,7 @@ declare module 'fastify' {
     // forgotten passwords are reset by email.
     mail: { mailer: Mailer; publicUrl: string } | null;
     loginLimiter: LoginLimiter;
+    emailCooldown: EmailCooldown;
   }
 }
 
@@ -110,6 +111,7 @@ export async function buildApp(config: Config, options: Options = {}) {
   if (config.smtpUrl && !config.mailFrom) app.log.warn('SMTP_URL is set but MAIL_FROM is not, so no emails will be sent');
   if (mailer && !config.publicUrl) app.log.warn('SMTP_URL is set but PUBLIC_URL (or DOMAIN) is not, so no emails will be sent');
   app.decorate('loginLimiter', new LoginLimiter());
+  app.decorate('emailCooldown', new EmailCooldown());
   app.decorate(
     'live',
     new SessionManager(db, hub, stats, speech, secrets, createTikTok, (err) => app.log.warn({ err }, 'Could not record stream events'), debug),

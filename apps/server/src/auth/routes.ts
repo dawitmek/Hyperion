@@ -4,7 +4,8 @@ import { hash, verify } from '@node-rs/argon2';
 import { actions, commands, emailTokens, hosts, overlayScreens, profiles } from '../db/schema.js';
 import { DEFAULT_ACTIONS } from '../actions/defaults.js';
 import { newToken, sha256 } from '../crypto.js';
-import { createEmailToken } from './email-tokens.js';
+import { cancelEmailTokens, createEmailToken } from './email-tokens.js';
+import type { Mail } from './mail.js';
 import { endAllSessions, endSession, requireHost, SESSION_COOKIE, startSession } from './session.js';
 
 const DEFAULT_COMMANDS = [
@@ -32,6 +33,9 @@ type Credentials = { email: string; password: string };
 export async function authRoutes(app: FastifyInstance) {
   const { db, config } = app;
   const rateLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
+  // Checked against when an email has no account, so a wrong login takes as long either way and its timing doesn't
+  // show which emails have accounts.
+  const noAccountHash = hash(newToken());
 
   // What the login and signup pages offer on this server.
   app.get('/config', async () => ({ signups: config.signupsEnabled, email: app.mail !== null }));
@@ -54,12 +58,19 @@ export async function authRoutes(app: FastifyInstance) {
       await tx.insert(actions).values(DEFAULT_ACTIONS.map((a) => ({ ...a, hostId: created.id })));
       return created;
     });
-    if (!host) return reply.code(409).send({ error: 'Email already registered' });
-    // With email set up, the account waits for its confirmation link; the link signs them in.
+    // With email set up, the answer is the same whether or not the email has an account, and its owner hears about
+    // it by email; without email, there's no way to say "check your inbox", so a taken email is said outright.
     if (app.mail) {
-      sendLink(host.id, email, 'verify');
-      return reply.code(201).send({ id: host.id, verify: true });
+      if (host) sendLink(host.id, email, 'verify');
+      else if (app.emailCooldown.take('exists', email))
+        sendMail('account exists', {
+          to: email,
+          subject: 'You already have a Hyperion account',
+          text: `Someone, probably you, tried to sign up for Hyperion with this email, which already has an account.\n\nLog in: ${app.mail.publicUrl}/login\nForgot your password? ${app.mail.publicUrl}/forgot-password\n\nIf it wasn't you, you can ignore this email: nothing changed.`,
+        });
+      return reply.code(201).send({ verify: true });
     }
+    if (!host) return reply.code(409).send({ error: 'Email already registered' });
     await startSession(db, req, reply, host.id, config.secureCookies);
     return reply.code(201).send({ id: host.id });
   });
@@ -70,7 +81,8 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(429).send({ error: 'Too many wrong passwords for this account. Try again in 15 minutes, or reset your password.' });
     }
     const [host] = await db.select().from(hosts).where(eq(hosts.email, email));
-    if (!host || !(await verify(host.passwordHash, req.body.password))) {
+    const right = await verify(host?.passwordHash ?? (await noAccountHash), req.body.password);
+    if (!host || !right) {
       app.loginLimiter.fail(email);
       return reply.code(401).send({ error: 'Wrong email or password' });
     }
@@ -110,14 +122,23 @@ export async function authRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const [host] = await db.select({ passwordHash: hosts.passwordHash }).from(hosts).where(eq(hosts.id, req.hostId));
+      const [host] = await db.select({ email: hosts.email, passwordHash: hosts.passwordHash }).from(hosts).where(eq(hosts.id, req.hostId));
+      if (!host) return reply.code(400).send({ error: 'Your current password is wrong' });
+      // Wrong guesses count toward the same pause as logins, so a stolen session can't guess its way to the password.
+      if (app.loginLimiter.blocked(host.email)) {
+        return reply.code(429).send({ error: 'Too many wrong passwords for this account. Try again in 15 minutes.' });
+      }
       // 400, not 401: a 401 makes the dashboard think the session ended.
-      if (!host || !(await verify(host.passwordHash, req.body.currentPassword))) {
+      if (!(await verify(host.passwordHash, req.body.currentPassword))) {
+        app.loginLimiter.fail(host.email);
         return reply.code(400).send({ error: 'Your current password is wrong' });
       }
+      app.loginLimiter.clear(host.email);
       await db.update(hosts).set({ passwordHash: await hash(req.body.newPassword) }).where(eq(hosts.id, req.hostId));
+      await cancelEmailTokens(db, req.hostId);
       await endAllSessions(db, req.hostId);
       await startSession(db, req, reply, req.hostId, config.secureCookies);
+      passwordChanged(host.email);
       return { ok: true };
     },
   );
@@ -172,33 +193,56 @@ export async function authRoutes(app: FastifyInstance) {
         .set({ passwordHash: await hash(req.body.password), emailVerified: true })
         .where(eq(hosts.id, hostId))
         .returning({ email: hosts.email });
+      await cancelEmailTokens(db, hostId);
       await endAllSessions(db, hostId);
-      if (host) app.loginLimiter.clear(host.email);
       await startSession(db, req, reply, hostId, config.secureCookies);
+      if (host) {
+        app.loginLimiter.clear(host.email);
+        passwordChanged(host.email);
+      }
       return { ok: true };
     },
   );
 
-  // Emails go out in the background, so a reply takes as long whether or not the address has an account.
+  // Emails go out in the background, so a reply takes as long whether or not the address has an account. Each kind
+  // goes to an address at most once every 2 minutes (see EmailCooldown); extra requests get the same answer.
+  function sendMail(kind: string, mail: Mail | (() => Promise<Mail>)) {
+    if (!app.mail) return;
+    const { mailer } = app.mail;
+    void (async () => mailer.send(typeof mail === 'function' ? await mail() : mail))().catch((err) =>
+      app.log.error({ err }, `Could not send the ${kind} email`),
+    );
+  }
+
   function sendLink(hostId: string, email: string, purpose: 'verify' | 'reset') {
-    void (async () => {
-      const mail = app.mail!;
+    if (!app.mail || !app.emailCooldown.take(purpose, email)) return;
+    const { publicUrl } = app.mail;
+    sendMail(purpose === 'verify' ? 'confirmation' : 'password reset', async () => {
+      // Made only when the email really goes out, so a request held back by the cooldown leaves the last link working.
       const token = await createEmailToken(db, hostId, purpose);
-      const link = `${mail.publicUrl}/${purpose === 'verify' ? 'verify-email' : 'reset-password'}#${token}`;
-      await mail.mailer.send(
-        purpose === 'verify'
-          ? {
-              to: email,
-              subject: 'Confirm your Hyperion account',
-              text: `Open this link to confirm your email and sign in:\n\n${link}\n\nIt works once, for 24 hours. If you didn't sign up for Hyperion, ignore this email.`,
-            }
-          : {
-              to: email,
-              subject: 'Reset your Hyperion password',
-              text: `Open this link to choose a new password:\n\n${link}\n\nIt works once, for 1 hour, and signs you out everywhere else. If you didn't ask for this, ignore this email: your password stays the same.`,
-            },
-      );
-    })().catch((err) => app.log.error({ err }, `Could not send the ${purpose === 'verify' ? 'confirmation' : 'password reset'} email`));
+      const link = `${publicUrl}/${purpose === 'verify' ? 'verify-email' : 'reset-password'}#${token}`;
+      return purpose === 'verify'
+        ? {
+            to: email,
+            subject: 'Confirm your Hyperion account',
+            text: `Open this link to confirm your email and sign in:\n\n${link}\n\nIt works once, for 24 hours. If you didn't sign up for Hyperion, ignore this email.`,
+          }
+        : {
+            to: email,
+            subject: 'Reset your Hyperion password',
+            text: `Open this link to choose a new password:\n\n${link}\n\nIt works once, for 1 hour, and signs you out everywhere else. If you didn't ask for this, ignore this email: your password stays the same.`,
+          };
+    });
+  }
+
+  // So a change someone else made doesn't go unnoticed. Not held back by the cooldown: it only follows a change.
+  function passwordChanged(email: string) {
+    if (!app.mail) return;
+    sendMail('password changed', {
+      to: email,
+      subject: 'Your Hyperion password was changed',
+      text: `The password for your Hyperion account was just changed, and every device was signed out.\n\nIf this wasn't you, reset it now: ${app.mail.publicUrl}/forgot-password`,
+    });
   }
 
   // A link's token works once: it's deleted as it's used, and only counts for its own purpose.

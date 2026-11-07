@@ -118,8 +118,8 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
         <div>
           <h1>Check your email</h1>
           <p className="muted">
-            {waiting === 'signup' ? 'We sent a link to ' : 'Confirm your email first: open the link we sent to '}
-            <strong>{email}</strong>. It signs you in.
+            {waiting === 'signup' ? 'We sent an email to ' : 'Confirm your email first: open the link we sent to '}
+            <strong>{email}</strong>.{waiting === 'signup' ? ' Open the link in it to continue.' : ' It signs you in.'}
           </p>
         </div>
         <ErrorNotice error={error} />

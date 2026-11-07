@@ -14,3 +14,9 @@ export async function createEmailToken(db: Db, hostId: string, purpose: 'verify'
   });
   return token;
 }
+
+// After a password change or reset, every link already sent stops working: one requested by someone who briefly had
+// the inbox can't be used to take the account back.
+export async function cancelEmailTokens(db: Db, hostId: string) {
+  await db.delete(emailTokens).where(eq(emailTokens.hostId, hostId));
+}
