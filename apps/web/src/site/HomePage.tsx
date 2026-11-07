@@ -242,7 +242,7 @@ const TABS: { title: string; body: string; panel: ReactNode }[] = [
       <div className="s-panel-window">
         <h4>Voice</h4>
         <div className="art-seg">
-          <span className="on">Piper</span>
+          <span className="on">TikTok</span>
           <span>eSpeak</span>
           <span>Cloud key</span>
           <span>Browser</span>
@@ -250,7 +250,7 @@ const TABS: { title: string; body: string; panel: ReactNode }[] = [
         <div className="s-rowline">
           <span />
           <span>Voice</span>
-          <span className="s-chip">en_US-libritts_r, speaker 214</span>
+          <span className="s-chip">Female (US)</span>
           <span />
         </div>
         <div className="s-rowline">

@@ -28,6 +28,9 @@ export const ENGINES: [TtsEngine, string, string][] = [
   ['cloud', 'Your cloud key', 'Google, Azure or ElevenLabs with your own API key (you pay them). Plays through OBS.'],
   ['browser', 'Browser voices', "The streaming PC's built-in voices. Plays outside OBS's mixer; capture Desktop Audio."],
 ];
+// Piper is opt-in for self-hosters, so it's only offered on servers that have it (or to a host who already picked it).
+export const enginesFor = (piperInstalled: boolean, current: TtsEngine) =>
+  ENGINES.filter(([engine]) => engine !== 'piper' || piperInstalled || current === 'piper');
 const CLOUD_LABELS: Record<CloudProvider, string> = { google: 'Google Cloud', azure: 'Azure Speech', elevenlabs: 'ElevenLabs' };
 const CLOUD_VOICE_HINTS: Record<CloudProvider, string> = {
   google: 'e.g. en-US-Neural2-F',
@@ -206,7 +209,7 @@ function VoiceCard({
       }
     >
       <div className={`stack ${host.ttsMode === 'off' ? 'dimmed' : ''}`}>
-        <Choices label="Voice engine" value={host.ttsEngine} options={ENGINES} onChange={(ttsEngine) => save({ ttsEngine })} />
+        <Choices label="Voice engine" value={host.ttsEngine} options={enginesFor(options.piperVoices.length > 0, host.ttsEngine)} onChange={(ttsEngine) => save({ ttsEngine })} />
         {tiktokWaiting && (
           <p className="notice info">
             Sign in to TikTok from the companion app: open it on your PC and choose Sign in to TikTok. Until then, chat is read
@@ -214,7 +217,7 @@ function VoiceCard({
           </p>
         )}
         {piperMissing && (
-          <p className="notice warning">This server has no Piper voices installed, so eSpeak is used instead. The Docker image includes Piper.</p>
+          <p className="notice warning">This server doesn’t have Piper installed, so eSpeak is used instead. Pick another engine, or ask whoever runs the server to add Piper.</p>
         )}
         <div className="form-grid">
           {showPiper && options.piperVoices.length > 0 && (

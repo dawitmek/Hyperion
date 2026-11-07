@@ -9,6 +9,10 @@ export interface Config {
   piperVoicesDir: string | undefined;
   tiktokSessionId: string | undefined;
   secretsKey: Buffer;
+  signupsEnabled: boolean;
+  publicUrl?: string; // where the server is reached, for links in emails; never taken from a request's Host header
+  smtpUrl?: string; // e.g. smtps://user:pass@smtp.example.com:465; without it, no emails are sent
+  mailFrom?: string;
   trustProxy?: string; // addresses of the reverse proxies in front, so rate limits see each client's own address
   debugLog?: string; // a file for the debug log (see debug-log.ts); never set in production
 }
@@ -20,6 +24,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const secretsKey = Buffer.from(env.SECRETS_KEY ?? '', 'base64');
   if (secretsKey.length !== 32) {
     throw new Error('SECRETS_KEY must be 32 random bytes in base64. Generate one with: openssl rand -base64 32');
+  }
+  const publicUrl = (env.PUBLIC_URL || (env.DOMAIN ? `https://${env.DOMAIN}` : '')).replace(/\/+$/, '') || undefined;
+  if (publicUrl && !/^https?:\/\/[^/]+$/.test(publicUrl)) {
+    throw new Error(`PUBLIC_URL must be the server's address with no path, like https://hyperion.example.com (got ${publicUrl})`);
   }
   return {
     databaseUrl,
@@ -35,6 +43,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // Optional: a TikTok account's sessionid cookie, used for TikTok voices by every host who hasn't signed in themselves.
     tiktokSessionId: env.TIKTOK_SESSION_ID || undefined,
     secretsKey,
+    // On unless set to false: a server that's only for invited hosts closes signups once they've joined.
+    signupsEnabled: env.SIGNUPS_ENABLED !== 'false',
+    publicUrl,
+    smtpUrl: env.SMTP_URL || undefined,
+    mailFrom: env.MAIL_FROM || undefined,
     // Off unless set: trusting X-Forwarded-For from anyone would let clients pick their own address.
     trustProxy: env.TRUST_PROXY && env.TRUST_PROXY !== 'none' ? env.TRUST_PROXY : undefined,
     // For development only: production ignores it, so a debug setting left in an .env can't fill a server's disk.

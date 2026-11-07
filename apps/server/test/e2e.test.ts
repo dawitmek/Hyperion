@@ -45,7 +45,7 @@ beforeAll(async () => {
     throw new Error('TikTok must not be contacted in tests');
   };
   app = await buildApp(
-    { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId: undefined, secretsKey },
+    { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId: undefined, secretsKey, signupsEnabled: true },
     { logger: false, createTikTok: fakeTikTok, fetch: fakeFetch, onRoute: (route) => routes.push(route) },
   );
   await app.listen({ port: 0, host: '127.0.0.1' });
@@ -59,7 +59,7 @@ afterAll(async () => {
 beforeEach(async () => {
   for (const socket of sockets.splice(0)) socket.close();
   await app.live.stopAll();
-  await app.db.execute(sql`TRUNCATE hosts, auth_sessions, profiles, commands, companions, pairing_codes, actions, media, goals, viewer_stats, service_status CASCADE`);
+  await app.db.execute(sql`TRUNCATE hosts, auth_sessions, email_tokens, profiles, commands, companions, pairing_codes, actions, media, goals, viewer_stats, service_status CASCADE`);
 });
 
 // --- helpers ---------------------------------------------------------------
@@ -176,6 +176,11 @@ describe('accounts', () => {
     'POST /api/auth/signup': 'creates the session',
     'POST /api/auth/login': 'creates the session',
     'POST /api/auth/logout': 'only ends the session it was sent',
+    'GET /api/auth/config': 'tells the login page whether signups and email are on',
+    'POST /api/auth/resend-verification': 'same answer for any email; the link goes to the inbox',
+    'POST /api/auth/forgot-password': 'same answer for any email; the link goes to the inbox',
+    'POST /api/auth/verify-email': "the emailed link's one-time token is the credential",
+    'POST /api/auth/reset-password': "the emailed link's one-time token is the credential",
     'POST /api/companions/pair': 'the one-time pairing code is the credential',
     'POST /api/companions/tiktok-session': "the companion's device token is the credential (tested below)",
     'GET /media/:id': 'overlays in OBS have no login; ids are random UUIDs',
@@ -252,6 +257,150 @@ describe('accounts', () => {
   it('requires a TikTok username before going live on TikTok', async () => {
     const { cookie } = await signUp();
     expect((await api(cookie, 'POST', '/api/live/start', { source: 'tiktok' })).statusCode).toBe(400);
+  });
+});
+
+const sessionOf = (res: { cookies: { name: string; value: string }[] }) => {
+  const cookie = res.cookies.find((c) => c.name === 'hyperion_session' && c.value);
+  return cookie ? `hyperion_session=${cookie.value}` : undefined;
+};
+
+describe('account security', () => {
+  const login = (email: string, password: string) =>
+    app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password }, remoteAddress: nextAddress() });
+
+  it('closes signups when the server says so, and tells the signup page', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/auth/config' })).json()).toEqual({ signups: true, email: false });
+    app.config.signupsEnabled = false;
+    try {
+      const res = await app.inject({ method: 'POST', url: '/api/auth/signup', payload: { email: 'late@example.com', password: 'correct horse' }, remoteAddress: nextAddress() });
+      expect(res.statusCode).toBe(403);
+      expect((await app.inject({ method: 'GET', url: '/api/auth/config' })).json().signups).toBe(false);
+    } finally {
+      app.config.signupsEnabled = true;
+    }
+  });
+
+  it('changes the password and signs out every other browser', async () => {
+    const { cookie: first } = await signUp('change@example.com');
+    const second = sessionOf(await login('change@example.com', 'correct horse'))!;
+    const wrong = await api(second, 'POST', '/api/auth/password', { currentPassword: 'not it at all', newPassword: 'battery staple' });
+    expect([wrong.statusCode, wrong.json().error]).toEqual([400, 'Your current password is wrong']);
+    const changed = await api(second, 'POST', '/api/auth/password', { currentPassword: 'correct horse', newPassword: 'battery staple' });
+    expect(changed.statusCode).toBe(200);
+    expect((await api(first, 'GET', '/api/auth/me')).statusCode).toBe(401);
+    // This browser gets a new session; its old one is gone like the others.
+    expect((await api(second, 'GET', '/api/auth/me')).statusCode).toBe(401);
+    expect((await api(sessionOf(changed)!, 'GET', '/api/auth/me')).statusCode).toBe(200);
+    expect((await login('change@example.com', 'correct horse')).statusCode).toBe(401);
+    expect((await login('change@example.com', 'battery staple')).statusCode).toBe(200);
+  });
+
+  it('signs out everywhere', async () => {
+    const { cookie: first } = await signUp('everywhere@example.com');
+    const second = sessionOf(await login('everywhere@example.com', 'correct horse'))!;
+    expect((await api(first, 'POST', '/api/auth/logout-all')).statusCode).toBe(200);
+    expect((await api(first, 'GET', '/api/auth/me')).statusCode).toBe(401);
+    expect((await api(second, 'GET', '/api/auth/me')).statusCode).toBe(401);
+  });
+
+  it('stops guessing one account from many addresses, without blocking other accounts', async () => {
+    await signUp('target@example.com');
+    await signUp('bystander@example.com');
+    for (let i = 0; i < 10; i++) expect((await login('target@example.com', 'wrong password')).statusCode).toBe(401);
+    const blocked = await login('target@example.com', 'correct horse');
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json().error).toContain('Too many wrong passwords for this account');
+    expect((await login('TARGET@example.com', 'correct horse')).statusCode).toBe(429); // emails are matched case-insensitively
+    expect((await login('bystander@example.com', 'correct horse')).statusCode).toBe(200);
+  });
+
+  describe('with email', () => {
+    const sent: { to: string; subject: string; text: string }[] = [];
+    let mailApp: Awaited<ReturnType<typeof buildApp>>;
+    const post = (url: string, payload: object) => mailApp.inject({ method: 'POST', url, payload, remoteAddress: nextAddress() });
+    // Emails go out in the background, so wait for the next one.
+    const nextLink = async () => {
+      await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0));
+      const mail = sent.shift()!;
+      return { ...mail, token: /#(\S+)/.exec(mail.text)![1]!, link: /(https:\S+)/.exec(mail.text)![1]! };
+    };
+
+    beforeAll(async () => {
+      mailApp = await buildApp(
+        { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId: undefined, secretsKey, signupsEnabled: true, publicUrl: 'https://hyperion.example.com' },
+        { logger: false, mailer: { send: async (mail) => void sent.push(mail) } },
+      );
+    });
+    afterAll(async () => {
+      await mailApp?.close();
+    });
+    beforeEach(() => void sent.splice(0));
+
+    it('makes new accounts confirm their email before signing in', async () => {
+      expect((await mailApp.inject({ method: 'GET', url: '/api/auth/config' })).json()).toEqual({ signups: true, email: true });
+      const signup = await post('/api/auth/signup', { email: 'New@example.com', password: 'correct horse' });
+      expect([signup.statusCode, signup.json().verify, sessionOf(signup)]).toEqual([201, true, undefined]);
+      const mail = await nextLink();
+      expect([mail.to, mail.subject]).toEqual(['new@example.com', 'Confirm your Hyperion account']);
+      expect(mail.link).toMatch(/^https:\/\/hyperion\.example\.com\/verify-email#/);
+
+      const early = await post('/api/auth/login', { email: 'new@example.com', password: 'correct horse' });
+      expect([early.statusCode, early.json().unverified]).toEqual([403, true]);
+      // A wrong password doesn't reveal that the account is waiting.
+      expect((await post('/api/auth/login', { email: 'new@example.com', password: 'wrong password' })).statusCode).toBe(401);
+
+      // Asking again replaces the first link.
+      expect((await post('/api/auth/resend-verification', { email: 'new@example.com' })).statusCode).toBe(200);
+      const again = await nextLink();
+      expect((await post('/api/auth/verify-email', { token: mail.token })).statusCode).toBe(400);
+      const verified = await post('/api/auth/verify-email', { token: again.token });
+      expect(verified.statusCode).toBe(200);
+      expect((await mailApp.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: sessionOf(verified)! } })).json().email).toBe('new@example.com');
+      expect((await post('/api/auth/verify-email', { token: again.token })).statusCode).toBe(400); // once only
+      expect((await post('/api/auth/login', { email: 'new@example.com', password: 'correct horse' })).statusCode).toBe(200);
+    });
+
+    it('resets a forgotten password by email, once, and signs out everywhere else', async () => {
+      await post('/api/auth/signup', { email: 'forgot@example.com', password: 'correct horse' });
+      await post('/api/auth/verify-email', { token: (await nextLink()).token });
+      const old = sessionOf(await post('/api/auth/login', { email: 'forgot@example.com', password: 'correct horse' }))!;
+
+      // Same answer for an email with no account, and nothing is sent.
+      const unknown = await post('/api/auth/forgot-password', { email: 'nobody@example.com' });
+      expect([unknown.statusCode, unknown.json()]).toEqual([200, { ok: true }]);
+      expect((await post('/api/auth/forgot-password', { email: 'forgot@example.com' })).json()).toEqual({ ok: true });
+      const mail = await nextLink();
+      expect(sent).toEqual([]);
+      expect([mail.subject, mail.link.startsWith('https://hyperion.example.com/reset-password#')]).toEqual(['Reset your Hyperion password', true]);
+
+      // A reset link is only for resetting.
+      expect((await post('/api/auth/verify-email', { token: mail.token })).statusCode).toBe(400);
+      expect((await post('/api/auth/reset-password', { token: 'x'.repeat(43), password: 'battery staple' })).statusCode).toBe(400);
+      const reset = await post('/api/auth/reset-password', { token: mail.token, password: 'battery staple' });
+      expect(reset.statusCode).toBe(200);
+      expect((await mailApp.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: old } })).statusCode).toBe(401);
+      expect((await mailApp.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: sessionOf(reset)! } })).statusCode).toBe(200);
+      expect((await post('/api/auth/reset-password', { token: mail.token, password: 'other password' })).statusCode).toBe(400);
+      expect((await post('/api/auth/login', { email: 'forgot@example.com', password: 'battery staple' })).statusCode).toBe(200);
+    });
+
+    it("refuses an expired link, and a reset unlocks an account that's had too many wrong passwords", async () => {
+      await post('/api/auth/signup', { email: 'locked@example.com', password: 'correct horse' });
+      await nextLink();
+      for (let i = 0; i < 10; i++) await post('/api/auth/login', { email: 'locked@example.com', password: 'wrong password' });
+      expect((await post('/api/auth/login', { email: 'locked@example.com', password: 'correct horse' })).statusCode).toBe(429);
+
+      await post('/api/auth/forgot-password', { email: 'locked@example.com' });
+      const expired = await nextLink();
+      await mailApp.db.execute(sql`UPDATE email_tokens SET expires_at = now() - interval '1 second'`);
+      expect((await post('/api/auth/reset-password', { token: expired.token, password: 'battery staple' })).statusCode).toBe(400);
+
+      await post('/api/auth/forgot-password', { email: 'locked@example.com' });
+      expect((await post('/api/auth/reset-password', { token: (await nextLink()).token, password: 'battery staple' })).statusCode).toBe(200);
+      // The reset also confirmed the email, since the link went to it.
+      expect((await post('/api/auth/login', { email: 'locked@example.com', password: 'battery staple' })).statusCode).toBe(200);
+    });
   });
 });
 
@@ -1661,7 +1810,7 @@ describe('alerts and text-to-speech', () => {
   it("offers TikTok sign-in in the companion only while the server's own account isn't working", async () => {
     const withAccount = (tiktokSessionId: string) =>
       buildApp(
-        { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId, secretsKey },
+        { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId, secretsKey, signupsEnabled: true },
         { logger: false, fetch: fakeFetch },
       );
     const server = await withAccount('goodsession0123456789');
@@ -1701,7 +1850,7 @@ describe('alerts and text-to-speech', () => {
     await signUp();
     await app.db.update(hosts).set({ ttsCloudKey: 'old-plain-key', ttsTiktokSession: 'oldplainsession' });
     const restarted = await buildApp(
-      { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId: undefined, secretsKey },
+      { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId: undefined, secretsKey, signupsEnabled: true },
       { logger: false },
     );
     await restarted.close();
@@ -1715,7 +1864,7 @@ describe('alerts and text-to-speech', () => {
     // A second app with a fake Piper offering a 3-speaker and a 1-speaker voice.
     const fixture = (p: string) => fileURLToPath(new URL(`./fixtures/${p}`, import.meta.url));
     const withPiper = await buildApp(
-      { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId: undefined, secretsKey },
+      { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId: undefined, secretsKey, signupsEnabled: true },
       { logger: false, piper: new Piper(process.execPath, fixture('piper-voices'), [fixture('fake-piper.mjs')]) },
     );
     try {
@@ -1865,17 +2014,18 @@ describe('endpoint protection', () => {
 
   it('keeps each client behind a proxy to their own rate limit', async () => {
     const proxied = await buildApp({ ...app.config, trustProxy: 'loopback' }, { logger: false, fetch: fakeFetch });
-    const login = (address: string) =>
+    const login = (address: string, email = 'nobody@example.com') =>
       proxied.inject({
         method: 'POST',
         url: '/api/auth/login',
-        payload: { email: 'nobody@example.com', password: 'wrong password' },
+        payload: { email, password: 'wrong password' },
         headers: { 'x-forwarded-for': address },
         remoteAddress: '127.0.0.1',
       });
     for (let i = 0; i < 10; i++) expect((await login('203.0.113.1')).statusCode).toBe(401);
     expect((await login('203.0.113.1')).statusCode).toBe(429);
-    expect((await login('203.0.113.2')).statusCode).toBe(401);
+    // Another email, since 10 wrong passwords also pause that account wherever they come from.
+    expect((await login('203.0.113.2', 'someone@example.com')).statusCode).toBe(401);
     await proxied.close();
   });
 

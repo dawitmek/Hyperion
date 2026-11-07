@@ -17,12 +17,12 @@ COPY apps/web apps/web
 COPY CHANGELOG.md ./
 RUN npm run build
 
-# Piper (MIT, https://github.com/rhasspy/piper) for server-side text-to-speech, plus voices whose licenses
-# allow commercial use (see THIRD_PARTY_NOTICES.md). PIPER_VOICES picks which; each adds 60–80 MB.
-# Build with --build-arg WITH_PIPER=false to leave Piper out; TTS then falls back to eSpeak.
+# Optional: Piper (MIT, https://github.com/rhasspy/piper) for server-side text-to-speech, plus voices whose licenses
+# allow commercial use (see THIRD_PARTY_NOTICES.md). Off by default, so the published image leaves it out; build with
+# --build-arg WITH_PIPER=true to include it. PIPER_VOICES picks which voices; each adds 60–80 MB.
 FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS piper
 ARG TARGETARCH
-ARG WITH_PIPER=true
+ARG WITH_PIPER=false
 ARG PIPER_RELEASE=2023.11.14-2
 ARG VOICES_URL=https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en
 ARG PIPER_VOICES="en_GB/alba/medium/en_GB-alba-medium en_US/libritts_r/medium/en_US-libritts_r-medium en_GB/vctk/medium/en_GB-vctk-medium en_US/kristin/medium/en_US-kristin-medium en_GB/northern_english_male/medium/en_GB-northern_english_male-medium"
@@ -50,7 +50,7 @@ FROM node:22-bookworm-slim
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
 COPY --from=piper /opt/piper /opt/piper
 COPY --from=piper /opt/piper-voices /opt/piper-voices
-# With WITH_PIPER=false the voices folder is empty, so the server falls back to eSpeak.
+# Without WITH_PIPER=true the voices folder is empty, so the dashboard hides Piper and TTS falls back to eSpeak.
 ENV PIPER_BIN=/opt/piper/piper PIPER_VOICES_DIR=/opt/piper-voices
 WORKDIR /app
 COPY --from=deps /app/node_modules node_modules

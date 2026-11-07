@@ -1,7 +1,7 @@
 import { StrictMode, useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@hyperion/theme/theme.css';
-import { Auth } from './Auth';
+import { Auth, ForgotPassword, ResetPassword, VerifyEmail } from './Auth';
 import { ActivityWindow } from './dashboard/ActivityWindow';
 import { Dashboard } from './dashboard/Dashboard';
 import { HomePage } from './site/HomePage';
@@ -43,6 +43,9 @@ function App() {
   if (path.startsWith('/dashboard')) return <Dashboard />;
   if (path === '/login') return <Auth key="login" mode="login" />;
   if (path === '/signup') return <Auth key="signup" mode="signup" />;
+  if (path === '/forgot-password') return <ForgotPassword />;
+  if (path === '/reset-password') return <ResetPassword />;
+  if (path === '/verify-email') return <VerifyEmail />;
   if (path === '/features') return <FeaturesPage />;
   if (path === '/integrations') return <IntegrationsPage />;
   if (path === '/how-it-works') return <HowItWorksPage />;

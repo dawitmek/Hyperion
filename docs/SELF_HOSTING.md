@@ -16,8 +16,8 @@ There are three ways to run it:
 You need:
 
 - A Linux server with [Docker](https://docs.docker.com/engine/install/) (with Compose) and Git
-- About 1 GB of free disk space for the published image (about 700 MB with all five voices), or about 2 GB to build
-  it yourself; see [Text-to-speech](#text-to-speech) for a smaller one
+- About 1 GB of free disk space for the published image, or about 2 GB to build it yourself (more with
+  [Piper voices](#text-to-speech))
 - A domain or subdomain you can point at the server, such as `hyperion.example.com`
 - Ports 80 and 443 open to the internet
 
@@ -74,7 +74,7 @@ Or build it yourself from the code you cloned, for example to change what's in i
 docker compose -f docker/compose.yml --env-file .env up -d --build
 ```
 
-The first build takes a while, because it downloads the voices. Either way, database migrations run by themselves on
+The first build takes a few minutes, longer with Piper voices. Either way, database migrations run by themselves on
 startup.
 
 The published image is the newest release (`latest`). To stay on one release until you choose to update, add
@@ -95,8 +95,12 @@ take a minute to arrive the first time.
 
 Open your domain in a browser and sign up.
 
-**Signups are open to anyone who can reach your server.** Each account can upload files and use your server's voices,
-and there's no switch to turn signups off yet, so only share the address with people you trust.
+**Signups are open to anyone who can reach your server** until you close them. Each account can upload files (and
+use your server's CPU for Piper voices, if you added them). Once the hosts you invited have signed up, add
+`SIGNUPS_ENABLED=false` to `.env` and run `up -d` again. Existing accounts keep working.
+
+To have new accounts confirm their email, and to let people reset a forgotten password themselves, set up
+[email](#email).
 
 ### 7. Connect the companion
 
@@ -170,6 +174,32 @@ docker compose -f docker/compose.yml --env-file .env up -d --build
 
 `git pull` keeps `docker/compose.yml` and the Caddy config up to date. Your data stays in Docker volumes. Back up first, because migrations run on startup.
 
+## Email
+
+Optional. With email set up, new accounts confirm their address before they can sign in, and anyone can reset a
+forgotten password from the login page. Any SMTP service works, such as [Resend](https://resend.com),
+[Postmark](https://postmarkapp.com), Amazon SES, or your own mailbox's SMTP. Add to `.env`, then run `up -d` again:
+
+```sh
+SMTP_URL=smtps://username:password@smtp.example.com:465
+MAIL_FROM=Hyperion <hyperion@example.com>
+```
+
+The address in `MAIL_FROM` must be one your SMTP service lets you send from. Links in emails go to `https://DOMAIN`;
+set `PUBLIC_URL` instead if Hyperion is reached at another address. Accounts made before email was set up stay
+signed in as they are.
+
+### Resetting a password without email
+
+Make a one-time reset link for someone, and send it to them privately:
+
+```sh
+docker compose -f docker/compose.yml --env-file .env exec hyperion node apps/server/dist/admin.js reset-link someone@example.com
+```
+
+It works once, for 1 hour, and signs them out everywhere else. Without `DOMAIN` or `PUBLIC_URL`, it prints only the
+part after the address: put your server's address in front.
+
 ## Backups
 
 Save the database:
@@ -215,7 +245,12 @@ See what a service is doing with `docker compose -f docker/compose.yml --env-fil
 | `TRUST_PROXY` | `loopback,uniquelocal` | Which addresses are your reverse proxy, so rate limits apply per visitor: addresses, ranges, or `loopback` and `uniquelocal` (private networks). The default suits the built-in Caddy or a proxy on the same machine. With no proxy (port published on a LAN), set `none`, or clients could fake their address |
 | `HYPERION_BIND` | `127.0.0.1` | Interface the port is published on; `0.0.0.0` exposes it on the LAN |
 | `HYPERION_PORT` | `3000` | Published port |
+| `SIGNUPS_ENABLED` | `true` | Set `false` to stop new accounts. Existing accounts keep working |
+| `SMTP_URL` | empty | An SMTP service as a URL, such as `smtps://user:pass@smtp.example.com:465`. With `MAIL_FROM`, turns on [email](#email) |
+| `MAIL_FROM` | empty | The sender of Hyperion's emails, such as `Hyperion <hyperion@example.com>` |
+| `PUBLIC_URL` | `https://DOMAIN` | The address in emailed links, if it isn't `https://DOMAIN` |
 | `HYPERION_VERSION` | `latest` | Which release of the published image to pull, such as `0.6.0` |
+| `WITH_PIPER` | `false` | Set `true` to add Piper voices to an image you build yourself (`up -d --build`). See [Text-to-speech](#text-to-speech) |
 
 Browsers share cookies between servers on the same host name regardless of port, so two Hyperion servers on
 `127.0.0.1:3000` and `127.0.0.1:3131` log each other out in one browser. Use different host names (for example
@@ -223,14 +258,20 @@ Browsers share cookies between servers on the same host name regardless of port,
 
 ## Text-to-speech
 
-The image includes [Piper](https://github.com/rhasspy/piper) and five English voices (two of them multi-speaker, with 904 and 109 speakers), so the "Piper" voice engine
-works out of the box. Each spoken line costs a little server CPU (about half a second for a short line).
+Out of the box, no voice is made on your server's CPU: eSpeak runs inside each overlay, TikTok voices go through
+TikTok, and cloud voices through each host's own provider.
 
-- Smaller image: the published image always has all five voices, so build your own. Under `build:` in
-  `docker/compose.yml`, add `args: { WITH_PIPER: "false" }` to leave Piper out
-  (about 360 MB less; hosts who pick Piper get the in-overlay eSpeak voice instead), or
-  `args: { PIPER_VOICES: "en_GB/alba/medium/en_GB-alba-medium" }` to bundle fewer voices (each is 60–80 MB), then
-  start it with `up -d --build`.
+You can add [Piper](https://github.com/rhasspy/piper), natural-sounding voices made on your server, which work
+without a TikTok account or a paid key. The published image leaves it out, so build your own: add `WITH_PIPER=true`
+to `.env` and start it with `up -d --build`. That adds five English voices (two of them multi-speaker, with 904 and
+109 speakers) and about 360 MB to the image. The dashboard only offers Piper on servers that have it.
+
+Each spoken line costs about half a second of server CPU, and at most two are made at once, so plan on 2 vCPUs. On
+a server shared by many hosts reading busy chats, lines start being dropped (and spoken with eSpeak instead) past
+roughly 10–20 hosts reading aloud at the same time.
+
+- Fewer voices: under `args:` in `docker/compose.yml`, add
+  `PIPER_VOICES: "en_GB/alba/medium/en_GB-alba-medium"` below `WITH_PIPER` (each voice is 60–80 MB).
 - More voices: mount a folder of Piper voices (`.onnx` + `.onnx.json` pairs) at `/opt/piper-voices`. Check each
   voice's license first; see `THIRD_PARTY_NOTICES.md`.
 - Running without Docker: set `PIPER_BIN` (the `piper` executable) and `PIPER_VOICES_DIR` in `.env`.

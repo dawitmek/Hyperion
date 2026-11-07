@@ -8,6 +8,8 @@ export const hosts = pgTable('hosts', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  // False only while a new account waits for its confirmation email; accounts on servers without email start true.
+  emailVerified: boolean('email_verified').notNull().default(true),
   tiktokUsername: text('tiktok_username'),
   overlayToken: text('overlay_token').notNull().unique(),
   actionsPerSecond: integer('actions_per_second').notNull().default(5),
@@ -66,6 +68,14 @@ export const hosts = pgTable('hosts', {
 export const authSessions = pgTable('auth_sessions', {
   tokenHash: text('token_hash').primaryKey(),
   hostId: uuid('host_id').notNull().references(() => hosts.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
+// Links sent by email: confirming the address, and resetting the password. Stored hashed, like sessions.
+export const emailTokens = pgTable('email_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  hostId: uuid('host_id').notNull().references(() => hosts.id, { onDelete: 'cascade' }),
+  purpose: text('purpose').$type<'verify' | 'reset'>().notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
 

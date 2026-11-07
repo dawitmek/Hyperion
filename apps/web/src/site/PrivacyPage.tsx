@@ -157,7 +157,8 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
           </li>
         </ul>
         <p>
-          The Piper and eSpeak voices run on the Hyperion server itself, so chat read with them goes nowhere else. Browser
+          The eSpeak voice is made inside your overlay, and Piper voices (on servers that offer them) on the Hyperion server
+          itself, so chat read with them goes nowhere else. Browser
           voices run on the PC showing your overlay; some browsers send text to their maker for online voices.
         </p>
       </>

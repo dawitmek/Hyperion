@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { hash, verify } from '@node-rs/argon2';
-import { actions, commands, hosts, overlayScreens, profiles } from '../db/schema.js';
+import { actions, commands, emailTokens, hosts, overlayScreens, profiles } from '../db/schema.js';
 import { DEFAULT_ACTIONS } from '../actions/defaults.js';
-import { newToken } from '../crypto.js';
-import { endSession, requireHost, startSession } from './session.js';
+import { newToken, sha256 } from '../crypto.js';
+import { createEmailToken } from './email-tokens.js';
+import { endAllSessions, endSession, requireHost, SESSION_COOKIE, startSession } from './session.js';
 
 const DEFAULT_COMMANDS = [
   { keyword: 'w', key: 'KeyW', holdMs: 300 },
@@ -15,13 +16,14 @@ const DEFAULT_COMMANDS = [
   { keyword: 'run', key: 'Shift+KeyW', holdMs: 1000 }, // running needs a longer hold than a step to get anywhere
 ].map((c) => ({ ...c, cooldownMs: 1000 }));
 
+const password = { type: 'string', minLength: 8, maxLength: 128 } as const;
 const credentials = {
   type: 'object',
   required: ['email', 'password'],
   additionalProperties: false,
   properties: {
     email: { type: 'string', format: 'email', maxLength: 254 },
-    password: { type: 'string', minLength: 8, maxLength: 128 },
+    password,
   },
 } as const;
 
@@ -31,13 +33,17 @@ export async function authRoutes(app: FastifyInstance) {
   const { db, config } = app;
   const rateLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
 
+  // What the login and signup pages offer on this server.
+  app.get('/config', async () => ({ signups: config.signupsEnabled, email: app.mail !== null }));
+
   app.post<{ Body: Credentials }>('/signup', { ...rateLimit, schema: { body: credentials } }, async (req, reply) => {
+    if (!config.signupsEnabled) return reply.code(403).send({ error: 'This server isn’t taking new accounts' });
     const email = req.body.email.toLowerCase();
     const passwordHash = await hash(req.body.password);
     const host = await db.transaction(async (tx) => {
       const [created] = await tx
         .insert(hosts)
-        .values({ email, passwordHash, overlayToken: newToken() })
+        .values({ email, passwordHash, overlayToken: newToken(), emailVerified: app.mail === null })
         .onConflictDoNothing()
         .returning({ id: hosts.id, overlayToken: hosts.overlayToken });
       if (!created) return undefined;
@@ -49,15 +55,30 @@ export async function authRoutes(app: FastifyInstance) {
       return created;
     });
     if (!host) return reply.code(409).send({ error: 'Email already registered' });
+    // With email set up, the account waits for its confirmation link; the link signs them in.
+    if (app.mail) {
+      sendLink(host.id, email, 'verify');
+      return reply.code(201).send({ id: host.id, verify: true });
+    }
     await startSession(db, req, reply, host.id, config.secureCookies);
     return reply.code(201).send({ id: host.id });
   });
 
   app.post<{ Body: Credentials }>('/login', { ...rateLimit, schema: { body: credentials } }, async (req, reply) => {
-    const [host] = await db.select().from(hosts).where(eq(hosts.email, req.body.email.toLowerCase()));
+    const email = req.body.email.toLowerCase();
+    if (app.loginLimiter.blocked(email)) {
+      return reply.code(429).send({ error: 'Too many wrong passwords for this account. Try again in 15 minutes, or reset your password.' });
+    }
+    const [host] = await db.select().from(hosts).where(eq(hosts.email, email));
     if (!host || !(await verify(host.passwordHash, req.body.password))) {
+      app.loginLimiter.fail(email);
       return reply.code(401).send({ error: 'Wrong email or password' });
     }
+    // Only said after the right password, so it doesn't tell strangers which emails have accounts.
+    if (!host.emailVerified) {
+      return reply.code(403).send({ error: 'Confirm your email first: open the link we sent you.', unverified: true });
+    }
+    app.loginLimiter.clear(email);
     await startSession(db, req, reply, host.id, config.secureCookies);
     return { id: host.id };
   });
@@ -66,6 +87,128 @@ export async function authRoutes(app: FastifyInstance) {
     await endSession(db, req, reply);
     return { ok: true };
   });
+
+  app.post('/logout-all', { onRequest: requireHost }, async (req, reply) => {
+    await endAllSessions(db, req.hostId);
+    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    return { ok: true };
+  });
+
+  // Signs out every other browser too, so a leaked password stops working everywhere at once.
+  app.post<{ Body: { currentPassword: string; newPassword: string } }>(
+    '/password',
+    {
+      ...rateLimit,
+      onRequest: requireHost,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['currentPassword', 'newPassword'],
+          additionalProperties: false,
+          properties: { currentPassword: password, newPassword: password },
+        },
+      },
+    },
+    async (req, reply) => {
+      const [host] = await db.select({ passwordHash: hosts.passwordHash }).from(hosts).where(eq(hosts.id, req.hostId));
+      // 400, not 401: a 401 makes the dashboard think the session ended.
+      if (!host || !(await verify(host.passwordHash, req.body.currentPassword))) {
+        return reply.code(400).send({ error: 'Your current password is wrong' });
+      }
+      await db.update(hosts).set({ passwordHash: await hash(req.body.newPassword) }).where(eq(hosts.id, req.hostId));
+      await endAllSessions(db, req.hostId);
+      await startSession(db, req, reply, req.hostId, config.secureCookies);
+      return { ok: true };
+    },
+  );
+
+  const emailOnly = { type: 'object', required: ['email'], additionalProperties: false, properties: { email: credentials.properties.email } } as const;
+
+  // The same answer whether or not the email has an account, so these can't be used to find out who does.
+  app.post<{ Body: { email: string } }>('/resend-verification', { ...rateLimit, schema: { body: emailOnly } }, async (req, reply) => {
+    if (!app.mail) return reply.code(400).send({ error: 'This server doesn’t send emails' });
+    const email = req.body.email.toLowerCase();
+    const [host] = await db.select({ id: hosts.id, verified: hosts.emailVerified }).from(hosts).where(eq(hosts.email, email));
+    if (host && !host.verified) sendLink(host.id, email, 'verify');
+    return { ok: true };
+  });
+
+  app.post<{ Body: { email: string } }>('/forgot-password', { ...rateLimit, schema: { body: emailOnly } }, async (req, reply) => {
+    if (!app.mail) return reply.code(400).send({ error: 'This server doesn’t send emails. Ask whoever runs it for a reset link.' });
+    const email = req.body.email.toLowerCase();
+    const [host] = await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.email, email));
+    if (host) sendLink(host.id, email, 'reset');
+    return { ok: true };
+  });
+
+  const tokenBody = { type: 'string', minLength: 20, maxLength: 100 } as const;
+
+  app.post<{ Body: { token: string } }>(
+    '/verify-email',
+    { ...rateLimit, schema: { body: { type: 'object', required: ['token'], additionalProperties: false, properties: { token: tokenBody } } } },
+    async (req, reply) => {
+      const hostId = await useToken(req.body.token, 'verify');
+      if (!hostId) return reply.code(400).send({ error: 'This link has expired or was already used. Log in to get a new one.' });
+      await db.update(hosts).set({ emailVerified: true }).where(eq(hosts.id, hostId));
+      await startSession(db, req, reply, hostId, config.secureCookies);
+      return { ok: true };
+    },
+  );
+
+  // Also confirms the email (the link proves it), unlocks the account and signs out everywhere else.
+  app.post<{ Body: { token: string; password: string } }>(
+    '/reset-password',
+    {
+      ...rateLimit,
+      schema: {
+        body: { type: 'object', required: ['token', 'password'], additionalProperties: false, properties: { token: tokenBody, password } },
+      },
+    },
+    async (req, reply) => {
+      const hostId = await useToken(req.body.token, 'reset');
+      if (!hostId) return reply.code(400).send({ error: 'This link has expired or was already used. Ask for a new one.' });
+      const [host] = await db
+        .update(hosts)
+        .set({ passwordHash: await hash(req.body.password), emailVerified: true })
+        .where(eq(hosts.id, hostId))
+        .returning({ email: hosts.email });
+      await endAllSessions(db, hostId);
+      if (host) app.loginLimiter.clear(host.email);
+      await startSession(db, req, reply, hostId, config.secureCookies);
+      return { ok: true };
+    },
+  );
+
+  // Emails go out in the background, so a reply takes as long whether or not the address has an account.
+  function sendLink(hostId: string, email: string, purpose: 'verify' | 'reset') {
+    void (async () => {
+      const mail = app.mail!;
+      const token = await createEmailToken(db, hostId, purpose);
+      const link = `${mail.publicUrl}/${purpose === 'verify' ? 'verify-email' : 'reset-password'}#${token}`;
+      await mail.mailer.send(
+        purpose === 'verify'
+          ? {
+              to: email,
+              subject: 'Confirm your Hyperion account',
+              text: `Open this link to confirm your email and sign in:\n\n${link}\n\nIt works once, for 24 hours. If you didn't sign up for Hyperion, ignore this email.`,
+            }
+          : {
+              to: email,
+              subject: 'Reset your Hyperion password',
+              text: `Open this link to choose a new password:\n\n${link}\n\nIt works once, for 1 hour, and signs you out everywhere else. If you didn't ask for this, ignore this email: your password stays the same.`,
+            },
+      );
+    })().catch((err) => app.log.error({ err }, `Could not send the ${purpose === 'verify' ? 'confirmation' : 'password reset'} email`));
+  }
+
+  // A link's token works once: it's deleted as it's used, and only counts for its own purpose.
+  async function useToken(token: string, purpose: 'verify' | 'reset') {
+    const [row] = await db
+      .delete(emailTokens)
+      .where(and(eq(emailTokens.tokenHash, sha256(token)), eq(emailTokens.purpose, purpose)))
+      .returning({ hostId: emailTokens.hostId, expiresAt: emailTokens.expiresAt });
+    return row && row.expiresAt > new Date() ? row.hostId : undefined;
+  }
 
   app.get('/me', { onRequest: requireHost }, async (req) => {
     const [host] = await db

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { UI_THEMES, type UiMode, type UiTheme, type UiThemeStyle } from '@hyperion/shared';
 import { api, type Host } from '../api';
 import { navigate } from '../router';
-import { Card, Choices, ErrorNotice, Seg, Switch, useError } from '../ui';
+import { Card, Choices, ConfirmButton, ErrorNotice, Seg, Switch, useError } from '../ui';
 import { rememberTheme } from '../theme';
 import type { PageProps } from './Dashboard';
 
@@ -53,13 +53,7 @@ export function SettingsPage({ host, refreshHost }: PageProps) {
       </Card>
       <AfterStream host={host} refreshHost={refreshHost} />
       <Appearance host={host} refreshHost={refreshHost} />
-      <Card title="Account" description={`Signed in as ${host.email}.`}>
-        <div className="row">
-          <button className="btn" onClick={() => api('POST', '/auth/logout').then(() => navigate('/'))}>
-            Log out
-          </button>
-        </div>
-      </Card>
+      <Account host={host} />
       <Card title="About">
         <span className="muted">Hyperion version {__APP_VERSION__}</span>
       </Card>
@@ -155,6 +149,64 @@ function AfterStream({ host, refreshHost }: Pick<PageProps, 'host' | 'refreshHos
       <Switch checked={host.streamRecap} onChange={save} hint="Peak viewers, new followers, likes, coins, the top player and the busiest moment, over whichever page is open.">
         Show a recap of the stream
       </Switch>
+    </Card>
+  );
+}
+
+// Changing the password signs out every other browser, so a leaked one stops working everywhere at once.
+function Account({ host }: { host: Host }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [changed, setChanged] = useState(false);
+  const { error, guard } = useError();
+  const change = guard(() =>
+    api('POST', '/auth/password', { currentPassword: current, newPassword: next }).then(() => {
+      setCurrent('');
+      setNext('');
+      setChanged(true);
+    }),
+  );
+  const signOutEverywhere = guard(() => api('POST', '/auth/logout-all').then(() => navigate('/login')));
+
+  return (
+    <Card title="Account" description={`Signed in as ${host.email}.`}>
+      <ErrorNotice error={error} />
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void change();
+        }}
+      >
+        <div className="form-grid">
+          <label className="field">
+            Current password
+            <input type="password" value={current} onChange={(e) => (setCurrent(e.target.value), setChanged(false))} minLength={8} maxLength={128} required autoComplete="current-password" />
+          </label>
+          <label className="field">
+            New password
+            <span className="hint">At least 8 characters. Signs you out on every other device.</span>
+            <input type="password" value={next} onChange={(e) => (setNext(e.target.value), setChanged(false))} minLength={8} maxLength={128} required autoComplete="new-password" />
+          </label>
+        </div>
+        <div className="row">
+          <button className="btn btn-primary">Change password</button>
+          {changed && <span className="muted">Changed. Other devices are signed out.</span>}
+        </div>
+      </form>
+      <div className="row">
+        <button className="btn" onClick={() => api('POST', '/auth/logout').then(() => navigate('/'))}>
+          Log out
+        </button>
+        <ConfirmButton
+          className="btn"
+          message="Sign out on every device, this one included? Overlays and paired companions keep working."
+          confirmLabel="Sign out everywhere"
+          onConfirm={() => void signOutEverywhere()}
+        >
+          Sign out everywhere
+        </ConfirmButton>
+      </div>
     </Card>
   );
 }

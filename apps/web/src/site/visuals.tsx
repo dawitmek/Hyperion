@@ -224,7 +224,7 @@ export function VoiceArt() {
         ))}
       </div>
       <div className="art-seg">
-        <span>Piper</span>
+        <span>Deep</span>
         <span className="on">Robot</span>
         <span>Echo</span>
       </div>

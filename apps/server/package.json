@@ -1,6 +1,6 @@
 {
   "name": "@hyperion/server",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -20,11 +20,13 @@
     "@node-rs/argon2": "^2.2.2",
     "drizzle-orm": "^0.45.4",
     "fastify": "^5.12.7",
+    "nodemailer": "^10.2.1",
     "postgres": "^3.4.9",
     "tiktok-live-connector": "^2.5.0"
   },
   "devDependencies": {
     "@types/node": "^22",
+    "@types/nodemailer": "^8.0.2",
     "@types/ws": "^8.18.2",
     "drizzle-kit": "^0.31.11",
     "tsx": "^4.23.15",

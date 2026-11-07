@@ -48,7 +48,7 @@ const FEATURES: { title: string; text: string; points: string[]; art: ReactNode 
     points: [
       'Read prefixed comments (like !tts hello), alerts, or all of chat.',
       'Filters for length, blocked words, per-viewer cooldowns and minimum level.',
-      'Engines: Piper voices on your server, eSpeak in the overlay, TikTok’s own voices through your TikTok account, your own Google, Azure or ElevenLabs key, or the PC’s own voices.',
+      'Engines: eSpeak in the overlay, TikTok’s own voices through your TikTok account, your own Google, Azure or ElevenLabs key, the PC’s own voices, or Piper voices on a self-hosted server.',
       'Effects: chipmunk, deep, monster, robot, radio and echo.',
     ],
     art: <VoiceArt />,
@@ -413,8 +413,7 @@ export function SelfHostingPage() {
                 </tbody>
               </table>
               <p>
-                The image includes Piper and five English voice models with 1,016 voices between them. Smaller builds, more
-                voices and backups are covered in the{' '}
+                Piper voices (set <code>WITH_PIPER=true</code> and build the image yourself) and backups are covered in the{' '}
                 <a href={`${GITHUB_URL}/blob/main/docs/SELF_HOSTING.md`}>full self-hosting guide</a>.
               </p>
             </div>

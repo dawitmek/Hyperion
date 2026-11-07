@@ -5,7 +5,7 @@ Hyperion uses these components for text-to-speech and its interface. Each keeps 
 | Component | Used for | License |
 | --- | --- | --- |
 | [eSpeak NG](https://github.com/espeak-ng/espeak-ng), via the [`espeak-ng`](https://github.com/ianmarmour/espeak-ng.js) WebAssembly build | The "eSpeak" voice engine, run inside the overlay | GPL-3.0-or-later |
-| [Piper](https://github.com/rhasspy/piper) 2023.11.14-2 | The "Piper" voice engine, run by the server (Docker image only) | MIT (bundles eSpeak NG data, GPL-3.0) |
+| [Piper](https://github.com/rhasspy/piper) 2023.11.14-2 | The "Piper" voice engine, run by the server (only in images built with `WITH_PIPER=true`) | MIT (bundles eSpeak NG data, GPL-3.0) |
 | Piper voice `en_GB-alba-medium`, trained on the [Alba dataset](https://datashare.ed.ac.uk/handle/10283/3270) | Piper voice | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Piper voice `en_US-libritts_r-medium` (904 speakers), trained on [LibriTTS-R](http://www.openslr.org/141/) | Piper voice | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Piper voice `en_GB-vctk-medium` (109 speakers), trained on [VCTK](https://datashare.ed.ac.uk/handle/10283/3443) | Piper voice | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
@@ -15,6 +15,6 @@ Hyperion uses these components for text-to-speech and its interface. Each keeps 
 | Fredoka, Orbitron, Caveat, Bebas Neue, Anton, Righteous, Press Start 2P, Bangers, Pacifico and Lobster fonts, via [Fontsource](https://fontsource.org) | Fonts for alerts and widgets, bundled with the dashboard and overlay | [SIL Open Font License 1.1](https://openfontlicense.org) |
 | Permanent Marker font, via [`@fontsource/permanent-marker`](https://fontsource.org/fonts/permanent-marker) | Font for alerts and widgets, bundled with the dashboard and overlay | [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
 
-Only voices whose training data allows commercial use are bundled. If you add more Piper voices (drop the
+Only voices whose training data allows commercial use are bundled with `WITH_PIPER=true`. If you add more Piper voices (drop the
 `.onnx` and `.onnx.json` files into `PIPER_VOICES_DIR`), check each voice's `MODEL_CARD`: several popular
 voices (for example `lessac`, `ryan`, `hfc_*`) are non-commercial only.

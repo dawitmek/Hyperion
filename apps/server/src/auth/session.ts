@@ -29,6 +29,11 @@ export async function endSession(db: Db, req: FastifyRequest, reply: FastifyRepl
   reply.clearCookie(SESSION_COOKIE, { path: '/' });
 }
 
+// Signs a host out of every browser: after a password change or reset, or when they ask.
+export async function endAllSessions(db: Db, hostId: string) {
+  await db.delete(authSessions).where(eq(authSessions.hostId, hostId));
+}
+
 // onRequest hook for routes that need a signed-in host: it runs before the body is read. Sets req.hostId.
 export async function requireHost(req: FastifyRequest, reply: FastifyReply) {
   const token = req.cookies[SESSION_COOKIE];

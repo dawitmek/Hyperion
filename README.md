@@ -83,7 +83,7 @@
   points. `!points` shows a balance on the overlay when you allow it.
 - **Text-to-speech:** read prefixed comments, alerts or all of chat. The Recommended mode reads all chat up to 25
   viewers, then only prefixed comments. The engines are:
-  - Piper voices on your server
+  - Piper voices on your server (optional, for self-hosters)
   - eSpeak in the overlay
   - TikTok's own voices, after you sign in to TikTok in the companion (an unofficial TikTok API, so it may break)
   - your own Google, Azure or ElevenLabs key
@@ -162,7 +162,8 @@ docker compose -f docker/compose.yml --env-file .env up -d     # or: up -d --bui
 Hyperion is then on http://127.0.0.1:3000.
 
 - **HTTPS:** built in. Add your domain to `.env` and Caddy handles certificates.
-- **Signups:** open to anyone who can reach your server, so only share its address with people you trust.
+- **Signups:** open until you set `SIGNUPS_ENABLED=false`. Optional email (any SMTP service) adds email confirmation
+  and password reset.
 - **More:** the step-by-step guide, settings, updates and backups are in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
 
 ## Development

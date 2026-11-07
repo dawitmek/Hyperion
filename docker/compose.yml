@@ -9,7 +9,11 @@ services:
   hyperion:
     # Pulled from GitHub's registry, or built from this checkout with --build. HYPERION_VERSION pins a release.
     image: ghcr.io/dawitmek/hyperion:${HYPERION_VERSION:-latest}
-    build: ..
+    build:
+      context: ..
+      # WITH_PIPER=true in .env adds Piper voices to an image you build yourself (up -d --build).
+      args:
+        WITH_PIPER: ${WITH_PIPER:-false}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -21,6 +25,12 @@ services:
       TIKTOK_SESSION_ID: ${TIKTOK_SESSION_ID:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       TRUST_PROXY: ${TRUST_PROXY:-loopback,uniquelocal}
+      SIGNUPS_ENABLED: ${SIGNUPS_ENABLED:-true}
+      # Links in emails use PUBLIC_URL, or https://DOMAIN without it.
+      DOMAIN: ${DOMAIN:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
     ports:
       - "${HYPERION_BIND:-127.0.0.1}:${HYPERION_PORT:-3000}:3000"
 

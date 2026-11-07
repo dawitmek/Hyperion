@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-07
+
+Account security: closing signups, password change and reset, and sign out everywhere.
+
+### Added
+- Changing your password, under Settings → Account. It signs you out on every other device.
+- Sign out everywhere, under Settings → Account. Overlays and paired companions keep working.
+- Forgot your password? on the login page, which emails a link to choose a new one. It signs you out everywhere else.
+- Email confirmation: on servers with email set up, a new account confirms its address before it can sign in. Accounts made before stay as they are.
+- For self-hosters: `SIGNUPS_ENABLED=false` closes signups (existing accounts keep working); `SMTP_URL` and `MAIL_FROM` turn on email through any SMTP service; and on a server without email, `admin.js reset-link <email>` makes a one-time password reset link to send someone.
+
+### Changed
+- Piper voices are optional, for self-hosters. The published image no longer includes them, so it's about 360 MB smaller and reading chat aloud doesn't use the server's CPU. To keep Piper, set `WITH_PIPER=true` in `.env` and build the image yourself. The dashboard only offers Piper on servers that have it; hosts who had picked it on a server without it hear eSpeak and see a notice on the Voice page.
+
+### Security
+- Ten wrong passwords for one account within 15 minutes pause logins to it for the rest of that time, wherever the guesses come from. A password reset ends the pause.
+- Overlay links no longer appear in the server's request log.
+
 ## [0.6.0] - 2026-11-06
 
 Patterns across streams, commands read aloud, and a safer companion.
@@ -97,7 +115,8 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/dawitmek/Hyperion/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dawitmek/Hyperion/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dawitmek/Hyperion/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dawitmek/Hyperion/compare/v0.3.1...v0.4.0

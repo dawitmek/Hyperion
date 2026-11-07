@@ -5,7 +5,7 @@ import { Icon } from '../icons';
 import { Link } from '../router';
 import { ErrorNotice, NumberCell, Scrubber, Seg, useError } from '../ui';
 import type { PageProps } from './Dashboard';
-import { ENGINES, useVoices } from './VoicePage';
+import { enginesFor, useVoices } from './VoicePage';
 
 type Options = { piperVoices: { name: string; speakers: number }[]; espeakVoices: string[] };
 type Choice = { value: string; list: [string, string][]; pick: (value: string) => void };
@@ -90,7 +90,7 @@ export function VoiceControls({ host, refreshHost }: PageProps) {
       <label className="field">
         Engine
         <select className="input" value={host.ttsEngine} onChange={(e) => save({ ttsEngine: e.target.value as TtsEngine })}>
-          {ENGINES.map(([engine, label]) => (
+          {enginesFor(options.piperVoices.length > 0, host.ttsEngine).map(([engine, label]) => (
             <option key={engine} value={engine}>
               {label}
             </option>

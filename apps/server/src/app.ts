@@ -30,6 +30,9 @@ import { mediaFileRoute, mediaRoutes } from './media/routes.js';
 import { screenRoutes } from './screens/routes.js';
 import { goalRoutes } from './goals/routes.js';
 import { Piper } from './tts/piper.js';
+import { smtpMailer, type Mailer } from './auth/mail.js';
+import { LoginLimiter } from './auth/login-limit.js';
+import { requestSerializer } from './redact.js';
 import { SpeechService } from './tts/speech.js';
 import { DebugLog } from './debug-log.js';
 import { ServerTiktokAccount } from './tts/tiktok-account.js';
@@ -47,6 +50,10 @@ declare module 'fastify' {
     secrets: Secrets;
     tiktokAccount: ServerTiktokAccount;
     debug: DebugLog;
+    // Null unless both SMTP and the server's public address are set: then accounts confirm their email, and
+    // forgotten passwords are reset by email.
+    mail: { mailer: Mailer; publicUrl: string } | null;
+    loginLimiter: LoginLimiter;
   }
 }
 
@@ -56,6 +63,8 @@ interface Options {
   createTikTok?: (username: string) => PlatformAdapter;
   // Tests swap in a fake so they never contact a cloud TTS provider.
   fetch?: typeof fetch;
+  // Tests swap in a fake that records emails instead of sending them.
+  mailer?: Mailer;
   // Tests swap in a fake Piper with known voices.
   piper?: Piper;
   // Tests see every route as it's added, to check each one is signed-in only or deliberately public.
@@ -66,7 +75,8 @@ const MAX_WS_MESSAGE_BYTES = 64 * 1024;
 const PG_INVALID_TEXT = '22021'; // Postgres refusing a NUL character in text, which JSON and URLs can carry
 
 export async function buildApp(config: Config, options: Options = {}) {
-  const app = Fastify({ logger: options.logger ?? true, trustProxy: config.trustProxy ?? false });
+  const logger = options.logger === false ? false : { serializers: { req: requestSerializer } };
+  const app = Fastify({ logger, trustProxy: config.trustProxy ?? false });
   const { db, close } = createDb(config.databaseUrl);
   const hub = new Hub();
   if (options.onRoute) app.addHook('onRoute', options.onRoute);
@@ -95,6 +105,11 @@ export async function buildApp(config: Config, options: Options = {}) {
   app.decorate('stats', stats);
   app.decorate('piper', piper);
   app.decorate('speech', speech);
+  const mailer = options.mailer ?? (config.smtpUrl && config.mailFrom ? smtpMailer(config.smtpUrl, config.mailFrom) : undefined);
+  app.decorate('mail', mailer && config.publicUrl ? { mailer, publicUrl: config.publicUrl } : null);
+  if (config.smtpUrl && !config.mailFrom) app.log.warn('SMTP_URL is set but MAIL_FROM is not, so no emails will be sent');
+  if (mailer && !config.publicUrl) app.log.warn('SMTP_URL is set but PUBLIC_URL (or DOMAIN) is not, so no emails will be sent');
+  app.decorate('loginLimiter', new LoginLimiter());
   app.decorate(
     'live',
     new SessionManager(db, hub, stats, speech, secrets, createTikTok, (err) => app.log.warn({ err }, 'Could not record stream events'), debug),
