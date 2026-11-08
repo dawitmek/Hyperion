@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { Icon, type IconName } from '../icons';
 import { Glow } from './Glow';
 import { Link } from '../router';
-import { CompanionArt, DeckArt, GameActionArt, GiftArt, LevelsArt, ModesArt, ProfilesArt, SafetyArt, Stage, VoiceArt } from './visuals';
+import { AnalyticsArt, CompanionArt, DeckArt, GameActionArt, GiftArt, LevelsArt, ModesArt, ProfilesArt, SafetyArt, Stage, VoiceArt } from './visuals';
 import { SiteLayout } from './SiteLayout';
 
 const CARDS: { art: ReactNode; title: string; text: string }[] = [
@@ -11,6 +11,7 @@ const CARDS: { art: ReactNode; title: string; text: string }[] = [
   { art: <GameActionArt />, title: 'Straight into Minecraft', text: 'Gifts and commands spawn mobs, drop TNT or hand out diamonds, in Java or Bedrock.' },
   { art: <VoiceArt />, title: 'Chat read aloud', text: 'Offline voices, your own cloud key, and effects from chipmunk to robot.' },
   { art: <LevelsArt />, title: 'Levels and a leaderboard', text: 'Viewers earn XP as they play. Lock some commands behind a level if you like.' },
+  { art: <AnalyticsArt />, title: 'Analytics that remember', text: 'A report for every stream, plus when chat is busiest, who comes back, and coins per hour.' },
   { art: <ProfilesArt />, title: 'A profile per game', text: 'Each game keeps its own commands and mode, and the companion follows along.' },
   { art: <SafetyArt />, title: 'Only the keys you allow', text: 'System keys are off-limits, and nothing is pressed unless your game has focus.' },
 ];
@@ -91,18 +92,18 @@ function Control() {
               <Icon name="voice" />
             </span>
             <h3>Plenty to work with</h3>
-            <p>Out of the box, with no extra downloads on a Docker install.</p>
+            <p>Out of the box, with no extra downloads.</p>
             <div className="s-figures">
               <div className="s-figure">
                 <b>5</b>
                 <span>crowd modes</span>
               </div>
               <div className="s-figure">
-                <b>1,016</b>
-                <span>offline voices</span>
+                <b>22</b>
+                <span>offline voice languages</span>
               </div>
               <div className="s-figure">
-                <b>7</b>
+                <b>6</b>
                 <span>voice effects</span>
               </div>
               <div className="s-figure">
@@ -237,7 +238,7 @@ const TABS: { title: string; body: string; panel: ReactNode }[] = [
   },
   {
     title: 'Voice',
-    body: 'Read prefixed chat, alerts, or all of chat with filters. Choose an engine, a voice and an effect, then preview it.',
+    body: 'Read prefixed chat, alerts, or all of chat with filters, and announce each command that fires. Choose an engine, a voice and an effect, then preview it.',
     panel: (
       <div className="s-panel-window">
         <h4>Voice</h4>

@@ -4,9 +4,12 @@
 #   docker compose -f docker/compose.yml --env-file .env pull && docker compose -f docker/compose.yml --env-file .env up -d
 # or build it from this checkout:
 #   docker compose -f docker/compose.yml --env-file .env up -d --build
+# The project name prefixes the volumes (hyperion-selfhost_pgdata), so changing it would start on an empty database.
+# Containers have short names of their own instead.
 name: hyperion-selfhost
 services:
   hyperion:
+    container_name: hyperion-server
     # Pulled from GitHub's registry, or built from this checkout with --build. HYPERION_VERSION pins a release.
     image: ghcr.io/dawitmek/hyperion:${HYPERION_VERSION:-latest}
     build:
@@ -36,6 +39,7 @@ services:
 
   # Only with COMPOSE_PROFILES=https. Gets and renews a certificate for DOMAIN by itself.
   caddy:
+    container_name: hyperion-caddy
     image: caddy:2
     profiles: [https]
     restart: unless-stopped
@@ -52,6 +56,7 @@ services:
       - caddy-data:/data
 
   postgres:
+    container_name: hyperion-postgres
     image: postgres:17
     restart: unless-stopped
     environment:

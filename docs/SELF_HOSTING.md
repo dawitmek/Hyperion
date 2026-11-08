@@ -78,7 +78,7 @@ The first build takes a few minutes, longer with Piper voices. Either way, datab
 startup.
 
 The published image is the newest release (`latest`). To stay on one release until you choose to update, add
-`HYPERION_VERSION=0.6.0` (or another version from the
+`HYPERION_VERSION=0.8.0` (or another version from the
 [image's page](https://github.com/users/dawitmek/packages/container/package/hyperion)) to `.env`.
 
 ### 5. Check it's running
@@ -249,7 +249,7 @@ See what a service is doing with `docker compose -f docker/compose.yml --env-fil
 | `SMTP_URL` | empty | An SMTP service as a URL, such as `smtps://user:pass@smtp.example.com:465`. With `MAIL_FROM`, turns on [email](#email) |
 | `MAIL_FROM` | empty | The sender of Hyperion's emails, such as `Hyperion <hyperion@example.com>` |
 | `PUBLIC_URL` | `https://DOMAIN` | The address in emailed links, if it isn't `https://DOMAIN` |
-| `HYPERION_VERSION` | `latest` | Which release of the published image to pull, such as `0.6.0` |
+| `HYPERION_VERSION` | `latest` | Which release of the published image to pull, such as `0.8.0` |
 | `WITH_PIPER` | `false` | Set `true` to add Piper voices to an image you build yourself (`up -d --build`). See [Text-to-speech](#text-to-speech) |
 
 Browsers share cookies between servers on the same host name regardless of port, so two Hyperion servers on

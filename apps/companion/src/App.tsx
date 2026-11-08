@@ -6,6 +6,9 @@ import "@hyperion/theme/theme.css";
 import "./App.css";
 import { Icon } from "./icons";
 import { JumpBar, Section, SectionsProvider } from "./sections";
+import { CommandLine, GAME_HUES, GAME_NAMES, GameBadge, type Game, type GameAction } from "./game";
+import { ExportPack, ImportPack } from "./packs";
+import { Appearance, applyLook, saveLook, savedLook, type Look } from "./appearance";
 
 // Invisible codes (tabs, line breaks) never belong in a one-line field; they're dropped as typed or pasted.
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
@@ -78,17 +81,6 @@ interface MacroView {
   steps: number;
 }
 
-// Commands sent straight into a game, set up and kept on this PC.
-interface GameAction {
-  name: string;
-  game: Game;
-  commands: string[];
-  repeat: number;
-  delayMs: number;
-}
-
-type Game = "minecraftJava" | "minecraftBedrock";
-const GAME_NAMES: Record<Game, string> = { minecraftJava: "Minecraft Java", minecraftBedrock: "Minecraft Bedrock" };
 
 // Whether this PC listens for Minecraft Bedrock's /connect, and whether the game has joined.
 interface BedrockView {
@@ -137,20 +129,17 @@ export default function App() {
       .then(() => (setError(null), true))
       .catch((e) => (setError(String(e)), false));
 
-  // The dashboard's look (see @hyperion/theme), as the server last sent it: theme, style, and light or dark.
-  useEffect(() => {
-    const root = document.documentElement;
-    if (state?.theme && state.theme !== "default") root.dataset.theme = state.theme;
-    else delete root.dataset.theme;
-    if (state?.themeStyle === "full") root.dataset.themeStyle = "full";
-    else delete root.dataset.themeStyle;
-    const mode = state?.themeMode ?? "system";
-    const system = matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => (root.dataset.mode = mode === "dark" || (mode === "system" && system.matches) ? "dark" : "light");
-    apply();
-    system.addEventListener("change", apply);
-    return () => system.removeEventListener("change", apply);
-  }, [state?.theme, state?.themeStyle, state?.themeMode]);
+  // The look: the dashboard's (see @hyperion/theme), as the server last sent it, unless one was picked for this PC.
+  const [ownLook, setOwnLook] = useState(savedLook);
+  const [lookOpen, setLookOpen] = useState(false);
+  const dashboardLook: Look = {
+    theme: state?.theme ?? "default",
+    style: state?.themeStyle === "full" ? "full" : "colors",
+    mode: state?.themeMode === "light" || state?.themeMode === "dark" ? state.themeMode : "system",
+  };
+  const look = ownLook ?? dashboardLook;
+  useEffect(() => applyLook(look), [look.theme, look.style, look.mode]);
+  const changeLook = (next: Look | null) => (saveLook(next), setOwnLook(next));
 
   if (!state) return null;
 
@@ -160,7 +149,11 @@ export default function App() {
         <img className="logo-mark" src="/logo.png" alt="" />
         <h1>Hyperion Companion</h1>
         {state.paired && <ConnectionTag connection={state.connection} />}
+        <button className="btn btn-ghost btn-sm btn-icon" aria-label="Appearance" title="Appearance" onClick={() => setLookOpen(true)}>
+          <Icon name="palette" size={17} />
+        </button>
       </header>
+      {lookOpen && <Appearance dashboard={dashboardLook} own={ownLook} paired={state.paired} onChange={changeLook} onClose={() => setLookOpen(false)} />}
       <UpdateNotice state={state} run={run} />
       {!state.platformSupported && (
         <p className="notice warning">Key input only works on Windows and macOS so far. This build can pair and connect, but refuses every action.</p>
@@ -987,10 +980,28 @@ const MINECRAFT_GUIDE = "https://github.com/dawitmek/Hyperion/blob/main/docs/MIN
 
 function GameActions({ state, run }: { state: Snapshot; run: Run }) {
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [pack, setPack] = useState<"import" | "export" | null>(null);
+  const [imported, setImported] = useState<string[] | null>(null);
+  // Selecting several actions to share or delete at once. Null when not selecting.
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [shareNames, setShareNames] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!imported) return;
+    const timer = setTimeout(() => setImported(null), 6000);
+    return () => clearTimeout(timer);
+  }, [imported]);
+  const actions = state.gameActions;
   const ready: Record<Game, boolean> = { minecraftJava: state.minecraftJava?.hasPassword ?? false, minecraftBedrock: state.minecraftBedrock.connected };
   const notReady: Record<Game, string> = { minecraftJava: "Set up Minecraft Java first", minecraftBedrock: "Connect Minecraft Bedrock first" };
   const firstGame: Game = state.minecraftBedrock.on && !state.minecraftJava ? "minecraftBedrock" : "minecraftJava";
-  const editor = (d: Draft) => <ActionEditor key={d.editing ?? ""} draft={d} setDraft={setDraft} run={run} />;
+  const editor = (d: Draft) => <ActionEditor key={d.editing ?? ""} draft={d} setDraft={setDraft} run={run} ready={ready} />;
+  const toggle = (name: string) =>
+    setSelected((set) => {
+      const next = new Set(set);
+      if (!next.delete(name)) next.add(name);
+      return next;
+    });
+  const share = (names: string[] | null) => (setShareNames(names), setPack("export"));
 
   return (
     <Section
@@ -1008,25 +1019,69 @@ function GameActions({ state, run }: { state: Snapshot; run: Run }) {
           </a>
         </>
       }
-      summary={state.gameActions.length === 0 ? "None yet" : `${state.gameActions.length} ${state.gameActions.length === 1 ? "action" : "actions"}`}
+      summary={actions.length === 0 ? "None yet" : `${actions.length} ${actions.length === 1 ? "action" : "actions"}`}
     >
       <Connections state={state} run={run} />
-      {state.gameActions.length === 0 && !draft && <p className="empty">No actions yet. Make one, then pick it for a command on the dashboard.</p>}
-      {state.gameActions.length > 0 && (
-        <ul className="actions">
-          {state.gameActions.map((a) =>
-            draft?.editing === a.name ? (
-              <li key={a.name}>{editor(draft)}</li>
-            ) : (
-              <li key={a.name} className="action">
+      {actions.length === 0 && !draft && (
+        <p className="empty">No actions yet. Make one, or import a starter pack, then pick it for a command on the dashboard.</p>
+      )}
+      {imported && (
+        <p className="notice info small" role="status">
+          Imported {imported.length === 1 ? imported[0] : `${imported.length} game actions`}. Pick {imported.length === 1 ? "it" : "them"} for a
+          command on the dashboard's Commands page.
+        </p>
+      )}
+      {actions.length > 0 &&
+        (selected ? (
+          <SelectionBar
+            actions={actions}
+            selected={selected}
+            setSelected={setSelected}
+            onShare={() => share([...selected])}
+            onDelete={() => run("delete_game_actions", { names: [...selected] }).then((ok) => ok && setSelected(null))}
+          />
+        ) : (
+          <div className="actions-bar">
+            <span className="muted small">
+              {actions.length} {actions.length === 1 ? "action" : "actions"}
+            </span>
+            <button className="btn btn-ghost btn-sm" disabled={actions.length < 2 || draft !== null} onClick={() => setSelected(new Set())}>
+              <Icon name="check" size={14} />
+              Select
+            </button>
+          </div>
+        ))}
+      {actions.length > 0 && (
+        <ul className={`actions ${selected ? "selecting" : ""}`}>
+          {actions.map((a) => {
+            if (draft?.editing === a.name) return <li key={a.name}>{editor(draft)}</li>;
+            const picked = selected?.has(a.name) ?? false;
+            const body = (
+              <>
                 <div className="action-head">
-                  <strong className="action-name">{a.name}</strong>
-                  <GameTag game={a.game} />
-                  <span className="spacer" />
-                  <TryButton disabled={!ready[a.game]} title={ready[a.game] ? "Runs it now, as a viewer called Tester" : notReady[a.game]} onTry={() => run("try_game_action", { name: a.name })} />
-                  <button className="btn btn-ghost btn-sm" aria-label={`Edit ${a.name}`} title="Edit" onClick={() => setDraft({ ...a, editing: a.name })}>
-                    <Icon name="edit" size={15} />
-                  </button>
+                  {selected && <input type="checkbox" className="check" checked={picked} onChange={() => toggle(a.name)} aria-label={`Select ${a.name}`} />}
+                  <GameBadge game={a.game} />
+                  <div className="action-title">
+                    <strong className="action-name">{a.name}</strong>
+                    <span className="action-meta">
+                      {GAME_NAMES[a.game]}
+                      {a.repeat > 1 && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <Icon name="repeat" size={12} />
+                          {a.repeat} times{a.delayMs > 0 ? `, ${a.delayMs / 1000} s apart` : ""}
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  {!selected && (
+                    <>
+                      <TryButton disabled={!ready[a.game]} title={ready[a.game] ? "Runs it now, as a viewer called Tester" : notReady[a.game]} onTry={() => run("try_game_action", { name: a.name })} />
+                      <button className="btn btn-ghost btn-sm btn-icon" aria-label={`Edit ${a.name}`} title="Edit" onClick={() => setDraft({ ...a, editing: a.name })}>
+                        <Icon name="edit" size={15} />
+                      </button>
+                    </>
+                  )}
                 </div>
                 <ol className="action-lines">
                   {a.commands.slice(0, 3).map((c, i) => (
@@ -1036,31 +1091,99 @@ function GameActions({ state, run }: { state: Snapshot; run: Run }) {
                   ))}
                   {a.commands.length > 3 && <li className="more">and {a.commands.length - 3} more</li>}
                 </ol>
-                {a.repeat > 1 && (
-                  <p className="action-repeat">
-                    <Icon name="repeat" size={13} />
-                    {a.repeat} times{a.delayMs > 0 ? `, ${a.delayMs / 1000} s apart` : ""}
-                  </p>
-                )}
+              </>
+            );
+            return (
+              <li key={a.name} className={`action ${GAME_HUES[a.game]} ${picked ? "picked" : ""}`}>
+                {/* While selecting, the whole card ticks its box. */}
+                {selected ? <label className="action-select">{body}</label> : body}
               </li>
-            ),
-          )}
+            );
+          })}
         </ul>
       )}
-      {draft && draft.editing === null ? (
+      {selected ? null : draft && draft.editing === null ? (
         editor(draft)
       ) : (
-        <button className="btn new-action" onClick={() => setDraft({ editing: null, name: "", game: firstGame, commands: [], repeat: 1, delayMs: 0 })}>
-          <Icon name="plus" size={15} />
-          New game action
-        </button>
+        <div className="action-buttons">
+          <button className="btn new-action" onClick={() => setDraft({ editing: null, name: "", game: firstGame, commands: [], repeat: 1, delayMs: 0 })}>
+            <Icon name="plus" size={15} />
+            New game action
+          </button>
+          <button className="btn" onClick={() => setPack("import")}>
+            <Icon name="import" size={15} />
+            Import
+          </button>
+          <button className="btn" disabled={actions.length === 0} title={actions.length === 0 ? "Make or import an action first" : undefined} onClick={() => share(null)}>
+            <Icon name="share" size={15} />
+            Share
+          </button>
+        </div>
       )}
+      {pack === "import" && <ImportPack onClose={() => setPack(null)} onImported={setImported} />}
+      {pack === "export" && <ExportPack actions={actions} initial={shareNames} onClose={() => setPack(null)} />}
     </Section>
   );
 }
 
-function GameTag({ game }: { game: Game }) {
-  return game === "minecraftJava" ? <span className="tag orange">Java</span> : <span className="tag sky">Bedrock</span>;
+// Selecting game actions: how many are picked, all or none, and what to do with them. Deleting asks once more here,
+// in place of the button.
+function SelectionBar({
+  actions,
+  selected,
+  setSelected,
+  onShare,
+  onDelete,
+}: {
+  actions: GameAction[];
+  selected: Set<string>;
+  setSelected: (s: Set<string> | null) => void;
+  onShare: () => void;
+  onDelete: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const count = selected.size;
+  const all = count === actions.length;
+  const label = `${count} ${count === 1 ? "action" : "actions"}`;
+  useEffect(() => setConfirming(false), [count]);
+  return (
+    <div className="selection-bar actions-select-bar" role="toolbar" aria-label="Selected game actions">
+      <input
+        type="checkbox"
+        className="check"
+        aria-label={all ? "Select none" : "Select all"}
+        checked={all}
+        ref={(el) => void (el && (el.indeterminate = count > 0 && !all))}
+        onChange={() => setSelected(all ? new Set() : new Set(actions.map((a) => a.name)))}
+      />
+      <span>{count === 0 ? "Pick actions" : `${count} selected`}</span>
+      <span className="spacer" />
+      {confirming ? (
+        <>
+          <button className="btn btn-sm btn-danger" onClick={onDelete}>
+            Delete {label}
+          </button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setConfirming(false)}>
+            Keep
+          </button>
+        </>
+      ) : (
+        <>
+          <button className="btn btn-sm" disabled={count === 0} onClick={onShare}>
+            <Icon name="share" size={14} />
+            Share
+          </button>
+          <button className="btn btn-sm btn-ghost danger-text" disabled={count === 0} onClick={() => setConfirming(true)}>
+            <Icon name="trash" size={14} />
+            Delete
+          </button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setSelected(null)}>
+            Done
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 
 // Says "Sent" for a moment, since what happened shows in the game and the activity list rather than here.
@@ -1079,30 +1202,12 @@ function TryButton({ disabled, title, onTry }: { disabled: boolean; title: strin
   );
 }
 
-const BLANK = /\{(viewer|count|player)\}/;
 const BLANK_HINTS: { blank: string; hint: string }[] = [
   { blank: "viewer", hint: "who sent it" },
   { blank: "count", hint: "how many gifts" },
   { blank: "player", hint: "you" },
 ];
 
-// A command as written, with its blanks as pills.
-function CommandLine({ text }: { text: string }) {
-  const parts = text.split(BLANK);
-  return (
-    <>
-      {parts.map((part, i) =>
-        i % 2 === 1 ? (
-          <span key={i} className={`blank ${part}`}>
-            {part}
-          </span>
-        ) : (
-          part
-        ),
-      )}
-    </>
-  );
-}
 
 // Where actions go: a tile for each game, with what it needs below when it isn't ready.
 function Connections({ state, run }: { state: Snapshot; run: Run }) {
@@ -1296,7 +1401,7 @@ function JavaForm({ state, run, onDone }: { state: Snapshot; run: Run; onDone: (
   );
 }
 
-function ActionEditor({ draft, setDraft, run }: { draft: Draft; setDraft: (d: Draft | null) => void; run: Run }) {
+function ActionEditor({ draft, setDraft, run, ready }: { draft: Draft; setDraft: (d: Draft | null) => void; run: Run; ready: Record<Game, boolean> }) {
   const [commands, setCommands] = useState(draft.commands.join("\n"));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1330,20 +1435,26 @@ function ActionEditor({ draft, setDraft, run }: { draft: Draft; setDraft: (d: Dr
           .finally(() => setSaving(false));
       }}
     >
-      <div className="editor-top">
-        <label className="field">
-          Name
-          <input value={draft.name} maxLength={64} required placeholder="creeper" autoFocus={!editing} onChange={(e) => setDraft({ ...draft, name: e.target.value.replace(CONTROL_CHARS, "") })} />
-        </label>
-        <div className="field">
-          <span id="game-choice">Game</span>
-          <div className="seg" role="radiogroup" aria-labelledby="game-choice">
-            {(Object.keys(GAME_NAMES) as Game[]).map((g) => (
-              <button key={g} type="button" role="radio" aria-checked={draft.game === g} onClick={() => setDraft({ ...draft, game: g })}>
-                {g === "minecraftJava" ? "Java" : "Bedrock"}
-              </button>
-            ))}
-          </div>
+      <h3 className="editor-title">{editing ? `Edit ${editing}` : "New game action"}</h3>
+      <label className="field">
+        Name
+        <input value={draft.name} maxLength={64} required placeholder="creeper" autoFocus={!editing} onChange={(e) => setDraft({ ...draft, name: e.target.value.replace(CONTROL_CHARS, "") })} />
+      </label>
+      <div className="field">
+        <span id="game-choice">Game</span>
+        <div className="game-choices" role="radiogroup" aria-labelledby="game-choice">
+          {(Object.keys(GAME_NAMES) as Game[]).map((g) => (
+            <button key={g} type="button" role="radio" aria-checked={draft.game === g} className={`game-choice ${GAME_HUES[g]}`} onClick={() => setDraft({ ...draft, game: g })}>
+              <GameBadge game={g} size={30} />
+              <span className="game-choice-text">
+                <strong>{GAME_NAMES[g]}</strong>
+                <span className={ready[g] ? "ready" : ""}>{ready[g] ? "Connected" : g === "minecraftJava" ? "Not set up yet" : "Not connected"}</span>
+              </span>
+              <span className="game-choice-mark" aria-hidden="true">
+                <Icon name="check" size={13} strokeWidth={3} />
+              </span>
+            </button>
+          ))}
         </div>
       </div>
       <label className="field">
@@ -1417,7 +1528,7 @@ function ActionEditor({ draft, setDraft, run }: { draft: Draft; setDraft: (d: Dr
         <span className="spacer" />
         {editing &&
           (deleting ? (
-            <button type="button" className="btn btn-sm btn-danger" onClick={() => run("delete_game_action", { name: editing }).then((ok) => ok && setDraft(null))}>
+            <button type="button" className="btn btn-sm btn-danger" onClick={() => run("delete_game_actions", { names: [editing] }).then((ok) => ok && setDraft(null))}>
               Delete {editing}
             </button>
           ) : (

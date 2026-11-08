@@ -48,8 +48,18 @@ pub fn save(path: &Path, actions: &[GameAction]) -> Result<(), String> {
     std::fs::write(path, serde_json::to_string(actions).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
 }
 
+/// Characters that never belong in a name or a command: control codes like tabs and line breaks, and invisible ones
+/// that can hide text or turn it right to left, so one thing can look like another.
+pub fn is_hidden(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{00AD}' | '\u{034F}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+}
+
 /// The action as it's kept: trimmed, empty lines dropped, a leading slash taken off, and within the limits.
 pub fn check(mut action: GameAction) -> Result<GameAction, String> {
+    if action.name.chars().any(is_hidden) {
+        return Err("Action names can't have invisible characters, like tabs or line breaks".into());
+    }
     action.name = crate::macros::clean_name(&action.name).map_err(|_| {
         if action.name.trim().is_empty() { "Give the action a name".to_string() } else { format!("Action names can be up to {MAX_NAME_CHARS} characters") }
     })?;
@@ -66,6 +76,9 @@ pub fn check(mut action: GameAction) -> Result<GameAction, String> {
         return Err(format!("An action can have up to {MAX_COMMANDS} commands"));
     }
     for command in &action.commands {
+        if command.chars().any(is_hidden) {
+            return Err("Commands can't have invisible characters, like tabs or line breaks".into());
+        }
         if command.chars().count() > MAX_COMMAND_CHARS {
             return Err(format!("Commands can be up to {MAX_COMMAND_CHARS} characters"));
         }
@@ -125,8 +138,10 @@ pub fn fill(command: &str, values: &Values) -> Result<String, String> {
 /// a bracket or a selector and add to the command.
 pub fn clean_viewer(name: &str) -> String {
     let kept: String = name.chars().filter(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ' ')).collect();
-    let kept: String = kept.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_VIEWER_CHARS).collect();
-    let kept = kept.trim().to_string();
+    // Words are joined with non-breaking spaces, which look the same in the game but never split a command, so a name
+    // where a command expects one word can't add words of its own.
+    let kept: String = kept.split_whitespace().collect::<Vec<_>>().join("\u{a0}").chars().take(MAX_VIEWER_CHARS).collect();
+    let kept = kept.trim_matches('\u{a0}').to_string();
     if kept.is_empty() { "viewer".into() } else { kept }
 }
 
@@ -170,10 +185,12 @@ mod tests {
         for hostile in [r#"x'"}] run op me"#, "a\nstop", "@a", "§cRed", "{player}", "]}/op x"] {
             let filled = fill(r#"summon zombie ~ ~ ~ {CustomName:'"{viewer}"'}"#, &values(hostile)).unwrap();
             let name = filled.trim_start_matches(r#"summon zombie ~ ~ ~ {CustomName:'""#).trim_end_matches(r#""'}"#);
-            assert!(name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ' ')), "{hostile} gave {filled}");
+            assert!(name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '\u{a0}')), "{hostile} gave {filled}");
         }
         assert_eq!(clean_viewer("  🌹🌹 "), "viewer");
-        assert_eq!(clean_viewer("Zoë  the   great"), "Zoë the great");
+        assert_eq!(clean_viewer("Zoë  the   great"), "Zoë\u{a0}the\u{a0}great");
+        // Where a command expects one word, a name with spaces stays one word.
+        assert_eq!(fill("execute as {player} at {viewer}", &values("x run op bob")).unwrap(), "execute as Steve at x\u{a0}run\u{a0}op\u{a0}bob");
         assert_eq!(clean_viewer(&"a".repeat(40)).len(), 24);
     }
 
@@ -200,5 +217,16 @@ mod tests {
         assert_eq!(check_player(" Steve_01 ").unwrap(), "Steve_01");
         assert!(check_player("ab").is_err());
         assert!(check_player("Steve @a").is_err());
+    }
+
+    #[test]
+    fn refuses_invisible_characters() {
+        for name in ["Creeper\n", "Cree\u{202E}per", "Cree\u{200B}per"] {
+            assert!(check(GameAction { name: name.into(), ..action(&["say hi"]) }).is_err(), "{name:?}");
+        }
+        for command in ["say hi\nop bob", "say\thi", "say \u{2066}hi"] {
+            assert!(check(action(&[command])).is_err(), "{command:?}");
+        }
+        assert!(check(action(&["say Zoë says hi"])).is_ok());
     }
 }

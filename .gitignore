@@ -10,6 +10,7 @@ dist/
 docs/ROADMAP.md
 docs/WINDOWS_VERIFICATION.md
 docs/SECURITY_TODO.md
+docs/TODO.md
 
 # The debug log (DEBUG_LOG in .env)
 logs/

@@ -11,7 +11,7 @@
     <a href="docs/SELF_HOSTING.md">Self-hosting guide</a>
   </p>
   <p>
-    <img src="https://img.shields.io/badge/version-0.3.0-5b5fef?style=flat-square&amp;labelColor=27272a" alt="Version 0.3.0" />
+    <a href="CHANGELOG.md"><img src="https://img.shields.io/github/v/tag/dawitmek/Hyperion?filter=v*&amp;sort=semver&amp;label=version&amp;color=5b5fef&amp;style=flat-square&amp;labelColor=27272a" alt="Latest version" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-5b5fef?style=flat-square&amp;labelColor=27272a" alt="License: GPL-3.0" /></a>
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-5b5fef?style=flat-square&amp;labelColor=27272a" alt="Platforms: Windows and macOS" />
   </p>
@@ -93,7 +93,9 @@
 
 - **Game integrations:** commands sent straight into a game, set up in the companion and run by chat or gifts.
   Minecraft is the first, Java and Bedrock: spawn mobs, drop TNT or hand out diamonds, with the viewer's name filled
-  in. See the [Minecraft guide](docs/MINECRAFT.md) for setup and sample commands.
+  in. Starter packs add a set of ready-made actions in one go, and streamers can share their own by copy and paste
+  or as a file, with every command shown before it's added. See the [Minecraft guide](docs/MINECRAFT.md) for setup
+  and sample commands.
 - **Levels and a leaderboard:** viewers earn XP, and level-ups and top players can show on stream.
 - **Key combinations:** a command can press a key or a combination like Ctrl+Shift+E. Set it by pressing the keys.
 - **Game profiles:** each game keeps its own commands, key-press actions and mode. The companion targets the game's
@@ -216,7 +218,6 @@ For production, `npm run build && npm start` serves everything from one address.
 | `packages/shared`       | Protocol types shared by the server, web app and companion                                                                                                                         |
 | `packages/theme`        | Design system (colours, type, components) shared by the web app and companion                                                                                                      |
 | `docker/`, `Dockerfile` | Self-hosting (server and Postgres)                                                                                                                                                 |
-| `docs/TODO.md`          | Everything still to do                                                                                                                                                                    |
 
 ### Releasing the companion
 

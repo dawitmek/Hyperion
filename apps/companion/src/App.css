@@ -199,19 +199,50 @@ body { background: var(--aurora), var(--ground); background-repeat: no-repeat; m
 .connect-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .connect-line code { font-size: 13px; }
 
+/* Game colours (GAME_HUES in game.tsx): badges, action cards, the editor's game cards and starter packs take them. */
+.game-badge, .action, .game-choice, .pack-starter { --g: var(--muted); --g-fill: var(--line-strong); }
+.orange:is(.game-badge, .action, .game-choice, .pack-starter) { --g: var(--orange); --g-fill: var(--orange-fill); }
+.sky:is(.game-badge, .action, .game-choice, .pack-starter) { --g: var(--sky); --g-fill: var(--sky-fill); }
+.game-badge { display: grid; place-items: center; flex: none; border-radius: calc(9px * var(--radius-scale)); color: var(--g);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--g-fill) 26%, var(--panel)), color-mix(in srgb, var(--g-fill) 10%, var(--panel)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--g-fill) 32%, transparent); }
+
+/* A checkbox drawn to match: a rounded box that fills with the accent and a tick. */
+.check { appearance: none; flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin: 0; border-radius: calc(6px * var(--radius-scale));
+  border: 1.5px solid var(--line-strong); background: var(--panel); cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+.check::after { content: ''; width: 9px; height: 5px; border-left: 2px solid var(--accent-ink); border-bottom: 2px solid var(--accent-ink);
+  transform: translateY(-1px) rotate(-45deg) scale(0); transition: transform 0.12s; }
+.check:checked, .check:indeterminate { border-color: var(--indigo-fill); background: var(--indigo-fill); }
+.check:checked::after { transform: translateY(-1px) rotate(-45deg) scale(1); }
+.check:indeterminate::after { height: 0; border-left: 0; transform: none; }
+.check:hover:not(:disabled) { border-color: var(--indigo-fill); }
+.check:focus-visible { outline: 2px solid var(--indigo-fill); outline-offset: 2px; }
+.check:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* The action list: a card per action, tinted from the left in its game's colour, with its commands below. */
+.actions-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.actions-bar .btn, .actions-select-bar .btn { gap: 6px; }
+.actions-select-bar { padding: 8px 10px 8px 12px; }
+.danger-text { color: var(--red); }
 .actions { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.action { padding: 12px 14px; border-radius: calc(14px * var(--radius-scale)); border: 1px solid var(--line); background: var(--panel); }
-.action-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.action-head .spacer, .action-editor .spacer { flex: 1; }
+.action { padding: 12px 14px; border-radius: calc(14px * var(--radius-scale)); border: 1px solid var(--line);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--g-fill) 9%, transparent), transparent 42%), var(--panel);
+  transition: border-color 0.15s, box-shadow 0.15s; }
+.action:hover { border-color: color-mix(in srgb, var(--g-fill) 38%, var(--line)); box-shadow: 0 12px 28px -22px var(--g-fill); }
+.action-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.action-editor .spacer { flex: 1; }
+.action-title { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.3; }
 .action-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; }
-.action-head .tag { padding: 1px 8px; font-size: 12px; }
+.action-meta { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
 .action .try { gap: 6px; min-width: 72px; }
+.action-select { display: block; cursor: pointer; }
+.actions.selecting .action.picked { border-color: var(--indigo-fill); background: linear-gradient(100deg, var(--indigo-soft), transparent 60%), var(--panel);
+  box-shadow: 0 0 0 3px var(--indigo-soft); }
 .action-lines { margin: 10px 0 0; padding: 8px 12px; border-radius: calc(10px * var(--radius-scale)); background: var(--panel2); list-style: none;
   font: 500 12.5px/1.75 ui-monospace, 'SF Mono', Consolas, monospace; overflow-wrap: anywhere; }
 .action-lines li::before { content: '/'; margin-right: 6px; color: var(--muted); }
 .action-lines li.more { color: var(--muted); font-family: var(--font); }
 .action-lines li.more::before { content: none; }
-.action-repeat { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: 12.5px; }
 /* The blanks Hyperion fills in, each in its own colour wherever it shows. */
 .blank { display: inline-block; padding: 0 6px; border-radius: 6px; font: 700 11.5px/1.65 var(--font); vertical-align: 1px; }
 .blank.viewer { background: var(--violet-soft); color: var(--violet); }
@@ -221,8 +252,23 @@ body { background: var(--aurora), var(--ground); background-repeat: no-repeat; m
 
 .action-editor { gap: 12px; padding: 16px; border-radius: calc(14px * var(--radius-scale)); border: 1px solid var(--indigo-fill);
   background: var(--panel); box-shadow: 0 0 0 3px var(--indigo-soft), 0 18px 40px -28px var(--indigo-fill); }
-.editor-top { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 12px; }
-@media (max-width: 440px) { .editor-top { grid-template-columns: 1fr; } }
+.editor-title { font-size: 15px; font-weight: 600; }
+/* The editor's game: a card per game in its colour, saying whether it's ready. */
+.game-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 440px) { .game-choices { grid-template-columns: 1fr; } }
+.game-choice { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; border-radius: calc(12px * var(--radius-scale)); border: 1.5px solid var(--line);
+  background: var(--panel2); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color 0.15s, background 0.15s, box-shadow 0.15s; }
+.game-choice:hover { border-color: color-mix(in srgb, var(--g-fill) 50%, var(--line)); }
+.game-choice:focus-visible { outline: 2px solid var(--g-fill); outline-offset: 2px; }
+.game-choice[aria-checked='true'] { border-color: var(--g-fill); background: color-mix(in srgb, var(--g-fill) 10%, var(--panel));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--g-fill) 16%, transparent); }
+.game-choice-text { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.3; }
+.game-choice-text strong { font-size: 14px; font-weight: 600; }
+.game-choice-text span { color: var(--muted); font-size: 12.5px; font-weight: 500; }
+.game-choice-text span.ready { color: var(--green); }
+.game-choice-mark { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--g-fill); color: #fff;
+  opacity: 0; transform: scale(0.6); transition: opacity 0.15s, transform 0.15s; }
+.game-choice[aria-checked='true'] .game-choice-mark { opacity: 1; transform: none; }
 .action-editor textarea { min-height: 96px; font: 500 13px/1.6 ui-monospace, 'SF Mono', Consolas, monospace; resize: vertical; }
 .blank-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -4px; }
 .blank-add { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border: 1px solid var(--line); border-radius: var(--radius-pill);
@@ -241,3 +287,107 @@ body { background: var(--aurora), var(--ground); background-repeat: no-repeat; m
 .update-progress > span { display: block; height: 100%; background: var(--indigo-fill); transition: width 0.2s; }
 .app-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 0 4px; color: var(--muted); font-size: 12.5px; }
 .app-foot .spacer { flex: 1; }
+
+/* Packs: the buttons under the game actions, and the import and share windows. */
+.action-buttons { display: flex; gap: 8px; }
+.action-buttons .new-action { flex: 1; width: auto; }
+.action-buttons .btn { gap: 8px; }
+body.modal-open { overflow: hidden; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(8, 9, 18, 0.55); backdrop-filter: blur(3px); animation: modal-fade 0.15s ease-out; }
+.modal { display: flex; flex-direction: column; width: 100%; max-width: 540px; max-height: calc(100vh - 32px); border-radius: calc(18px * var(--radius-scale)); border: 1px solid var(--line-strong);
+  background: var(--panel); box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.6); outline: none; animation: modal-rise 0.18s ease-out; }
+.modal-head { display: flex; align-items: center; gap: 10px; padding: 16px 16px 12px 20px; border-bottom: 1px solid var(--line); }
+.modal-head h2 { flex: 1; font-size: 17px; }
+.modal-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; overflow-y: auto; }
+.modal-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px 16px; border-top: 1px solid var(--line); }
+.modal-foot .spacer { flex: 1; }
+.modal-foot .btn { gap: 6px; }
+@keyframes modal-fade { from { opacity: 0; } }
+@keyframes modal-rise { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) { .modal-backdrop, .modal { animation: none; } }
+
+/* Where a pack comes from: three tabs, then a starter pack card, a box to paste in, or a place to drop a file. */
+.pack-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: calc(14px * var(--radius-scale)); border: 1px solid var(--line); background: var(--panel2); }
+.pack-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; border: 0; border-radius: calc(10px * var(--radius-scale));
+  background: transparent; color: var(--muted); font: 600 13.5px var(--font); cursor: pointer; transition: color 0.15s, background 0.15s; }
+.pack-tabs button:hover { color: var(--ink); }
+.pack-tabs button:focus-visible { outline: 2px solid var(--indigo-fill); outline-offset: 1px; }
+.pack-tabs button[aria-selected='true'] { color: var(--accent-ink); background: var(--accent-gradient); box-shadow: 0 6px 16px -8px var(--accent-shadow); }
+.pack-starters { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.pack-starter { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px; border-radius: calc(14px * var(--radius-scale)); border: 1px solid var(--line);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--g-fill) 10%, transparent), transparent 50%), var(--panel); color: var(--ink); font: inherit; text-align: left;
+  cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
+.pack-starter:hover { border-color: color-mix(in srgb, var(--g-fill) 50%, var(--line)); box-shadow: 0 12px 28px -20px var(--g-fill); transform: translateY(-1px); }
+.pack-starter:focus-visible { outline: 2px solid var(--indigo-fill); outline-offset: 2px; }
+.pack-starter > svg:last-child { flex: none; color: var(--muted); transform: rotate(-90deg); }
+.pack-starter-text { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.pack-starter-text .tag { margin-top: 4px; padding: 1px 8px; font-size: 12px; }
+.pack-text { min-height: 180px; font: 500 12.5px/1.6 ui-monospace, 'SF Mono', Consolas, monospace; resize: vertical; }
+.pack-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 30px 16px; border-radius: calc(16px * var(--radius-scale)); border: 2px dashed var(--line-strong);
+  background: var(--panel2); text-align: center; transition: border-color 0.15s, background 0.15s; }
+.pack-drop.dragging { border-color: var(--indigo-fill); background: var(--indigo-soft); }
+.pack-drop p { margin: 0 0 6px; }
+.pack-drop-icon { display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 4px; border-radius: 50%; background: var(--indigo-soft); color: var(--indigo); }
+@media (prefers-reduced-motion: reduce) { .pack-starter:hover { transform: none; } }
+
+/* A pack's preview: what it is in a card at the top, then its actions in groups (ready, risky, can't be imported),
+   each group headed in its colour. Ticked actions take the accent, so what will be imported stands out. */
+.pack-hero { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: calc(16px * var(--radius-scale)); border: 1px solid var(--line);
+  background: radial-gradient(300px 140px at 0% 0%, var(--indigo-soft), transparent 75%), var(--panel2); }
+.pack-hero-top { display: flex; align-items: center; gap: 12px; }
+.pack-hero-icon { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: calc(12px * var(--radius-scale)); background: var(--accent-gradient);
+  color: var(--accent-ink); box-shadow: 0 8px 20px -10px var(--accent-shadow); }
+.pack-hero-name { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.pack-built-in { order: 1; flex: none; padding: 2px 9px; font-size: 12px; }
+.pack-hero-name h3 { font-size: 18px; line-height: 1.25; }
+.pack-hero-about { margin: 0; }
+.pack-stats { display: flex; gap: 8px; margin: 0; }
+.pack-stats > div { flex: 1; padding: 8px 12px; border-radius: calc(10px * var(--radius-scale)); background: var(--panel); border: 1px solid var(--line); }
+.pack-stats dt { color: var(--muted); font-size: 12px; font-weight: 500; }
+.pack-stats dd { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+.pack-stats .picked dd { color: var(--indigo); }
+.pack-stats .clash dd { color: var(--violet); }
+.pack-hero-note { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: var(--muted); font-size: 12.5px; }
+.pack-hero-note svg { flex: none; margin-top: 2px; color: var(--green); }
+
+.pack-group { --grp: var(--green); --grp-fill: #22c55e; display: flex; flex-direction: column; gap: 8px; }
+.pack-group.risky { --grp: var(--amber); --grp-fill: var(--amber-fill); }
+.pack-group.broken { --grp: var(--red); --grp-fill: #ef4459; }
+.pack-group + .pack-group { margin-top: 6px; }
+.pack-group-title { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--grp); font-size: 13px; font-weight: 600; }
+.pack-group-count { padding: 0 7px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--grp-fill) 16%, transparent); font-size: 12px; line-height: 19px; }
+.pack-group-hint { margin: -2px 0 0; color: var(--muted); font-size: 12.5px; }
+.pack-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.pack-item { padding: 12px 14px; border-radius: calc(14px * var(--radius-scale)); border: 1px solid var(--line); background: var(--panel);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
+.pack-group.risky .pack-item { border-color: color-mix(in srgb, var(--amber-fill) 40%, var(--line)); }
+.pack-item.picked, .pack-group.risky .pack-item.picked { border-color: var(--indigo-fill); background: linear-gradient(100deg, var(--indigo-soft), transparent 55%), var(--panel);
+  box-shadow: 0 0 0 3px var(--indigo-soft); }
+.pack-item.broken { padding: 10px 14px; border-style: dashed; border-color: color-mix(in srgb, #ef4459 40%, var(--line)); background: color-mix(in srgb, var(--red-soft) 50%, var(--panel)); }
+.pack-list.compact .pack-item { padding: 8px 12px; }
+.pack-pick { display: flex; align-items: center; gap: 10px; min-width: 0; cursor: pointer; }
+.pack-item.broken .pack-pick { cursor: default; }
+.pack-pick-name { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.3; }
+.pack-pick .tag { padding: 1px 8px; font-size: 12px; }
+.pack-meta { margin-left: auto; white-space: nowrap; }
+.pack-problem { margin: 4px 0 0; color: var(--red); }
+.action-lines li.risk { margin: 2px -6px; padding: 2px 6px; border-radius: 6px; background: var(--amber-soft); }
+.risk-reason { display: flex; align-items: center; gap: 5px; color: var(--amber); font: 600 12px var(--font); }
+.pack-clash { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); }
+.pack-clash .seg { padding: 3px; }
+.pack-clash .seg button { min-height: 28px; padding: 0 12px; font-size: 12.5px; }
+.pack-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 440px) { .pack-fields { grid-template-columns: 1fr; } }
+.pack-pick-head { display: flex; align-items: center; justify-content: space-between; }
+
+/* Appearance: whether to match the dashboard, then the companion's own look, with each theme's swatch. */
+.top .btn-icon { flex: none; width: 36px; color: var(--muted); }
+.top .btn-icon:hover { color: var(--ink); }
+.look-follow { padding: 12px 14px; border-radius: calc(12px * var(--radius-scale)); border: 1px solid var(--line); background: var(--panel2); }
+.look-themes { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.look-themes .choice { padding: 10px; gap: 8px; }
+.theme-swatch { display: flex; overflow: hidden; height: 44px; border-radius: calc(8px * var(--radius-scale)); border: 1px solid var(--line); }
+.theme-swatch-half { flex: 1; display: grid; place-items: center; }
+.theme-swatch-card { display: flex; align-items: center; gap: 4px; width: 70%; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 5px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.theme-swatch-card > span { width: 10px; height: 10px; border-radius: 50%; }
+.theme-swatch-card > span:first-child { width: 18px; border-radius: 999px; }

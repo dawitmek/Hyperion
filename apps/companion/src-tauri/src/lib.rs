@@ -4,6 +4,7 @@ mod controller;
 mod device;
 mod bedrock;
 mod game_actions;
+mod packs;
 mod input;
 mod keys;
 mod macros;
@@ -147,13 +148,50 @@ fn save_game_action(ctl: Ctl, action: game_actions::GameAction, editing: Option<
 }
 
 #[tauri::command]
-fn delete_game_action(ctl: Ctl, name: String) -> Result<(), String> {
-    ctl.delete_game_action(&name)
+fn delete_game_actions(ctl: Ctl, names: Vec<String>) -> Result<(), String> {
+    ctl.delete_game_actions(&names)
 }
 
 #[tauri::command]
 fn try_game_action(ctl: Ctl, name: String) {
     ctl.try_game_action(&name);
+}
+
+#[tauri::command]
+fn starter_packs() -> Vec<packs::Starter> {
+    packs::starters()
+}
+
+#[tauri::command]
+fn preview_pack(ctl: Ctl, text: String) -> Result<packs::Preview, String> {
+    ctl.preview_pack(&text)
+}
+
+#[tauri::command]
+fn import_pack(ctl: Ctl, chosen: Vec<packs::Chosen>) -> Result<Vec<String>, String> {
+    ctl.import_pack(chosen)
+}
+
+#[tauri::command]
+fn export_pack(ctl: Ctl, names: Vec<String>, name: String, author: String) -> Result<String, String> {
+    ctl.export_pack(&names, &name, &author)
+}
+
+/// Saves a pack to the Downloads folder, under a name not already taken, and shows it there. Returns where it went.
+#[tauri::command]
+fn save_pack(app: tauri::AppHandle, ctl: Ctl, names: Vec<String>, name: String, author: String) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
+    let text = ctl.export_pack(&names, &name, &author)?;
+    let dir = app.path().download_dir().map_err(|_| "Couldn't find your Downloads folder".to_string())?;
+    let file = packs::file_name(&name);
+    let stem = file.trim_end_matches(".hyperion.json");
+    let path = (1..)
+        .map(|n| dir.join(if n == 1 { file.clone() } else { format!("{stem}-{n}.hyperion.json") }))
+        .find(|p| !p.exists())
+        .unwrap();
+    std::fs::write(&path, text).map_err(|e| format!("Couldn't save the file: {e}"))?;
+    let _ = app.opener().reveal_item_in_dir(&path);
+    Ok(path.display().to_string())
 }
 
 /// A blank or missing password keeps the saved one, which never comes back to the window.
@@ -271,8 +309,13 @@ pub fn run() {
             delete_macro,
             try_macro,
             save_game_action,
-            delete_game_action,
+            delete_game_actions,
             try_game_action,
+            starter_packs,
+            preview_pack,
+            import_pack,
+            export_pack,
+            save_pack,
             set_minecraft,
             test_minecraft,
             set_bedrock,

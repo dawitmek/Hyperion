@@ -1,0 +1,85 @@
+{
+  "hyperion": "game-actions",
+  "version": 1,
+  "name": "Minecraft Java starter",
+  "author": "Hyperion",
+  "description": "Eight actions from the Minecraft guide: mobs, TNT, diamonds, weather and more. Needs Minecraft 1.21.5 or newer.",
+  "actions": [
+    {
+      "name": "Creeper",
+      "game": "minecraftJava",
+      "commands": [
+        "execute at {player} run summon creeper ~ ~ ~",
+        "say {viewer} sent a creeper!"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Named zombie",
+      "game": "minecraftJava",
+      "commands": [
+        "execute at {player} run summon zombie ~ ~ ~ {CustomName:\"{viewer}\",CustomNameVisible:1b}"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "TNT rain",
+      "game": "minecraftJava",
+      "commands": [
+        "execute at {player} run summon tnt ~ ~8 ~ {fuse:60}"
+      ],
+      "repeat": 5,
+      "delayMs": 1000
+    },
+    {
+      "name": "Diamonds",
+      "game": "minecraftJava",
+      "commands": [
+        "give {player} diamond {count}",
+        "title {player} title {\"text\":\"{viewer} sent diamonds\"}"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Lightning",
+      "game": "minecraftJava",
+      "commands": [
+        "execute at {player} run summon lightning_bolt ~ ~ ~"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Thunderstorm",
+      "game": "minecraftJava",
+      "commands": [
+        "weather thunder",
+        "time set night",
+        "say {viewer} brought the storm"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Speed boost",
+      "game": "minecraftJava",
+      "commands": [
+        "effect give {player} minecraft:speed 30 2"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Random teleport",
+      "game": "minecraftJava",
+      "commands": [
+        "execute at {player} run spreadplayers ~ ~ 0 50 false {player}"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Glow } from './Glow';
 import { Link } from '../router';
-import { CompanionArt, GameActionArt, GiftArt, LevelsArt, ModesArt, ProfilesArt, SafetyArt, VoiceArt } from './visuals';
+import { AnalyticsArt, CompanionArt, GameActionArt, GiftArt, LevelsArt, ModesArt, ProfilesArt, SafetyArt, VoiceArt } from './visuals';
 import { detectPlatform, RELEASES_URL, useCompanionRelease, type Platform } from '../release';
 import { GITHUB_URL, SiteLayout } from './SiteLayout';
 
@@ -34,7 +34,7 @@ const FEATURES: { title: string; text: string; points: string[]; art: ReactNode 
     title: 'Actions for everything viewers do',
     text: 'Make gifting part of the game, and thank people where everyone can see it.',
     points: [
-      'Follows, shares, gifts, like milestones, subscriptions, stickers, chat commands and first-time chatters can each trigger an action.',
+      'Follows, shares, gifts, like milestones, joins, subscriptions, stickers, chat commands, a viewer’s first activity and reached goals can each trigger an action.',
       'An action shows an alert, plays a built-in sound or your own, shows your picture or video, reads its text aloud, runs a command, or gives points.',
       'Limit an action to followers, subscribers, moderators, top gifters or one viewer, with cooldowns and random picks.',
       'A gift streak can run a command once per gift, up to 10 times. Gift boosts add votes or move the gifter up the queue.',
@@ -48,6 +48,7 @@ const FEATURES: { title: string; text: string; points: string[]; art: ReactNode 
     points: [
       'Read prefixed comments (like !tts hello), alerts, or all of chat.',
       'Filters for length, blocked words, per-viewer cooldowns and minimum level.',
+      'Announce each command that fires, in your own wording, like “mira pressed jump”.',
       'Engines: eSpeak in the overlay, TikTok’s own voices through your TikTok account, your own Google, Azure or ElevenLabs key, the PC’s own voices, or Piper voices on a self-hosted server.',
       'Effects: chipmunk, deep, monster, robot, radio and echo.',
     ],
@@ -68,12 +69,23 @@ const FEATURES: { title: string; text: string; points: string[]; art: ReactNode 
     title: 'Levels and a leaderboard',
     text: 'Give regulars something to work towards.',
     points: [
-      'Viewers earn 1 XP per command that presses a key, plus each gift’s value in coins.',
+      'Viewers earn 1 XP per command of theirs that fires, plus each gift’s value in coins.',
       'Level-ups get a shout-out on the overlay.',
       'Optional level requirements per command, off unless you turn them on.',
       'Show the top players on stream, and reset the board whenever you like.',
     ],
     art: <LevelsArt />,
+  },
+  {
+    title: 'Analytics across streams',
+    text: 'See what worked, stream by stream and over time.',
+    points: [
+      'A full report for each stream: everyone who took part and what they did, biggest gifters first.',
+      'Narrow a stream to a stretch of time, one command, one gift or one viewer.',
+      'Patterns over 7, 30 or 90 days: the hours chat is busiest, returning viewers, coins per hour and follows per 100 viewers.',
+      'A recap when each stream ends, with peak viewers, new followers, coins and the top player.',
+    ],
+    art: <AnalyticsArt />,
   },
   {
     title: 'A profile per game',
@@ -168,7 +180,7 @@ export function HowItWorksPage() {
             <div>
               <h2>Choose your commands</h2>
               <p>
-                New accounts start with left, right, up, down and jump on A, D, W, S and Space. Change them, add your own, and
+                New accounts start with w, a, s, d, jump and run on W, A, S, D, Space and Shift+W. Change them, add your own, and
                 pick a crowd mode. Make a game profile if you play more than one game.
               </p>
             </div>
@@ -339,32 +351,31 @@ export function SelfHostingPage() {
           <li>
             <div>
               <h2>Start it with Docker</h2>
-              <p>You need Docker and Git. Migrations run on startup.</p>
+              <p>You need Docker and Git. This pulls the published image; add <code>--build</code> to build it yourself instead. Migrations run on startup.</p>
               <pre className="s-code">
                 <code>
                   git clone {GITHUB_URL} && cd Hyperion{'\n'}cp .env.example .env{'\n'}
                   <span className="c"># edit .env: set POSTGRES_PASSWORD, and SECRETS_KEY to: openssl rand -base64 32</span>
-                  {'\n'}docker compose -f docker/compose.yml --env-file .env up -d --build
+                  {'\n'}docker compose -f docker/compose.yml --env-file .env pull{'\n'}docker compose -f docker/compose.yml --env-file .env up -d
                 </code>
               </pre>
               <p>
-                Hyperion is now on <code>http://127.0.0.1:3000</code>. Update with <code>git pull</code> and the same command.
+                Hyperion is now on <code>http://127.0.0.1:3000</code>. Update by running the same commands again.
               </p>
             </div>
           </li>
           <li>
             <div>
-              <h2>Put HTTPS in front</h2>
+              <h2>Turn on HTTPS</h2>
               <p>
-                Login cookies are secure by default, so browsers only send them over HTTPS or on localhost. A reverse proxy
-                like Caddy gets certificates for you; WebSockets pass through with no extra setup.
+                Login cookies are secure by default, so browsers only send them over HTTPS or on localhost. HTTPS is built in:
+                point your domain at the server, add two lines to <code>.env</code> and start it again. Caddy gets and renews the
+                certificate by itself. Already run a reverse proxy? Point it at port 3000 instead.
               </p>
               <pre className="s-code">
                 <code>
-                  hyperion.example.com {'{'}
-                  {'\n'}
-                  {'  '}reverse_proxy 127.0.0.1:3000{'\n'}
-                  {'}'}
+                  <span className="c"># .env</span>
+                  {'\n'}DOMAIN=hyperion.example.com{'\n'}COMPOSE_PROFILES=https
                 </code>
               </pre>
             </div>
@@ -406,6 +417,24 @@ export function SelfHostingPage() {
                   </tr>
                   <tr>
                     <td>
+                      <code>SIGNUPS_ENABLED</code>
+                    </td>
+                    <td>Set to false to stop new accounts; existing accounts keep working</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>SMTP_URL</code>, <code>MAIL_FROM</code>
+                    </td>
+                    <td>Optional email through any SMTP service, for email confirmation and password resets</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <code>HYPERION_VERSION</code>
+                    </td>
+                    <td>Which release of the published image to pull; latest by default</td>
+                  </tr>
+                  <tr>
+                    <td>
                       <code>COOKIE_SECURE</code>
                     </td>
                     <td>Set to false only to use plain HTTP on a private network</td>
@@ -413,7 +442,7 @@ export function SelfHostingPage() {
                 </tbody>
               </table>
               <p>
-                Piper voices (set <code>WITH_PIPER=true</code> and build the image yourself) and backups are covered in the{' '}
+                Piper voices (set <code>WITH_PIPER=true</code> and build the image yourself), email setup and backups are covered in the{' '}
                 <a href={`${GITHUB_URL}/blob/main/docs/SELF_HOSTING.md`}>full self-hosting guide</a>.
               </p>
             </div>
@@ -427,7 +456,7 @@ export function SelfHostingPage() {
 const QUESTIONS: [string, ReactNode][] = [
   ['Is Hyperion free?', 'Yes. Hyperion is free and open source under the GPL-3.0. The only optional cost is a cloud voice provider, if you choose to use your own Google, Azure or ElevenLabs key.'],
   ['Is this made by TikTok?', 'No. Hyperion is an independent project and is not affiliated with TikTok. It reads your public LIVE chat by username, the same way other LIVE tools do.'],
-  ['Do I need my TikTok password?', 'No. You only enter your TikTok username. You must already be live on TikTok when you connect.'],
+  ['Do I need my TikTok password?', 'No. You only enter your TikTok username, and you must already be live on TikTok when you connect. The one exception is optional: TikTok’s own voices need you to sign in to TikTok in the companion.'],
   [
     'Which games work?',
     <>

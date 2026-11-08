@@ -160,6 +160,21 @@ A game action is one or more commands the companion sends in order, saved on you
 4. To run it more than once, set **Run it** to a number of times and the seconds between each.
 5. Click **Save action**, then **Try**. A creeper should appear next to you, and chat says "Tester sent a creeper!".
 
+### Or start from a pack
+
+Click **Import** under **Game actions** to add several actions at once:
+
+- **Starter packs** come with the companion: the sample commands below, ready to go, for Java (1.21.5 and newer) or
+  Bedrock.
+- **Paste** takes a pack another streamer copied for you, and **File** opens one they saved.
+
+You see every action and command before anything is added, and you pick which ones to take. Commands that can do
+lasting harm, like `op`, `stop`, `fill` or `kill @a`, are marked risky with the reason and start unticked. If you
+already have an action with the same name, choose to keep both or replace yours.
+
+To share your own, click **Share**, tick the actions, and **Copy** the pack to paste anywhere or **Save file** to put it
+in your Downloads folder. A pack holds only the actions: your server's address and password stay on your PC.
+
 ### Blanks
 
 Hyperion fills these in each time it runs. The buttons under the commands box add them where your cursor is.
@@ -199,7 +214,7 @@ Pausing the companion, or pressing `Ctrl+Shift+Backspace`, stops an action that'
 
 ## Sample commands
 
-Each box is one game action. Paste it into the commands box and save.
+Each box is one game action. Paste it into the commands box and save. They're also in the starter packs (see [Or start from a pack](#or-start-from-a-pack)).
 
 ### Java
 

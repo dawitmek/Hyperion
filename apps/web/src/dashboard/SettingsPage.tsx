@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { UI_THEMES, type UiMode, type UiTheme, type UiThemeStyle } from '@hyperion/shared';
+import { THEME_SWATCHES } from '@hyperion/theme/swatches';
 import { api, type Host } from '../api';
 import { navigate } from '../router';
 import { Card, Choices, ConfirmButton, ErrorNotice, Seg, Switch, useError } from '../ui';
@@ -61,17 +62,6 @@ export function SettingsPage({ host, refreshHost }: PageProps) {
   );
 }
 
-// Each theme's light and dark look, for its swatch: page, card, accent, second accent.
-const SWATCHES: Record<UiTheme, { light: string[]; dark: string[]; note: string }> = {
-  default: { light: ['#f6f6f9', '#ffffff', '#5b5fef', '#e5469a'], dark: ['#0a0b12', '#171a25', '#6366f1', '#a855f7'], note: 'Indigo and plasma, with Geist.' },
-  legacy: { light: ['#f6f6f9', '#ffffff', '#0b0c12', '#5b5fef'], dark: ['#07080c', '#141720', '#ffffff', '#6366f1'], note: 'The original look: indigo and plasma on plain black and white, with Geist.' },
-  'solar-dusk': { light: ['#fdfbf7', '#f1e9da', '#b45309', '#ca8a04'], dark: ['#1c1917', '#292524', '#f97316', '#0ea5e9'], note: 'Parchment and amber, with Oxanium and sharp corners.' },
-  'graphite-mono': { light: ['#ffffff', '#f0f0f0', '#171717', '#3b82f6'], dark: ['#171717', '#262626', '#e5e5e5', '#3b82f6'], note: 'Black, white and grays with a blue accent, with DM Sans and soft corners.' },
-  'sage-mist': { light: ['#fdfdfd', '#f5f5f5', '#afbea5', '#495940'], dark: ['#070503', '#1e1a14', '#afbea5', '#495940'], note: 'Sage and olive on white or near-black, with Plus Jakarta Sans and round corners.' },
-  'mocha-cream': { light: ['#f9f9f9', '#efefef', '#644a40', '#ffdfb5'], dark: ['#111111', '#222222', '#ffe0c2', '#393028'], note: 'Mocha brown and peach cream on light gray or near-black, with medium corners.' },
-  tangerine: { light: ['#e8ebed', '#ffffff', '#e05d38', '#86a7c8'], dark: ['#1c2433', '#2a3040', '#e05d38', '#5a7ca6'], note: 'Tangerine and slate blue on cool gray or deep navy, with Inter.' },
-};
-
 // The dashboard's and companion's look. Applies at once, here and on the paired companions.
 function Appearance({ host, refreshHost }: { host: Host; refreshHost: () => Promise<unknown> }) {
   const { error, guard } = useError();
@@ -106,7 +96,7 @@ function Appearance({ host, refreshHost }: { host: Host; refreshHost: () => Prom
             <>
               <span className="theme-swatch" aria-hidden="true">
                 {(['light', 'dark'] as const).map((mode) => {
-                  const [page, card, accent, second] = SWATCHES[id][mode];
+                  const [page, card, accent, second] = THEME_SWATCHES[id][mode];
                   return (
                     <span key={mode} className="theme-swatch-half" style={{ background: page }}>
                       <span className="theme-swatch-card" style={{ background: card }}>
@@ -117,7 +107,7 @@ function Appearance({ host, refreshHost }: { host: Host; refreshHost: () => Prom
                   );
                 })}
               </span>
-              {SWATCHES[id].note}
+              {THEME_SWATCHES[id].note}
             </>,
           ])}
           onChange={(uiTheme) => save({ uiTheme })}

@@ -3,6 +3,7 @@
 use crate::bedrock::{self, Bedrock};
 use crate::config::Config;
 use crate::game_actions::{self, Game, GameAction, Values};
+use crate::packs;
 use crate::input::{self, GameWindow};
 use crate::keys::{self, ALL_KEYS, Combo, Modifier, OLD_MODIFIER_TOGGLES};
 use crate::macros::{self, Input, Macro, Pressed, Recorder};
@@ -529,9 +530,32 @@ impl Controller {
         })
     }
 
-    pub fn delete_game_action(&self, name: &str) -> Result<(), String> {
+    /// What a pack would add, for the preview. Nothing is saved.
+    pub fn preview_pack(&self, text: &str) -> Result<packs::Preview, String> {
+        packs::preview(text, &self.game_action_names())
+    }
+
+    /// Saves the actions picked in a pack's preview, all at once. Returns the names they were saved under.
+    pub fn import_pack(&self, chosen: Vec<packs::Chosen>) -> Result<Vec<String>, String> {
+        let mut saved = vec![];
         self.save_game_actions(|list| {
-            list.retain(|a| a.name != name);
+            saved = packs::merge(list, chosen)?;
+            Ok(())
+        })?;
+        Ok(saved)
+    }
+
+    /// The named actions as a pack, in the order they're listed here.
+    pub fn export_pack(&self, names: &[String], name: &str, author: &str) -> Result<String, String> {
+        let list = self.game_actions.lock().unwrap();
+        let picked: Vec<GameAction> = list.iter().filter(|a| names.contains(&a.name)).cloned().collect();
+        packs::export(&picked, name, author)
+    }
+
+    /// Deletes the actions with these names, all in one save.
+    pub fn delete_game_actions(&self, names: &[String]) -> Result<(), String> {
+        self.save_game_actions(|list| {
+            list.retain(|a| !names.contains(&a.name));
             Ok(())
         })
     }

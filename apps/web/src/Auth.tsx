@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api, ApiError } from './api';
-import { Logo } from './icons';
+import { Icon, Logo } from './icons';
 import { Link, navigate } from './router';
 import { Glow } from './site/Glow';
 import { ErrorNotice, Spinner, useError } from './ui';
@@ -30,41 +30,130 @@ function useLinkToken() {
   return token;
 }
 
-function AuthShell({ children, onSubmit }: { children: ReactNode; onSubmit?: (e: FormEvent) => void }) {
+// A sample of chat running a game, played on a loop beside the form. Names and commands are made up.
+const SAMPLE_CHAT = [
+  { name: 'mira', hue: '#8d5ef5', text: 'jump', key: 'Space' },
+  { name: 'kai_x', hue: '#2b95ea', text: 'w', key: 'W' },
+  { name: 'jules', hue: '#e5469a', text: 'run', key: 'Shift+W' },
+  { name: 'nova', hue: '#14a3a0', text: 'a', key: 'A' },
+  { name: 'theo', hue: '#f07f2e', text: 'jump', key: 'Space' },
+  { name: 'sam', hue: '#5b5fef', text: 'd', key: 'D' },
+];
+
+function useSampleTick() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = setInterval(() => setTick((t) => t + 1), 1600);
+    return () => clearInterval(timer);
+  }, []);
+  return tick;
+}
+
+const PITCH = {
+  login: {
+    title: 'Welcome back.\nLet’s go live.',
+    text: 'Pick up where you left off: your commands, crowd mode and overlay are as you left them.',
+    points: [],
+  },
+  signup: {
+    title: 'Let your LIVE chat play your game',
+    text: 'Viewers type commands or send gifts, and Hyperion presses the keys on your PC.',
+    points: ['Free and open source', 'Works with the games you already play', 'Only the keys you allow, only in your game'],
+  },
+};
+
+function Showcase({ kind }: { kind: 'login' | 'signup' }) {
+  const tick = useSampleTick();
+  const recent = [0, 1, 2, 3].map((back) => ({ ...SAMPLE_CHAT[(tick + 3 - back) % SAMPLE_CHAT.length]!, id: tick + 3 - back }));
+  const latest = recent[0]!;
+  const pitch = PITCH[kind];
+  return (
+    <aside className="auth-showcase" aria-label="What Hyperion does">
+      <div className="auth-showcase-copy">
+        <h2>{pitch.title}</h2>
+        <p>{pitch.text}</p>
+        {pitch.points.length > 0 && (
+          <ul className="auth-points">
+            {pitch.points.map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="auth-demo" aria-hidden="true">
+        <div className="auth-demo-head">
+          <span className="auth-live">LIVE</span>
+          <span>Chat</span>
+        </div>
+        <ul className="auth-chat">
+          {recent.map((m) => (
+            <li key={m.id}>
+              <span className="auth-avatar" style={{ background: m.hue }}>
+                {m.name[0]!.toUpperCase()}
+              </span>
+              <strong>{m.name}</strong>
+              <span>{m.text}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="auth-press">
+          <span className="muted">Companion presses</span>
+          <kbd key={latest.id} className="kbd auth-key">
+            {latest.key}
+          </kbd>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function AuthShell({ children, onSubmit, pitch = 'login' }: { children: ReactNode; onSubmit?: (e: FormEvent) => void; pitch?: 'login' | 'signup' }) {
   return (
     <div className="auth">
       <div className="content-glow" aria-hidden="true">
         <Glow />
       </div>
-      <Link href="/" className="brand">
-        <Logo />
-        Hyperion
-      </Link>
-      {onSubmit ? (
-        <form className="card stack auth-card" onSubmit={onSubmit}>
-          {children}
-        </form>
-      ) : (
-        <div className="card stack auth-card">{children}</div>
-      )}
+      <main className="auth-main">
+        <Link href="/" className="brand">
+          <Logo />
+          Hyperion
+        </Link>
+        {onSubmit ? (
+          <form className="stack auth-card" onSubmit={onSubmit}>
+            {children}
+          </form>
+        ) : (
+          <div className="stack auth-card">{children}</div>
+        )}
+        <p className="auth-foot muted">Free and open source · Not affiliated with TikTok</p>
+      </main>
+      <Showcase kind={pitch} />
     </div>
   );
 }
 
 function PasswordField({ value, onChange, label = 'Password', isNew }: { value: string; onChange: (v: string) => void; label?: string; isNew: boolean }) {
+  const [shown, setShown] = useState(false);
+  const long = value.length >= 8;
   return (
     <label className="field">
       {label}
-      {isNew && <span className="hint">At least 8 characters.</span>}
-      <input
-        type="password"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        minLength={8}
-        maxLength={128}
-        required
-        autoComplete={isNew ? 'new-password' : 'current-password'}
-      />
+      <span className="auth-password">
+        <input
+          type={shown ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          minLength={8}
+          maxLength={128}
+          required
+          autoComplete={isNew ? 'new-password' : 'current-password'}
+        />
+        <button type="button" className="auth-reveal" onClick={() => setShown(!shown)} aria-label={shown ? 'Hide password' : 'Show password'} aria-pressed={shown}>
+          <Icon name={shown ? 'eyeOff' : 'eye'} size={18} />
+        </button>
+      </span>
+      {isNew && <span className={`hint auth-rule ${long ? 'met' : ''}`}>At least 8 characters</span>}
     </label>
   );
 }
@@ -87,6 +176,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
   // Set once a confirmation link is on its way: after signing up, or logging in to an unconfirmed account.
   const [waiting, setWaiting] = useState<'signup' | 'login' | null>(null);
   const [resent, setResent] = useState(false);
+  const [busy, setBusy] = useState(false);
   // Someone already signed in has no business here: send them on instead of showing the form.
   const [checking, setChecking] = useState(true);
   useEffect(() => {
@@ -97,7 +187,8 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    guard(async () => {
+    setBusy(true);
+    void guard(async () => {
       try {
         const res = await api<{ verify?: boolean }>('POST', `/auth/${mode}`, { email, password });
         if (res.verify) setWaiting('signup');
@@ -107,7 +198,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
         if (login && err instanceof ApiError && err.status === 403) setWaiting('login');
         else throw err;
       }
-    })();
+    })().finally(() => setBusy(false));
   };
   const resend = guard(() => api('POST', '/auth/resend-verification', { email }).then(() => setResent(true)));
 
@@ -144,22 +235,24 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
     );
   }
   return (
-    <AuthShell onSubmit={submit}>
+    <AuthShell onSubmit={submit} pitch={mode}>
       <div>
-        <h1>{login ? 'Welcome back' : 'Create your account'}</h1>
-        <p className="muted">{login ? 'Log in to your dashboard.' : 'Free, and it takes a minute.'}</p>
+        <h1>{login ? 'Log in' : 'Create your account'}</h1>
+        <p className="muted">{login ? 'To your Hyperion dashboard.' : 'Free, and it takes a minute.'}</p>
       </div>
       <ErrorNotice error={error} />
       <EmailField value={email} onChange={setEmail} />
       <PasswordField value={password} onChange={setPassword} isNew={!login} />
       {login && (
-        <Link href="/forgot-password" className="muted" style={{ marginTop: -8 }}>
+        <Link href="/forgot-password" className="auth-forgot">
           Forgot your password?
         </Link>
       )}
-      <button className="btn btn-primary btn-lg">{login ? 'Log in' : 'Create account'}</button>
+      <button className="btn btn-primary btn-lg" disabled={busy}>
+        {busy ? (login ? 'Logging in…' : 'Creating your account…') : login ? 'Log in' : 'Create account'}
+      </button>
       {(login ? config.signups : true) && (
-        <p className="muted" style={{ textAlign: 'center' }}>
+        <p className="muted auth-switch">
           {login ? 'New to Hyperion? ' : 'Already have an account? '}
           <Link href={login ? '/signup' : '/login'}>{login ? 'Create an account' : 'Log in'}</Link>
         </p>

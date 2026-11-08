@@ -55,7 +55,7 @@ jobs:
         with:
           projectPath: apps/companion
           tagName: ${{ github.ref_name }}
-          releaseName: Hyperion Companion ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
           releaseBody: Download the installer for your system below, or use the Download page on the Hyperion site.
           releaseDraft: true
           args: ${{ matrix.args }}

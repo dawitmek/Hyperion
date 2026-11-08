@@ -32,6 +32,14 @@ const paths = {
     </>
   ),
   cube: <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3zM4 7.5l8 4.5 8-4.5M12 12v9" />,
+  import: <path d="M12 3v12m-5-5 5 5 5-5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />,
+  share: <path d="M12 15V3m-5 5 5-5 5 5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />,
+  warning: <path d="M12 4 2.5 20h19L12 4zM12 10v4.5M12 17.5v.01" />,
+  palette: (
+    <path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-.9-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4c2.5 0 4.6-2.1 4.6-4.6C21 6.4 17 3 12 3zM7.5 11.5h.01M10 7.5h.01M15 7.5h.01" />
+  ),
+  trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />,
+  file: <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5" />,
 } as const;
 
 export type IconName = keyof typeof paths;

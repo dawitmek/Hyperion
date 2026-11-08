@@ -232,6 +232,34 @@ export function VoiceArt() {
   );
 }
 
+export function AnalyticsArt() {
+  const bars = [8, 12, 10, 18, 26, 22, 34, 44, 40, 30, 20, 14];
+  return (
+    <div className="art">
+      <div className="art-panel">
+        <div className="art-line">
+          <strong>Busiest hours</strong>
+          <span className="s-muted">Fri, 8–10 pm</span>
+        </div>
+        <div className="art-wave" aria-hidden="true">
+          {bars.map((h, i) => (
+            <i key={i} style={{ height: h }} />
+          ))}
+        </div>
+      </div>
+      <div className="art-panel">
+        <div className="art-line">
+          <strong>Came back</strong>
+          <span className="s-muted">38% of viewers</span>
+        </div>
+        <div className="meter" style={{ marginTop: 6 }}>
+          <div style={{ width: '38%' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LevelsArt() {
   return (
     <div className="art">

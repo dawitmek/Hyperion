@@ -1,0 +1,85 @@
+{
+  "hyperion": "game-actions",
+  "version": 1,
+  "name": "Minecraft Bedrock starter",
+  "author": "Hyperion",
+  "description": "Eight actions from the Minecraft guide: mobs, TNT, diamonds, weather and more.",
+  "actions": [
+    {
+      "name": "Creeper",
+      "game": "minecraftBedrock",
+      "commands": [
+        "summon creeper ~ ~ ~",
+        "say {viewer} sent a creeper!"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Named zombie",
+      "game": "minecraftBedrock",
+      "commands": [
+        "summon zombie \"{viewer}\" ~ ~ ~"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "TNT rain",
+      "game": "minecraftBedrock",
+      "commands": [
+        "summon tnt ~ ~8 ~"
+      ],
+      "repeat": 5,
+      "delayMs": 1000
+    },
+    {
+      "name": "Diamonds",
+      "game": "minecraftBedrock",
+      "commands": [
+        "give @s diamond {count}",
+        "title @s title {viewer} sent diamonds"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Lightning",
+      "game": "minecraftBedrock",
+      "commands": [
+        "summon lightning_bolt ~ ~ ~"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Thunderstorm",
+      "game": "minecraftBedrock",
+      "commands": [
+        "weather thunder",
+        "time set night",
+        "say {viewer} brought the storm"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Speed boost",
+      "game": "minecraftBedrock",
+      "commands": [
+        "effect @s speed 30 2"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    },
+    {
+      "name": "Random teleport",
+      "game": "minecraftBedrock",
+      "commands": [
+        "spreadplayers ~ ~ 0 50 @s"
+      ],
+      "repeat": 1,
+      "delayMs": 0
+    }
+  ]
+}

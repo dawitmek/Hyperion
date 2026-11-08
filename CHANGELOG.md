@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-07
+
+Game action packs and themes for the companion, and new login and signup pages.
+
+### Added
+- Importing and sharing game actions in the companion. Import adds a starter pack for Minecraft Java or Bedrock (the guide's sample commands), a pack pasted from another streamer, or a pack file. Every action and command shows before anything is added, and you pick which to take; commands that can do lasting harm or run a command that isn't shown, like `op`, `stop`, `fill`, `kill @a` or a command block, are marked with why and start unticked, the starter packs are marked Built in so a shared pack can't pass for one, and an action whose name you already use can be kept alongside yours or replace it. Share copies the actions you pick as a pack, or saves it to your Downloads folder. A pack holds only the actions, never your server details.
+- Selecting several game actions in the companion, to share or delete them together.
+- An Appearance button in the companion. It matches the dashboard's theme as before, or the companion can have a theme, light or dark of its own, kept on that PC.
+
+### Changed
+- The companion's game actions are redrawn: each action is a card in its game's colour, choosing Java or Bedrock is a card per edition that says whether it's connected, and a pack's preview groups its actions into ready, risky and can't be imported, with the ones being imported highlighted.
+- The login, signup and password pages are redesigned: the form sits beside a panel showing chat pressing keys, passwords can be shown while typing, signup ticks off the 8-character minimum, and the button says when it's working.
+- The site is up to date: it covers Analytics and commands read aloud, lists the right starting commands, offline voice count and voice effects, and its self-hosting steps use the published image, built-in HTTPS, closing signups and email.
+- For self-hosters, the containers are named `hyperion-server`, `hyperion-postgres` and `hyperion-caddy` rather than `hyperion-selfhost-hyperion-1` and so on. The next `up -d` renames them, and your data stays as it is.
+
+### Security
+- A viewer's name with spaces in it stays one word in a game action's commands, wherever the command puts it.
+
 ## [0.7.1] - 2026-11-07
 
 Fixes from a security review of signup and password recovery.
@@ -129,7 +147,8 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/dawitmek/Hyperion/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dawitmek/Hyperion/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dawitmek/Hyperion/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dawitmek/Hyperion/compare/v0.5.0...v0.6.0
