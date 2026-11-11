@@ -1,13 +1,12 @@
 import { StrictMode, useLayoutEffect } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, hydrateRoot } from 'react-dom/client';
 import '@hyperion/theme/theme.css';
 import { Auth, ForgotPassword, ResetPassword, VerifyEmail } from './Auth';
 import { ActivityWindow } from './dashboard/ActivityWindow';
 import { Dashboard } from './dashboard/Dashboard';
 import { HomePage } from './site/HomePage';
-import { DownloadPage, FaqPage, FeaturesPage, HowItWorksPage, IntegrationsPage, SelfHostingPage } from './site/pages';
-import { PrivacyPage } from './site/PrivacyPage';
-import { ChangelogPage } from './site/ChangelogPage';
+import { SITE_ROUTES } from './site/routes';
+import { DEFAULT_TITLE, SITE_PAGES } from './site/seo';
 import { Overlay } from './Overlay';
 import { usePath } from './router';
 import { applyTheme, rememberedTheme, themedPath } from './theme';
@@ -39,6 +38,9 @@ if (overlayToken) document.documentElement.classList.add('overlay-page');
 function App() {
   const path = usePath();
   useLayoutEffect(() => applyTheme(themedPath(path) ? rememberedTheme() : null), [path]);
+  useLayoutEffect(() => {
+    if (path !== '/dashboard/activity-window') document.title = SITE_PAGES[path]?.title ?? DEFAULT_TITLE;
+  }, [path]);
   if (path === '/dashboard/activity-window') return <ActivityWindow />;
   if (path.startsWith('/dashboard')) return <Dashboard />;
   if (path === '/login') return <Auth key="login" mode="login" />;
@@ -46,17 +48,12 @@ function App() {
   if (path === '/forgot-password') return <ForgotPassword />;
   if (path === '/reset-password') return <ResetPassword />;
   if (path === '/verify-email') return <VerifyEmail />;
-  if (path === '/features') return <FeaturesPage />;
-  if (path === '/integrations') return <IntegrationsPage />;
-  if (path === '/how-it-works') return <HowItWorksPage />;
-  if (path === '/self-hosting') return <SelfHostingPage />;
-  if (path === '/faq') return <FaqPage />;
-  if (path === '/download') return <DownloadPage />;
-  if (path === '/privacy') return <PrivacyPage />;
-  if (path === '/changelog') return <ChangelogPage />;
-  return <HomePage />;
+  const Page = SITE_ROUTES[path] ?? HomePage;
+  return <Page />;
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>{overlayToken ? <Overlay token={decodeURIComponent(overlayToken)} /> : <App />}</StrictMode>,
-);
+const root = document.getElementById('root')!;
+const app = <StrictMode>{overlayToken ? <Overlay token={decodeURIComponent(overlayToken)} /> : <App />}</StrictMode>;
+// Public pages arrive prerendered (src/prerender.tsx); React picks up that HTML instead of drawing it again.
+if (root.hasChildNodes()) hydrateRoot(root, app);
+else createRoot(root).render(app);

@@ -63,6 +63,12 @@ export class Hub {
     }
   }
 
+  // The account was deleted: every companion and overlay of the host goes at once.
+  disconnectHost(hostId: string) {
+    for (const socket of this.companions.get(hostId)?.values() ?? []) socket.close(4003, 'Account deleted');
+    for (const socket of this.overlays.get(hostId)?.keys() ?? []) socket.close(4001, 'Account deleted');
+  }
+
   sendToCompanions(hostId: string, message: ServerToCompanion) {
     send(this.companions.get(hostId)?.values(), message);
   }

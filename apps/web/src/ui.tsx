@@ -120,6 +120,7 @@ export function Card({
   children,
   id,
   icon,
+  className,
 }: {
   title: string;
   description?: ReactNode;
@@ -127,10 +128,11 @@ export function Card({
   children: ReactNode;
   id?: string;
   icon?: ReactNode; // sets the title apart, like a screen's name on the Overlay page
+  className?: string;
 }) {
   const headingId = id ?? `card-${title.toLowerCase().replace(/\W+/g, '-')}`;
   return (
-    <section className="card stack" aria-labelledby={headingId}>
+    <section className={`card stack ${className ?? ''}`} aria-labelledby={headingId}>
       <div className="card-head" style={{ marginBottom: 0 }}>
         <div>
           <h2 id={headingId} className={icon ? 'card-title' : undefined}>
@@ -714,7 +716,7 @@ export function Seg<T extends string>({
 }: {
   label: string;
   value: T;
-  options: readonly (readonly [T, string])[];
+  options: readonly (readonly [T, string] | readonly [T, string, IconName])[]; // with an icon, the title becomes its label
   onChange: (value: T) => void;
 }) {
   const group = useRef<HTMLDivElement>(null);
@@ -734,11 +736,31 @@ export function Seg<T extends string>({
   return (
     <div className="seg sliding" role="radiogroup" aria-label={label} ref={group}>
       {box && <span className="seg-indicator" style={box} aria-hidden="true" />}
-      {options.map(([option, title]) => (
-        <button key={option} type="button" role="radio" aria-checked={value === option} onClick={() => onChange(option)}>
-          {title}
+      {options.map(([option, title, icon]) => (
+        <button
+          key={option}
+          type="button"
+          role="radio"
+          aria-checked={value === option}
+          aria-label={icon && title}
+          title={icon && title}
+          className={icon ? 'seg-icon' : undefined}
+          onClick={() => onChange(option)}
+        >
+          {icon ? <Icon name={icon} size={16} /> : title}
         </button>
       ))}
     </div>
+  );
+}
+
+// A profile's badge: its first letter, in a colour that stays the same for that name.
+const PROFILE_HUES = ['indigo', 'teal', 'pink', 'violet', 'sky', 'orange'];
+export function ProfileBadge({ name, size }: { name: string; size?: 'lg' }) {
+  const hue = PROFILE_HUES[[...name].reduce((n, c) => n + c.charCodeAt(0), 0) % PROFILE_HUES.length];
+  return (
+    <span className={`profile-badge hue-${hue} ${size === 'lg' ? 'lg' : ''}`} aria-hidden="true">
+      {[...name.trim()][0]?.toUpperCase() ?? '?'}
+    </span>
   );
 }

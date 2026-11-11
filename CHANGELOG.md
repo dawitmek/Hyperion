@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-11
+
+A public demo, auto chat for test mode, your data to download or delete, and a rebuilt site in a new blue look.
+
+### Added
+- A demo at `/demo`: the whole dashboard with made-up viewers, opening mid-stream with auto chat going. Nothing changed there is saved.
+- Auto chat in test mode: a made-up crowd that types your real commands and sends your real gifts at a calm, busy, hype or hypest pace, for recording a stream without going live. It keeps going while you move between pages, with new names every run.
+- Your data, under Settings: download everything your account holds as one JSON file (settings, commands, uploads, stream history and leaderboard; passwords, keys and tokens are left out), or delete the account for good. Deleting asks for your password, stops a live stream, disconnects your overlays and companions, and emails you that it happened.
+- A map view on the Commands page, now the default: commands on one side, the keys and actions they press on the other, joined by wires, so commands sharing a key show at a glance. The tiles are still there.
+- Changing several commands at once: hold one down, or Shift- or Ctrl-click them, then set cooldown, level, cost or hold for all of them, or delete them together.
+- A game profile switcher in the dashboard's top bar, showing the game the companion follows for each profile.
+- Terms of use, linked from signup, Settings and the site. Signing up confirms you're 18 or older and agree to them.
+- Settings links to the changelog, terms and privacy page.
+
+### Changed
+- The site is rebuilt: a new home page with a live scene of chat playing a game, art for the supported games, and a link to the demo. Public pages arrive prerendered, so search engines and link previews see their content, and the server gives a `robots.txt`, a `sitemap.xml` (when `PUBLIC_URL` is set) and a real 404 for addresses that aren't pages.
+- Hyperion's brand colour is blue rather than indigo, with a new logo and icons for the site, dashboard and companion. The default alert style, Plasma, is now Ocean, and the Midnight and Daylight widget presets take the new blue.
+- Raffle and democracy overlays show the last winning command, fresh each draw, rather than the raffle winner's name. The Live page's mode card shows it too.
+- New profiles draw a raffle every 8 seconds rather than 10.
+- Settings has a side menu for its sections, and each section an icon. After a stream now sits in the Stream section.
+- Game profiles are cards rather than a table, and a new profile is started by picking a card: a copy of the current profile or a game's controls.
+- The Live page's Activity window closes when you click outside it. Clicking a name there opens the viewer's profile over it; the search icon beside the name shows only that viewer.
+
 ## [0.8.0] - 2026-11-07
 
 Game action packs and themes for the companion, and new login and signup pages.
@@ -147,7 +170,8 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/dawitmek/Hyperion/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dawitmek/Hyperion/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dawitmek/Hyperion/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dawitmek/Hyperion/compare/v0.6.0...v0.7.0

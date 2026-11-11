@@ -11,6 +11,7 @@ import type { PlatformAdapter } from '../src/platforms/types.js';
 import { Piper } from '../src/tts/piper.js';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { hosts, serviceStatus, streamEvents, streams } from '../src/db/schema.js';
 import { Secrets } from '../src/crypto.js';
 
@@ -218,6 +219,39 @@ describe('accounts', () => {
     });
     expect(again.statusCode).toBe(200);
     expect((await api(cookie, 'GET', '/api/auth/me')).statusCode).toBe(401);
+  });
+
+  it('exports the account without its secrets', async () => {
+    const { cookie } = await signUp();
+    await upload(cookie, 'ding', WAV);
+    const res = await api(cookie, 'GET', '/api/auth/export');
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-disposition']).toContain('attachment');
+    const data = res.json();
+    expect(data.account.email).toBe('host@example.com');
+    expect(data.commands.length).toBeGreaterThan(0);
+    expect(data.uploads[0].base64).toBe(WAV.toString('base64'));
+    for (const secret of ['passwordHash', 'ttsCloudKey', 'ttsTiktokSession', 'overlayToken']) expect(data.account).not.toHaveProperty(secret);
+    expect(data.overlayScreens[0]).not.toHaveProperty('token');
+
+    const zipped = await app.inject({ method: 'GET', url: '/api/auth/export', headers: { cookie, 'accept-encoding': 'gzip, deflate, br' }, remoteAddress: nextAddress() });
+    expect(zipped.headers['content-encoding']).toBe('gzip');
+    expect(zipped.rawPayload.length).toBeLessThan(res.rawPayload.length);
+    const unzipped = JSON.parse(gunzipSync(zipped.rawPayload).toString());
+    expect({ ...unzipped, exportedAt: null }).toEqual({ ...data, exportedAt: null });
+  });
+
+  it('deletes the account and everything in it, but only with the password', async () => {
+    const { cookie, id } = await signUp();
+    await upload(cookie, 'ding', WAV);
+    expect((await api(cookie, 'POST', '/api/auth/delete-account', { password: 'wrong password' })).statusCode).toBe(400);
+    expect((await api(cookie, 'POST', '/api/auth/delete-account', { password: 'correct horse' })).statusCode).toBe(200);
+    expect(await app.db.select().from(hosts).where(eq(hosts.id, id))).toEqual([]);
+    const counts = await app.db.execute(sql`select (select count(*) from profiles) + (select count(*) from commands) + (select count(*) from media where host_id is not null) + (select count(*) from auth_sessions) as n`);
+    expect(Number(counts[0]!.n)).toBe(0);
+    expect((await api(cookie, 'GET', '/api/auth/me')).statusCode).toBe(401);
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'host@example.com', password: 'correct horse' } });
+    expect(login.statusCode).toBe(401);
   });
 
   it('logs in, rejects a wrong password, and logs out', async () => {

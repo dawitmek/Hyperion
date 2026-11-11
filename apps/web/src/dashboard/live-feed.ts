@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { LeaderboardEntry, ModeState, ServerToOverlay, StreamStats } from '@hyperion/shared';
+import { openOverlaySocket, type OverlaySocket } from '../demo/socket';
 
 export type ActivityKind = 'Key' | 'Alert' | 'Level' | 'Voice';
 export interface Activity {
@@ -7,6 +8,7 @@ export interface Activity {
   kind: ActivityKind;
   text: string;
   at: number;
+  viewer?: string; // who did it, when someone did: the text starts with their name
 }
 
 export interface LiveFeed {
@@ -26,19 +28,18 @@ export function useLiveFeed(overlayToken: string): LiveFeed {
   const [feed, setFeed] = useState<LiveFeed>({ activity: [], pressed: {}, perSecond: 0, lastPress: null, mode: null, leaderboard: null, stats: null });
 
   useEffect(() => {
-    let socket: WebSocket;
+    let socket: OverlaySocket;
     let retry: number | undefined;
     let closed = false;
     let nextId = 0;
     let presses: number[] = [];
     let clearPress: number | undefined;
 
-    const log = (kind: ActivityKind, text: string) =>
-      setFeed((f) => ({ ...f, activity: [{ id: nextId++, kind, text, at: Date.now() }, ...f.activity].slice(0, MAX_ACTIVITY) }));
+    const log = (kind: ActivityKind, text: string, viewer?: string) =>
+      setFeed((f) => ({ ...f, activity: [{ id: nextId++, kind, text, at: Date.now(), viewer }, ...f.activity].slice(0, MAX_ACTIVITY) }));
 
     const connect = () => {
-      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-      socket = new WebSocket(`${protocol}://${location.host}/ws/overlay?token=${encodeURIComponent(overlayToken)}&dashboard=1`);
+      socket = openOverlaySocket(overlayToken, true);
       socket.onmessage = (event) => {
         const message = JSON.parse(event.data) as ServerToOverlay;
         switch (message.type) {
@@ -51,16 +52,16 @@ export function useLiveFeed(overlayToken: string): LiveFeed {
             }));
             clearTimeout(clearPress);
             clearPress = window.setTimeout(() => setFeed((f) => ({ ...f, lastPress: null })), 400);
-            log('Key', `${message.viewer} pressed ${message.keyword}`);
+            log('Key', `${message.viewer} pressed ${message.keyword}`, message.viewer);
             break;
           case 'levelUp':
-            log('Level', `${message.viewer} reached level ${message.level}`);
+            log('Level', `${message.viewer} reached level ${message.level}`, message.viewer);
             break;
           case 'alert':
             log('Alert', message.text || (message.media ? 'Picture or video alert' : 'Sound alert'));
             break;
           case 'tts':
-            log('Voice', `${message.viewer}: ${message.text}`);
+            log('Voice', `${message.viewer}: ${message.text}`, message.viewer);
             break;
           case 'mode':
             setFeed((f) => ({ ...f, mode: { state: message.state, clockOffset: Date.now() - message.serverNow } }));

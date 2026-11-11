@@ -17,6 +17,7 @@ const PAGES = [
 ];
 const DOWNLOAD = { href: '/download', label: 'Download' };
 const PRIVACY = { href: '/privacy', label: 'Privacy' };
+const TERMS = { href: '/terms', label: 'Terms' };
 const CHANGELOG = { href: '/changelog', label: 'Changelog' };
 
 // What slides in as it scrolls into view: section headings, cards, feature rows, steps and questions.
@@ -92,6 +93,9 @@ export function SiteLayout({ children }: { children: ReactNode }) {
   ) : (
     <>
       {download}
+      <Link href="/demo" className="s-text-link">
+        Try the demo
+      </Link>
       <Link href="/login" className="s-text-link">
         Log in
       </Link>
@@ -138,6 +142,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
             </Link>
           ) : (
             <>
+              <Link href="/demo">Try the demo</Link>
               <Link href="/login">Log in</Link>
               <Link href="/signup" className="s-btn s-btn-solid">
                 Sign up
@@ -171,7 +176,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
           <footer className="s-footer">
             <span>© 2026 Hyperion. Not affiliated with TikTok.</span>
             <nav aria-label="Footer">
-              {[...PAGES, DOWNLOAD, CHANGELOG, PRIVACY].map((p) => (
+              {[...PAGES, DOWNLOAD, CHANGELOG, PRIVACY, TERMS].map((p) => (
                 <Link key={p.href} href={p.href}>
                   {p.label}
                 </Link>

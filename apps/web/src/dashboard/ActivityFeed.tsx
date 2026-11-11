@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { StreamEvent, StreamSummary } from '@hyperion/shared';
 import { api, type LiveStatus } from '../api';
 import { Icon } from '../icons';
+import { href } from '../router';
 import { Spinner } from '../ui';
 import { ViewerLink } from './ViewerPanel';
 
@@ -264,7 +265,7 @@ export function ActivityFeed({
               className="btn btn-ghost btn-sm btn-icon"
               title="Open in a new window"
               aria-label="Open full activity in a new window"
-              onClick={() => window.open('/dashboard/activity-window', 'hyperion-activity', 'popup,width=560,height=820')}
+              onClick={() => window.open(href('/dashboard/activity-window'), 'hyperion-activity', 'popup,width=560,height=820')}
             >
               <Icon name="popOut" />
             </button>

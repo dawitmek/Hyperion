@@ -87,8 +87,8 @@ export interface WidgetStyle {
 }
 export const WIDGET_STYLE_LIMITS = { opacity: [0, 100], borderWidth: [0, 8], radius: [0, 40], size: [50, 200] } as const;
 export const WIDGET_PRESETS: { id: string; label: string; style: WidgetStyle }[] = [
-  { id: 'midnight', label: 'Midnight', style: { background: '#12141f', opacity: 90, textColor: '#ffffff', accent: '#a3a6ff', borderColor: '#ffffff', borderWidth: 0, radius: 16, font: 'geist', size: 100 } },
-  { id: 'daylight', label: 'Daylight', style: { background: '#ffffff', opacity: 95, textColor: '#14161f', accent: '#4f46e5', borderColor: '#14161f', borderWidth: 0, radius: 16, font: 'geist', size: 100 } },
+  { id: 'midnight', label: 'Midnight', style: { background: '#12141f', opacity: 90, textColor: '#ffffff', accent: '#93bbff', borderColor: '#ffffff', borderWidth: 0, radius: 16, font: 'geist', size: 100 } },
+  { id: 'daylight', label: 'Daylight', style: { background: '#ffffff', opacity: 95, textColor: '#14161f', accent: '#2563eb', borderColor: '#14161f', borderWidth: 0, radius: 16, font: 'geist', size: 100 } },
   { id: 'neon', label: 'Neon', style: { background: '#0b0221', opacity: 88, textColor: '#f5f3ff', accent: '#22f0d6', borderColor: '#ff2bd6', borderWidth: 2, radius: 10, font: 'oxanium', size: 100 } },
   { id: 'sunset', label: 'Sunset', style: { background: '#7c1d3f', opacity: 92, textColor: '#fff4e6', accent: '#ffc35a', borderColor: '#ffc35a', borderWidth: 1, radius: 22, font: 'geist', size: 100 } },
   { id: 'transparent', label: 'Transparent', style: { background: '#000000', opacity: 0, textColor: '#ffffff', accent: '#ffc35a', borderColor: '#ffffff', borderWidth: 0, radius: 16, font: 'geist', size: 100 } },
@@ -221,9 +221,16 @@ export const POINTS_CHECK = '!points';
 export type ModeState =
   | { mode: 'anarchy' }
   | { mode: 'gift' }
-  | { mode: 'democracy'; tally: { keyword: string; votes: number }[]; endsAt: number | null }
+  | {
+      mode: 'democracy';
+      tally: { keyword: string; votes: number }[];
+      endsAt: number | null;
+      lastCommand: string | null; // the last vote's winner
+      lastVotes: number | null;
+      lastDrawAt: number | null;
+    }
   | { mode: 'queue'; viewer: string | null; endsAt: number | null; queue: string[] }
-  | { mode: 'raffle'; entrants: number; endsAt: number | null; lastWinner: string | null };
+  | { mode: 'raffle'; entrants: number; endsAt: number | null; lastCommand: string | null; lastDrawAt: number | null };
 
 export interface LeaderboardEntry {
   viewer: string;
@@ -275,7 +282,7 @@ export const ALERT_SOUNDS = ['chime', 'coin', 'pop', 'fanfare', 'whoosh'] as con
 export type AlertSound = (typeof ALERT_SOUNDS)[number];
 
 // How an alert pop-up looks: an action can have its own, starting from one of ALERT_PRESETS, or use the host's main
-// or second style. A host without a main style gets the Plasma preset. Colors are #rrggbb, or #rrggbbaa where a preset needs transparency.
+// or second style. A host without a main style gets the Ocean preset. Colors are #rrggbb, or #rrggbbaa where a preset needs transparency.
 export const ALERT_FONTS = ['geist', 'oxanium', 'dm-sans', 'jakarta', 'fredoka', 'bebas', 'anton', 'impact', 'orbitron', 'righteous', 'press-start', 'bangers', 'permanent-marker', 'pacifico', 'lobster', 'caveat', 'comic', 'georgia', 'courier'] as const;
 export type AlertFont = (typeof ALERT_FONTS)[number];
 // Full-screen animations. Any action can play any of them.
@@ -329,11 +336,11 @@ export const ALERT_STYLE_LIMITS = { angle: [0, 360], opacity: [0, 100], size: [1
 
 export const ALERT_PRESETS: { id: string; label: string; style: AlertStyle }[] = [
   {
-    id: 'plasma',
-    label: 'Plasma',
+    id: 'ocean',
+    label: 'Ocean',
     style: {
-      background: 'gradient', color1: '#e8175d', color2: '#7c3aed', angle: 100, opacity: 95, textColor: '#ffffff', font: 'geist', size: 40,
-      weight: 800, uppercase: false, textShadow: true, radius: 18, borderWidth: 1, borderColor: '#ffffff33', glowColor: '#7c3aed', glow: 75,
+      background: 'gradient', color1: '#2456d9', color2: '#06b6d4', angle: 100, opacity: 95, textColor: '#ffffff', font: 'geist', size: 40,
+      weight: 800, uppercase: false, textShadow: true, radius: 18, borderWidth: 1, borderColor: '#ffffff33', glowColor: '#22d3ee', glow: 75,
       shine: true, animation: 'pop',
     },
   },

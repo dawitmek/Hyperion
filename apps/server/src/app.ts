@@ -37,6 +37,7 @@ import { SpeechService } from './tts/speech.js';
 import { DebugLog } from './debug-log.js';
 import { ServerTiktokAccount } from './tts/tiktok-account.js';
 import { gatewayRoutes } from './gateway/routes.js';
+import { isAppPath, loadSitePages, robotsTxt, sitemapXml } from './site.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -160,12 +161,28 @@ export async function buildApp(config: Config, options: Options = {}) {
   // In production the server also serves the built web app, so everything lives on one address.
   const webDist = fileURLToPath(new URL('../../web/dist', import.meta.url));
   if (existsSync(webDist)) {
-    await app.register(fastifyStatic, { root: webDist });
-    // Client-side routes (/dashboard, /overlay/:token) fall back to index.html.
+    await app.register(fastifyStatic, { root: webDist, index: false });
+    const sitePages = loadSitePages(webDist, config.publicUrl);
+    // The prerendered home page, rather than the empty index.html.
+    const home = sitePages.get('/');
+    app.get('/', (_req, reply) => (home ? reply.type('text/html').send(home) : reply.sendFile('index.html')));
+    app.get('/robots.txt', (_req, reply) => reply.type('text/plain').send(robotsTxt(config.publicUrl)));
+    if (config.publicUrl) {
+      const sitemap = sitemapXml(config.publicUrl, [...sitePages.keys()]);
+      app.get('/sitemap.xml', (_req, reply) => reply.type('application/xml').send(sitemap));
+    }
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api/')) return reply.code(404).send({ error: 'Not found' });
       // A tab opened before an update asks for old bundle files; a 404 lets it notice, where index.html would not.
       if (req.url.startsWith('/assets/')) return reply.code(404).send('Not found');
+      const path = req.url.split('?')[0]!;
+      // Public pages come prerendered, so search engines and link previews see their content.
+      const page = sitePages.get(path);
+      if (page) return reply.type('text/html').send(page);
+      // Client-side routes (/dashboard, /overlay/:token) fall back to index.html, kept out of search results.
+      reply.header('x-robots-tag', 'noindex');
+      // Anything else still shows the home page, but as a 404 so search engines don't list it as a page of its own.
+      if (!isAppPath(path)) reply.code(404);
       return reply.sendFile('index.html');
     });
   }

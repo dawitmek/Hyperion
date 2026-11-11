@@ -6,7 +6,7 @@ import { GITHUB_URL, SiteLayout } from './SiteLayout';
 // What Hyperion stores, where it goes and how long it stays, written from what the code does. Keep it in step with
 // the server: the database schema, the TTS engines, the companion, and anything new that leaves the server.
 
-const UPDATED = 'October 30, 2026';
+const UPDATED = 'November 9, 2026';
 
 const GLANCE: [string, string][] = [
   ['No ads, analytics or trackers', 'Hyperion doesn’t load anyone else’s scripts, and the site’s font is served by Hyperion itself.'],
@@ -240,8 +240,11 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
         <li>Remove a paired PC from the Companion page; it’s disconnected at once.</li>
         <li>Delete commands, actions, uploads, goals and profiles, and reset the leaderboard, from the dashboard.</li>
         <li>
-          The dashboard can’t delete your whole account or your stream history yet. To have them removed, ask whoever runs
-          your Hyperion server; deleting an account removes everything listed on this page with it.
+          Download a copy of everything your account holds, as one file, from Settings. Passwords, keys and tokens are left out.
+        </li>
+        <li>
+          Delete your account from Settings. Everything listed on this page goes with it straight away, stream history and
+          leaderboard included, and your overlays and companions are disconnected.
         </li>
       </ul>
     ),
@@ -251,7 +254,8 @@ const SECTIONS: { id: string; title: string; body: ReactNode }[] = [
     title: 'Changes and questions',
     body: (
       <p>
-        When Hyperion starts storing or sending something new, this page changes with it, and the date below moves. Questions
+        When Hyperion starts storing or sending something new, this page changes with it, and the date below moves. The rules
+        for using a server are in the <Link href="/terms">terms</Link>. Questions
         about the software are welcome as an issue on <a href={`${GITHUB_URL}/issues`}>GitHub</a>; questions about your data on
         a particular server go to whoever runs it.
       </p>

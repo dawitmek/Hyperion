@@ -11,9 +11,9 @@
     <a href="docs/SELF_HOSTING.md">Self-hosting guide</a>
   </p>
   <p>
-    <a href="CHANGELOG.md"><img src="https://img.shields.io/github/v/tag/dawitmek/Hyperion?filter=v*&amp;sort=semver&amp;label=version&amp;color=5b5fef&amp;style=flat-square&amp;labelColor=27272a" alt="Latest version" /></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-5b5fef?style=flat-square&amp;labelColor=27272a" alt="License: GPL-3.0" /></a>
-    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-5b5fef?style=flat-square&amp;labelColor=27272a" alt="Platforms: Windows and macOS" />
+    <a href="CHANGELOG.md"><img src="https://img.shields.io/github/v/tag/dawitmek/Hyperion?filter=v*&amp;sort=semver&amp;label=version&amp;color=2456d9&amp;style=flat-square&amp;labelColor=27272a" alt="Latest version" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-2456d9?style=flat-square&amp;labelColor=27272a" alt="License: GPL-3.0" /></a>
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-2456d9?style=flat-square&amp;labelColor=27272a" alt="Platforms: Windows and macOS" />
   </p>
 </div>
 
@@ -27,13 +27,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dawitmek/Hyperion/releases"><img src="https://img.shields.io/badge/Download-5b5fef?style=for-the-badge&amp;logo=github&amp;logoColor=ffffff" alt="Download" height="24" /></a>
+  <a href="https://github.com/dawitmek/Hyperion/releases"><img src="https://img.shields.io/badge/Download-2456d9?style=for-the-badge&amp;logo=github&amp;logoColor=ffffff" alt="Download" height="24" /></a>
   <a href="#getting-started"><img src="https://img.shields.io/badge/Get%20started-27272a?style=for-the-badge" alt="Get started" height="24" /></a>
 </p>
 
 ## How it works
 
-![TikTok LIVE chat goes to the Hyperion server, which tells the companion app on your gaming PC which keys to press in your game. The server also drives the dashboard and the stream overlay.](docs/images/how-it-works.png)
+![TikTok LIVE chat goes to the Hyperion server, which tells the companion app on your gaming PC which keys to press, or which game commands to run. The server also drives the dashboard and the stream overlay.](docs/images/how-it-works.png)
 
 1. The **server** reads your public LIVE chat by username. It never asks for your TikTok password.
 2. It decides what happens, based on your commands, crowd mode, cooldowns and rate limit.
@@ -42,7 +42,7 @@
 
 ## Features
 
-![Six feature previews: crowd mode voting, a gift that presses a key, chat read aloud, viewer levels, game profiles, and allowed keys with a focus check](docs/images/features.png)
+![Six feature previews: crowd mode voting, a gift that presses a key and shows an alert, chat read aloud with a voice effect, viewer levels, switching game profiles, and allowed keys with a focus check](docs/images/features.png)
 
 - **Five crowd modes:**
   - Anarchy: every command fires.
@@ -106,7 +106,7 @@
 - **Test mode:** type as a pretend viewer and watch the keys press before you go live.
 - **Appearance:** color themes for the dashboard, with System, Light or Dark. The companion follows your choice.
 
-![The Analytics page with totals across streams, charts of viewers and coins per stream, and a table of streams](docs/images/analytics.png)
+![The Analytics page: viewers, peak viewers, interactors, coins, chat messages and key presses per stream, each with a trend line, above charts of viewers, interactors and coins across your streams](docs/images/analytics.png)
 
 _The Analytics page, shown with sample data._
 

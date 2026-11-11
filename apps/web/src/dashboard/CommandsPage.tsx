@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { BLOCKED_COMBOS, MAX_CHAIN_DELAY_MS, MAX_CHAIN_STEPS, MAX_LEVEL, type ChainStep } from '@hyperion/shared';
 import { api, type Command, type Host } from '../api';
 import { Icon, type IconName } from '../icons';
@@ -19,17 +19,21 @@ type Editable = Pick<Command, 'keyword' | 'key' | 'macro' | 'gameAction' | 'chai
 
 const emptyCommand: Editable = { keyword: '', key: 'KeyA', macro: null, gameAction: null, chain: null, holdMs: 300, cooldownMs: 1000, minLevel: 1, cost: 0 };
 
-type View = 'deck' | 'list';
-const VIEW_KEY = 'hyperion.commands-view';
+// The map is the default; the tiles were the first look, kept for those who like them.
+type View = 'map' | 'deck' | 'list';
+const VIEWS: readonly View[] = ['map', 'deck', 'list'];
+const VIEW_KEY = 'hyperion.commands-view-v2';
 
 function savedView(): View {
   try {
-    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'deck';
+    const saved = localStorage.getItem(VIEW_KEY) as View | null;
+    return saved && VIEWS.includes(saved) ? saved : 'map';
   } catch {
-    return 'deck';
+    return 'map';
   }
 }
 
+const HOLD_MS = 450; // pressing a command this long picks it, for batch editing
 const SEARCH_FROM = 9; // a shorter list is quicker to scan than to search
 
 function CommandsCard({ host }: { host: Host }) {
@@ -48,12 +52,19 @@ function CommandsCard({ host }: { host: Host }) {
   useEffect(() => void api<string[]>('GET', '/commands/game-actions').then(setGameActions), []);
 
   const update = (id: string, patch: Partial<Command>) => guard(() => api('PATCH', `/commands/${id}`, patch).then(load))();
+  // Batch editing: commands picked with a long press, Shift-click (a run of them) or Ctrl/Cmd-click (one more).
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const anchor = useRef<string | null>(null); // where a Shift-click run starts
+  useEffect(() => setPicked((old) => (old.size ? new Set([...old].filter((id) => commands.some((c) => c.id === id))) : old)), [commands]);
+  const updateMany = (ids: string[], patch: Partial<Command>) => guard(() => Promise.all(ids.map((id) => api('PATCH', `/commands/${id}`, patch))).then(load))();
+  const removeMany = (ids: string[]) => guard(() => Promise.all(ids.map((id) => api('DELETE', `/commands/${id}`))).then(() => (setPicked(new Set()), load())))();
   const remove = (id: string) => guard(() => api('DELETE', `/commands/${id}`).then(() => (setOpen(null), load())))();
   const add = (e: FormEvent) => {
     e.preventDefault();
     guard(() => api('POST', '/commands', draft).then(() => (setOpen(null), setDraft(emptyCommand), load())))();
   };
   const startAdding = () => {
+    setPicked(new Set());
     setDraft(emptyCommand);
     setOpen('new');
   };
@@ -70,10 +81,90 @@ function CommandsCard({ host }: { host: Host }) {
   // Shown beside what's being edited, since the top of the list can be a long way up.
   const notice = <ErrorNotice error={error} />;
   const shown = commands.filter((c) => c.keyword.includes(search.trim().toLowerCase()));
+  const mapOrder = useMemo(() => groupByTargets(shown, commands), [shown, commands]);
   const selected = commands.find((c) => c.id === open);
   const toggle = (id: string) => setOpen(open === id ? null : id);
 
-  // What the deck and the list share, so the two views can't drift apart.
+  // A plain click opens a command, or, once some are picked, picks or unpicks it, so touch screens can pick too.
+  const pick = (id: string, how: 'hold' | 'range' | 'add' | 'click') => {
+    if (how === 'click' && picked.size === 0) {
+      anchor.current = id;
+      return toggle(id);
+    }
+    const order = (view === 'map' ? mapOrder : shown).map((c) => c.id);
+    setPicked((old) => {
+      const next = new Set(old);
+      // Ctrl-clicking a second command while one is open picks both.
+      if (!old.size && open && open !== 'new' && open !== id && how !== 'hold') next.add(open);
+      if (how === 'range') {
+        const to = order.indexOf(id);
+        const start = order.indexOf(anchor.current ?? (open && open !== 'new' ? open : id));
+        const from = start < 0 ? to : start; // the start may be hidden by a search
+        for (const c of order.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(c);
+      } else if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    if (how !== 'range') anchor.current = id;
+    setOpen(null);
+  };
+  useEffect(() => {
+    if (!picked.size) return;
+    const leave = (e: KeyboardEvent) => e.key === 'Escape' && setPicked(new Set());
+    window.addEventListener('keydown', leave);
+    return () => window.removeEventListener('keydown', leave);
+  }, [picked.size]);
+  // What every view's command button gets: click, Shift- and Ctrl-click, and a long press.
+  const holdTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const held = useRef(false);
+  const pressStart = useRef({ x: 0, y: 0 });
+  const press = (id: string) => ({
+    onPointerDown: (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      held.current = false;
+      pressStart.current = { x: e.clientX, y: e.clientY };
+      clearTimeout(holdTimer.current);
+      holdTimer.current = setTimeout(() => {
+        held.current = true;
+        pick(id, 'hold');
+        navigator.vibrate?.(15);
+      }, HOLD_MS);
+    },
+    onPointerMove: (e: PointerEvent) => {
+      if (Math.hypot(e.clientX - pressStart.current.x, e.clientY - pressStart.current.y) > 8) clearTimeout(holdTimer.current);
+    },
+    onPointerUp: () => clearTimeout(holdTimer.current),
+    onPointerLeave: () => clearTimeout(holdTimer.current),
+    // On a Mac, Ctrl-click opens the right-click menu instead of clicking; take it as a pick there too.
+    onContextMenu: (e: MouseEvent) => {
+      if (held.current) return e.preventDefault();
+      if (e.ctrlKey && e.button === 0) {
+        e.preventDefault();
+        pick(id, 'add');
+      }
+    },
+    onMouseDown: (e: MouseEvent) => e.shiftKey && e.preventDefault(), // no text selection on Shift-click
+    onClick: (e: MouseEvent) => {
+      if (held.current) return void (held.current = false);
+      pick(id, e.shiftKey ? 'range' : e.ctrlKey || e.metaKey ? 'add' : 'click');
+    },
+  });
+  const pickedIds = [...picked];
+  const batch = picked.size > 0 && (
+    <BatchPanel
+      picked={commands.filter((c) => picked.has(c.id))}
+      total={shown.length}
+      gated={gated}
+      points={host.points}
+      onPatch={(list, patch) => updateMany(list.map((c) => c.id), patch)}
+      onDelete={() => removeMany(pickedIds)}
+      onSelectAll={() => setPicked(new Set(shown.map((c) => c.id)))}
+      onClear={() => setPicked(new Set())}
+      notice={notice}
+    />
+  );
+
+  // What the views share, so they can't drift apart.
   const onSwitch = (c: Command) => (
     <label className="switch">
       <input type="checkbox" checked={c.enabled} aria-label={`${c.keyword} on`} onChange={(e) => update(c.id, { enabled: e.target.checked })} />
@@ -140,8 +231,9 @@ function CommandsCard({ host }: { host: Host }) {
             label="Commands view"
             value={view}
             options={[
-              ['deck', 'Deck'],
-              ['list', 'List'],
+              ['map', 'Map', 'flow'],
+              ['deck', 'Tiles', 'grid'],
+              ['list', 'List', 'feed'],
             ]}
             onChange={chooseView}
           />
@@ -155,28 +247,32 @@ function CommandsCard({ host }: { host: Host }) {
       {commands.length >= SEARCH_FROM && (
         <input className="input command-search" type="search" maxLength={100} placeholder="Find a command" aria-label="Find a command" value={search} onChange={(e) => setSearch(e.target.value)} />
       )}
-      {view === 'deck' ? (
+      {view !== 'list' ? (
         <div className="deck-layout">
           <div>
-            <ul className="deck">
-              {shown.map((c) => (
-                <li key={c.id} className={`deck-tile ${c.enabled ? '' : 'off'} ${open === c.id ? 'selected' : ''}`}>
-                  <button type="button" className="deck-tile-open" aria-pressed={open === c.id} onClick={() => toggle(c.id)}>
-                    <strong className="deck-tile-keyword">{c.keyword}</strong>
-                    <TileFace command={c} commands={commands} />
-                    <span className="deck-tile-meta">{facts(c)}</span>
-                  </button>
-                  <span className="deck-tile-switch">{onSwitch(c)}</span>
-                </li>
-              ))}
-            </ul>
+            {view === 'map' && shown.length > 0 && <CommandMap ordered={mapOrder} commands={commands} open={open} picked={picked} press={press} facts={facts} onSwitch={onSwitch} />}
+            {view === 'deck' && (
+              <ul className="deck">
+                {shown.map((c) => (
+                  <li key={c.id} className={`deck-tile ${c.enabled ? '' : 'off'} ${open === c.id ? 'selected' : ''} ${picked.has(c.id) ? 'picked' : ''}`}>
+                    <button type="button" className="deck-tile-open" aria-pressed={open === c.id || picked.has(c.id)} {...press(c.id)}>
+                      <strong className="deck-tile-keyword">{c.keyword}</strong>
+                      <TileFace command={c} commands={commands} />
+                      <span className="deck-tile-meta">{facts(c)}</span>
+                    </button>
+                    <span className="deck-tile-switch">{onSwitch(c)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             {nothing}
           </div>
-          <aside className={`deck-panel ${open === null ? 'idle' : ''}`} aria-label="Command details">
-            {open === null && (
+          <aside className={`deck-panel ${open === null && !picked.size ? 'idle' : ''}`} aria-label="Command details">
+            {batch}
+            {open === null && !picked.size && (
               <>
                 {notice}
-                <p className="muted small deck-hint">Pick a tile to change what it does.</p>
+                <p className="muted small deck-hint">Pick a command to change what it does. To change several at once, hold one down, or Shift- or Ctrl-click them.</p>
               </>
             )}
             {open === 'new' && newForm}
@@ -190,14 +286,15 @@ function CommandsCard({ host }: { host: Host }) {
         </div>
       ) : (
         <>
-          {open === null && notice}
+          {open === null && !picked.size && notice}
           {open === 'new' && <div className="command-list-new">{newForm}</div>}
+          {batch && <div className="command-list-new">{batch}</div>}
           <ul className="commands">
             {shown.map((c) => (
-              <li key={c.id} className={`command ${c.enabled ? '' : 'off'}`}>
+              <li key={c.id} className={`command ${c.enabled ? '' : 'off'} ${picked.has(c.id) ? 'picked' : ''}`}>
                 <div className="command-row">
                   {onSwitch(c)}
-                  <button type="button" className="command-open" aria-expanded={open === c.id} aria-controls={`command-${c.id}`} onClick={() => toggle(c.id)}>
+                  <button type="button" className="command-open" aria-expanded={open === c.id} aria-controls={`command-${c.id}`} {...press(c.id)}>
                     <strong className="command-keyword">{c.keyword}</strong>
                     <span className="command-does">
                       <CommandSummary command={c} commands={commands} />
@@ -230,6 +327,122 @@ function PanelTitle({ title, onClose }: { title: string; onClose: () => void }) 
         <Icon name="close" size={14} />
       </button>
     </div>
+  );
+}
+
+// Changes for every picked command at once. A field shows the value they share, or "Mixed" where they differ, and
+// leaving it as it is changes nothing. Hold only applies to commands that press a key.
+function BatchPanel({
+  picked,
+  total,
+  gated,
+  points,
+  onPatch,
+  onDelete,
+  onSelectAll,
+  onClear,
+  notice,
+}: {
+  picked: Command[];
+  total: number;
+  gated: boolean;
+  points: boolean;
+  onPatch: (list: Command[], patch: Partial<Command>) => void;
+  onDelete: () => void;
+  onSelectAll: () => void;
+  onClear: () => void;
+  notice: ReactNode;
+}) {
+  const n = picked.length;
+  const keyed = picked.filter((c) => kindOf(c) === 'key');
+  const shared = (list: Command[], field: 'holdMs' | 'cooldownMs' | 'minLevel' | 'cost') => (list.every((c) => c[field] === list[0]![field]) ? list[0]![field] : null);
+  const onCount = picked.filter((c) => c.enabled).length;
+  return (
+    <div
+      className="command-editor"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.target.blur();
+      }}
+    >
+      <PanelTitle title={n === 1 ? '1 command picked' : `${n} commands picked`} onClose={onClear} />
+      <p className="muted small batch-names">{picked.map((c) => c.keyword).join(', ')}</p>
+      <div className="row">
+        <button type="button" className="btn btn-sm" disabled={onCount === n} onClick={() => onPatch(picked, { enabled: true })}>
+          Turn on
+        </button>
+        <button type="button" className="btn btn-sm" disabled={onCount === 0} onClick={() => onPatch(picked, { enabled: false })}>
+          Turn off
+        </button>
+        {n < total && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onSelectAll}>
+            Pick all {total}
+          </button>
+        )}
+      </div>
+      <div className="form-grid">
+        {keyed.length > 0 && (
+          <label className="field">
+            Hold, in ms
+            <span className="hint">{keyed.length < n ? `For the ${keyed.length} that press a key.` : 'How long the key stays down.'}</span>
+            <BatchNumber value={shared(keyed, 'holdMs')} min={10} max={5000} onSave={(holdMs) => onPatch(keyed, { holdMs })} />
+          </label>
+        )}
+        <label className="field">
+          Cooldown per viewer, in ms
+          <span className="hint">How long each viewer waits to use it again.</span>
+          <BatchNumber value={shared(picked, 'cooldownMs')} min={0} max={600000} onSave={(cooldownMs) => onPatch(picked, { cooldownMs })} />
+        </label>
+        {gated && (
+          <label className="field">
+            Minimum level
+            <span className="hint">Viewers below this level can't use them.</span>
+            <BatchNumber value={shared(picked, 'minLevel')} min={1} max={MAX_LEVEL} onSave={(minLevel) => onPatch(picked, { minLevel })} />
+          </label>
+        )}
+        {points && (
+          <label className="field">
+            Cost in points
+            <span className="hint">What each use takes from the viewer.</span>
+            <BatchNumber value={shared(picked, 'cost')} min={0} max={1000000} onSave={(cost) => onPatch(picked, { cost })} />
+          </label>
+        )}
+      </div>
+      {notice}
+      <div className="row">
+        <ConfirmButton
+          className="btn btn-ghost btn-sm btn-delete"
+          message={n === 1 ? `Viewers won't be able to use ${picked[0]!.keyword}.` : `Viewers won't be able to use these ${n} commands.`}
+          confirmLabel={n === 1 ? 'Delete command' : `Delete ${n} commands`}
+          onConfirm={onDelete}
+        >
+          Delete {n === 1 ? '' : `all ${n}`}
+        </ConfirmButton>
+        <span className="muted small">Esc to stop picking</span>
+      </div>
+    </div>
+  );
+}
+
+// A number for several commands: empty with "Mixed" when theirs differ. Saves when you leave it with a valid value.
+function BatchNumber({ value, min, max, onSave }: { value: number | null; min: number; max: number; onSave: (n: number) => void }) {
+  const shown = value === null ? '' : String(value);
+  const [text, setText] = useState(shown);
+  useEffect(() => setText(shown), [shown]);
+  return (
+    <input
+      className="input short"
+      type="number"
+      min={min}
+      max={max}
+      placeholder={value === null ? 'Mixed' : undefined}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        const n = Number(text);
+        if (text.trim() === '' || !Number.isInteger(n) || n < min || n > max) return setText(shown);
+        if (n !== value) onSave(n);
+      }}
+    />
   );
 }
 
@@ -298,6 +511,196 @@ function TileFace({ command, commands }: { command: Command; commands: Command[]
         </span>
       )}
     </span>
+  );
+}
+
+// The map view: commands on the left, what they press on the right, joined by wires. A key that several commands
+// press is one node with several wires, so overlaps show at a glance. A chain's wires are dashed and go to the keys
+// its steps press. Pointing at a command or a key lights up everything it's wired to.
+type Target = { id: string; kind: 'key' | 'macro' | 'gameAction'; name: string };
+type Wire = { from: string; to: string; viaChain: boolean; off: boolean };
+
+function targetsOf(command: Command, commands: Command[], viaChain = false): { target: Target; viaChain: boolean }[] {
+  if (command.macro) return [{ target: { id: `macro:${command.macro}`, kind: 'macro', name: command.macro }, viaChain }];
+  if (command.gameAction) return [{ target: { id: `game:${command.gameAction}`, kind: 'gameAction', name: command.gameAction }, viaChain }];
+  if (command.chain) {
+    if (viaChain) return []; // chains can't hold chains, but don't loop if one ever does
+    return command.chain.flatMap((s) => {
+      const step = commands.find((c) => c.enabled && !c.chain && c.keyword === s.keyword);
+      return step ? targetsOf(step, commands, true) : [];
+    });
+  }
+  return command.key.split('+').map((key) => ({ target: { id: `key:${key}`, kind: 'key', name: key }, viaChain }));
+}
+
+// Puts commands that press the same keys next to each other, so their wires stay short and rarely cross. It starts
+// with the first command, keeps taking the one sharing the most keys with the last few placed, then evens things out
+// with a few rounds of placing each command at the average height of its keys and each key at that of its commands.
+// Ties keep the order the host made them in.
+function groupByTargets(shown: Command[], commands: Command[]): Command[] {
+  const keys = new Map(shown.map((c) => [c.id, new Set(targetsOf(c, commands).map((t) => t.target.id))]));
+  const shared = (a: Command, b: Command) => [...keys.get(a.id)!].filter((k) => keys.get(b.id)!.has(k)).length;
+  const left = [...shown];
+  let order: Command[] = [];
+  while (left.length) {
+    const recent = order.slice(-3);
+    let best = 0;
+    let bestScore = 0;
+    left.forEach((c, i) => {
+      const score = recent.reduce((sum, r, n) => sum + shared(c, r) * (n + 1), 0);
+      if (score > bestScore) [best, bestScore] = [i, score];
+    });
+    order.push(left.splice(best, 1)[0]!);
+  }
+  for (let round = 0; round < 4; round++) {
+    const keyAt = new Map<string, number[]>();
+    order.forEach((c, i) => keys.get(c.id)!.forEach((k) => keyAt.set(k, [...(keyAt.get(k) ?? []), i])));
+    const mean = (list: number[]) => list.reduce((a, b) => a + b, 0) / list.length;
+    const at = (c: Command, i: number) => (keys.get(c.id)!.size ? mean([...keys.get(c.id)!].map((k) => mean(keyAt.get(k)!))) : i);
+    order = order.map((c, i) => ({ c, i, at: at(c, i) })).sort((a, b) => a.at - b.at || a.i - b.i).map((x) => x.c);
+  }
+  return order;
+}
+
+const TARGET_HEIGHT = 36;
+const TARGET_GAP = 8;
+
+interface MapLayout {
+  ys: Record<string, number>; // each command's middle
+  tops: Record<string, number>; // each target's top, in the targets column
+  x1: number;
+  x2: number;
+  colTop: number;
+  height: number;
+}
+
+function CommandMap({
+  ordered,
+  commands,
+  open,
+  picked,
+  press,
+  facts,
+  onSwitch,
+}: {
+  ordered: Command[]; // already grouped (groupByTargets)
+  commands: Command[];
+  open: string | null;
+  picked: ReadonlySet<string>;
+  press: (id: string) => object;
+  facts: (c: Command) => ReactNode;
+  onSwitch: (c: Command) => ReactNode;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const column = useRef<HTMLUListElement>(null);
+  const nodes = useRef(new Map<string, HTMLElement>());
+  const [hover, setHover] = useState<string | null>(null); // 'c:' and a command's id, or 't:' and a target's
+  const [layout, setLayout] = useState<MapLayout | null>(null);
+
+  const { targets, wires } = useMemo(() => {
+    const byId = new Map<string, Target & { rows: number[] }>();
+    const wires: Wire[] = [];
+    ordered.forEach((c, row) => {
+      for (const { target, viaChain } of targetsOf(c, commands)) {
+        if (wires.some((w) => w.from === c.id && w.to === target.id)) continue;
+        const t = byId.get(target.id) ?? { ...target, rows: [] };
+        t.rows.push(row);
+        byId.set(target.id, t);
+        wires.push({ from: c.id, to: target.id, viaChain, off: !c.enabled });
+      }
+    });
+    return { targets: [...byId.values()], wires };
+  }, [ordered, commands]);
+
+  useLayoutEffect(() => {
+    const el = root.current;
+    const col = column.current;
+    if (!el || !col) return;
+    const measure = () => {
+      const box = el.getBoundingClientRect();
+      const colBox = col.getBoundingClientRect();
+      const colTop = colBox.top - box.top;
+      const ys: Record<string, number> = {};
+      let x1 = 0;
+      for (const c of ordered) {
+        const r = nodes.current.get(c.id)?.getBoundingClientRect();
+        if (!r) continue;
+        ys[c.id] = r.top - box.top + r.height / 2;
+        x1 = Math.max(x1, r.right - box.left);
+      }
+      // Each target sits level with the commands wired to it, pushed down where it would overlap the one above.
+      const wanted = targets
+        .map((t) => ({ id: t.id, y: t.rows.reduce((sum, row) => sum + (ys[ordered[row]!.id] ?? 0), 0) / t.rows.length - colTop - TARGET_HEIGHT / 2 }))
+        .sort((a, b) => a.y - b.y);
+      const tops: Record<string, number> = {};
+      let next = 0;
+      for (const w of wanted) {
+        tops[w.id] = Math.max(w.y, next);
+        next = tops[w.id]! + TARGET_HEIGHT + TARGET_GAP;
+      }
+      const measured = { ys, tops, x1, x2: colBox.left - box.left, colTop, height: Math.max(0, next - TARGET_GAP) };
+      setLayout((old) => (JSON.stringify(old) === JSON.stringify(measured) ? old : measured));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ordered, targets]);
+
+  const lit = hover ?? (open && open !== 'new' ? `c:${open}` : null);
+  const isLit = (w: Wire) => lit === `c:${w.from}` || lit === `t:${w.to}`;
+  const litWires = wires.filter(isLit);
+  const offTarget = (id: string) => wires.every((w) => w.to !== id || w.off);
+
+  return (
+    <div className="cmap-wrap">
+      <div className={`cmap ${lit ? 'lighting' : ''}`} ref={root} onMouseLeave={() => setHover(null)}>
+        {layout && (
+          <svg className="cmap-wires" aria-hidden="true">
+            {[...wires.filter((w) => !isLit(w)), ...litWires].map((w) => {
+              const y1 = layout.ys[w.from];
+              const top = layout.tops[w.to];
+              if (y1 === undefined || top === undefined) return null;
+              const y2 = layout.colTop + top + TARGET_HEIGHT / 2;
+              const bend = (layout.x2 - layout.x1) / 2;
+              const d = `M${layout.x1} ${y1} C${layout.x1 + bend} ${y1} ${layout.x2 - bend} ${y2} ${layout.x2} ${y2}`;
+              return <path key={`${w.from} ${w.to}`} d={d} className={`cmap-wire ${w.viaChain ? 'via' : ''} ${w.off ? 'off' : ''} ${isLit(w) ? 'lit' : ''}`} />;
+            })}
+          </svg>
+        )}
+        <ul className="cmap-commands">
+          {ordered.map((c) => (
+            <li
+              key={c.id}
+              ref={(n) => void (n ? nodes.current.set(c.id, n) : nodes.current.delete(c.id))}
+              className={`cmap-node ${c.enabled ? '' : 'off'} ${open === c.id ? 'selected' : ''} ${picked.has(c.id) ? 'picked' : ''} ${litWires.some((w) => w.from === c.id) || lit === `c:${c.id}` ? 'lit' : ''}`}
+              onMouseEnter={() => setHover(`c:${c.id}`)}
+            >
+              <button type="button" className="cmap-open" aria-pressed={open === c.id || picked.has(c.id)} {...press(c.id)} onFocus={() => setHover(`c:${c.id}`)} onBlur={() => setHover(null)}>
+                <strong className="cmap-keyword">{c.keyword}</strong>
+                <span className={c.chain ? 'cmap-chain' : 'cmap-inline'}>
+                  <CommandSummary command={c} commands={commands} />
+                </span>
+                <span className="cmap-meta">{facts(c)}</span>
+              </button>
+              <span className="cmap-switch">{onSwitch(c)}</span>
+            </li>
+          ))}
+        </ul>
+        <ul className="cmap-targets" ref={column} style={{ height: layout?.height }} aria-label="Keys and actions">
+          {targets.map((t) => (
+            <li
+              key={t.id}
+              className={`cmap-target ${offTarget(t.id) ? 'off' : ''} ${litWires.some((w) => w.to === t.id) ? 'lit' : ''}`}
+              style={{ top: layout?.tops[t.id] ?? 0 }}
+              onMouseEnter={() => setHover(`t:${t.id}`)}
+            >
+              {t.kind === 'key' ? <kbd className="kbd">{keyLabel(t.name)}</kbd> : <NamedChip kind={t.kind} name={t.name} />}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }
 

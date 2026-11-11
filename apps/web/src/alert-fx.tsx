@@ -28,11 +28,11 @@ const SPARKLES = [40, 75, 110, 250, 285, 320];
 function PlaceholderCharacter() {
   return (
     <svg className="fx-placeholder" viewBox="0 0 120 120" role="img" aria-label="Placeholder character">
-      <path d="M38 24 28 6M82 24l10-18" stroke="#7c7fff" strokeWidth="6" strokeLinecap="round" />
+      <path d="M38 24 28 6M82 24l10-18" stroke="#4d85ff" strokeWidth="6" strokeLinecap="round" />
       <circle cx="28" cy="6" r="5" fill="#ffd166" />
       <circle cx="92" cy="6" r="5" fill="#ffd166" />
-      <rect x="12" y="20" width="96" height="92" rx="42" fill="#7c7fff" />
-      <ellipse cx="60" cy="88" rx="30" ry="18" fill="#a5a8ff" />
+      <rect x="12" y="20" width="96" height="92" rx="42" fill="#4d85ff" />
+      <ellipse cx="60" cy="88" rx="30" ry="18" fill="#9cc2ff" />
       <circle cx="42" cy="56" r="11" fill="#fff" />
       <circle cx="78" cy="56" r="11" fill="#fff" />
       <circle cx="44" cy="58" r="5.5" fill="#1b1c3a" />

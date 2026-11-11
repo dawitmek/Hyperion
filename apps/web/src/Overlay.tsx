@@ -23,6 +23,7 @@ import { ScreenEffects } from './effects';
 import { Icon } from './icons';
 import { AlertContent, alertFxClass, alertFxStyle, MIDDLE, revealsInMiddle } from './alert-fx';
 import { alertLook } from './alert-style';
+import { openOverlaySocket, type OverlaySocket } from './demo/socket';
 
 // A command, a level-up shout-out, or a viewer's points when they ask.
 type FeedItem = { id: number; viewer: string; avatar?: string } & ({ keyword: string; level?: number } | { levelUp: number } | { points: number });
@@ -96,7 +97,7 @@ export function Overlay({ token }: { token: string }) {
   const fit = useFit(screen?.layout ?? 'desktop');
 
   useEffect(() => {
-    let socket: WebSocket;
+    let socket: OverlaySocket;
     let retry: number | undefined;
     let nextId = 0;
     let closed = false;
@@ -116,8 +117,7 @@ export function Overlay({ token }: { token: string }) {
     player.report = report;
 
     const connect = () => {
-      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-      socket = new WebSocket(`${protocol}://${location.host}/ws/overlay?token=${encodeURIComponent(token)}`);
+      socket = openOverlaySocket(token, false);
       socket.onmessage = (event) => {
         const message = JSON.parse(event.data) as ServerToOverlay;
         if (message.type === 'debug') {
@@ -456,6 +456,13 @@ function ModePanel({ state, clockOffset, avatar }: { state: ModeState; clockOffs
             <span className="overlay-score">{t.votes}</span>
           </div>
         ))}
+        {/* Between votes, the last winner. Keyed by the vote, so each new winner pops in. */}
+        {state.tally.length === 0 && state.lastCommand && (
+          <div key={state.lastDrawAt} className="overlay-win">
+            <span className="overlay-win-label">Chat voted</span>
+            <span className="overlay-win-command">{state.lastCommand}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -482,8 +489,8 @@ function ModePanel({ state, clockOffset, avatar }: { state: ModeState; clockOffs
 
   if (state.mode === 'raffle') {
     return (
-      <div className="overlay-panel overlay-mode tone-indigo">
-        <Title icon="crowd" end={secondsLeft !== null && <span className="overlay-timer">{secondsLeft}s</span>}>
+      <div className="overlay-panel overlay-mode tone-violet">
+        <Title icon="ticket" end={secondsLeft !== null && <span className="overlay-timer">{secondsLeft}s</span>}>
           Raffle
         </Title>
         <div className="overlay-muted">
@@ -491,10 +498,11 @@ function ModePanel({ state, clockOffset, avatar }: { state: ModeState; clockOffs
             ? 'Type a command to enter'
             : `${state.entrants} entered. One wins in ${secondsLeft ?? 0}s`}
         </div>
-        {state.lastWinner && (
-          <div className="overlay-player">
-            <ViewerAvatar name={state.lastWinner} src={avatar} />
-            {state.lastWinner} won
+        {/* Keyed by the draw, so each new winner pops in, even the same command twice. */}
+        {state.lastCommand && (
+          <div key={state.lastDrawAt} className="overlay-win">
+            <span className="overlay-win-label">Winning command</span>
+            <span className="overlay-win-command">{state.lastCommand}</span>
           </div>
         )}
       </div>

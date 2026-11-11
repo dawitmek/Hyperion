@@ -248,6 +248,12 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
           Forgot your password?
         </Link>
       )}
+      {!login && (
+        <p className="muted auth-legal">
+          By creating an account you confirm you’re 18 or older and agree to the <Link href="/terms">terms</Link> and{' '}
+          <Link href="/privacy">privacy page</Link>.
+        </p>
+      )}
       <button className="btn btn-primary btn-lg" disabled={busy}>
         {busy ? (login ? 'Logging in…' : 'Creating your account…') : login ? 'Log in' : 'Create account'}
       </button>

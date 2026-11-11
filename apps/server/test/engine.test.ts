@@ -123,6 +123,9 @@ describe('democracy mode', () => {
         { keyword: 'left', votes: 1 },
       ],
       endsAt: 3000,
+      lastCommand: null,
+      lastVotes: null,
+      lastDrawAt: null,
     });
     advance(2999);
     expect(tick()).toEqual([]);
@@ -130,7 +133,7 @@ describe('democracy mode', () => {
     const [decision, ...rest] = engine.tick();
     expect(rest).toEqual([]);
     expect(decision).toMatchObject({ action: { key: 'KeyD' }, viewer: '2 votes', credit: ['b', 'c'] });
-    expect(engine.state()).toEqual({ mode: 'democracy', tally: [], endsAt: null });
+    expect(engine.state()).toEqual({ mode: 'democracy', tally: [], endsAt: null, lastCommand: 'right', lastVotes: 2, lastDrawAt: 3000 });
     expect(tick()).toEqual([]);
   });
 
@@ -180,7 +183,7 @@ describe('raffle mode', () => {
     expect(press(comment('alice', 'left'))).toEqual([]);
     press(comment('bob', 'right'));
     press(comment('cara', 'jump'));
-    expect(engine.state()).toEqual({ mode: 'raffle', entrants: 3, endsAt: 10000, lastWinner: null });
+    expect(engine.state()).toEqual({ mode: 'raffle', entrants: 3, endsAt: 10000, lastCommand: null, lastDrawAt: null });
     advance(9999);
     expect(tick()).toEqual([]);
     advance(1);
@@ -188,7 +191,7 @@ describe('raffle mode', () => {
     const [won, ...others] = engine.tick();
     expect(others).toEqual([]);
     expect(won).toMatchObject({ action: { key: 'KeyD' }, keyword: 'right', viewer: 'bob', credit: ['bob'] });
-    expect(engine.state()).toEqual({ mode: 'raffle', entrants: 0, endsAt: null, lastWinner: 'bob' });
+    expect(engine.state()).toEqual({ mode: 'raffle', entrants: 0, endsAt: null, lastCommand: 'right', lastDrawAt: 10000 });
   });
 
   it('keeps one entry per viewer, their latest command', () => {

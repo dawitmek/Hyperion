@@ -1,7 +1,7 @@
 /* Hyperion design system, shared by the dashboard and the companion app.
    Light or dark follows data-mode="dark" on <html>, which the page sets from the account's choice (light, dark, or
    the system's). Meaning colours: red = live, green = ready,
-   amber = a vote or something that needs a look. Indigo is the brand and the action colour. */
+   amber = a vote or something that needs a look. Blue is the brand and the action colour. */
 @import '@fontsource-variable/geist';
 @import './themes.css';
 
@@ -10,19 +10,19 @@
   --ground: #f6f6f9;
   --panel: #ffffff;
   --panel2: #f2f2f6;
-  /* Lines, tracks and the main button take the brand's indigo rather than plain black, as other themes take theirs. */
-  --line: rgba(70, 72, 160, 0.1);
-  --line-strong: rgba(70, 72, 160, 0.19);
+  /* Lines, tracks and the main button take the brand's blue rather than plain black, as other themes take theirs. */
+  --line: rgba(37, 78, 160, 0.1);
+  --line-strong: rgba(37, 78, 160, 0.19);
   --ink: #0b0c12;
   --muted: #5b6072;
-  --meter: #dfe0ec;
+  --meter: #dde3ee;
   --shadow: 0 1px 2px rgba(15, 16, 30, 0.04);
-  --solid-bg: #5759d0;
+  --solid-bg: #1f4fcf;
   --solid-ink: #ffffff;
   --glow-strength: 0.35;
-  --aurora: radial-gradient(900px 380px at 78% -8%, rgba(99, 102, 241, 0.16), transparent 70%),
+  --aurora: radial-gradient(900px 380px at 78% -8%, rgba(36, 86, 217, 0.16), transparent 70%),
     radial-gradient(700px 320px at 40% -12%, rgba(56, 189, 248, 0.12), transparent 70%),
-    radial-gradient(600px 300px at 100% 30%, rgba(217, 70, 239, 0.08), transparent 70%);
+    radial-gradient(600px 300px at 100% 30%, rgba(34, 211, 238, 0.07), transparent 70%);
 
   --red: #d7263d;
   --red-soft: #fdecef;
@@ -31,11 +31,11 @@
   --amber: #94560a;
   --amber-fill: #f5a524;
   --amber-soft: #fff5df;
-  --indigo: #4b4fd6;
-  --indigo-fill: #5b5fef;
-  --indigo-soft: #eeeefe;
-  --key-ink: #3d40e6;
-  --key-edge: #c9cafb;
+  --indigo: #1b45b5;
+  --indigo-fill: #2456d9;
+  --indigo-soft: #e6eefd;
+  --key-ink: #1a45c2;
+  --key-edge: #b8cdf7;
   --sky: #0a6cb4;
   --sky-fill: #2b95ea;
   --sky-soft: #e3f2fd;
@@ -52,9 +52,9 @@
   --orange-fill: #f07f2e;
   --orange-soft: #feefe4;
 
-  --brand-gradient: linear-gradient(135deg, #7c7fff 0%, #5b5fef 50%, #2b95ea 100%);
-  --edge-gradient: linear-gradient(90deg, #6366f1, #8d5ef5);
-  --plasma: linear-gradient(90deg, #818cf8 0%, #a855f7 45%, #f472b6 80%, #fb7185 100%);
+  --brand-gradient: linear-gradient(135deg, #4f7ff0 0%, #2456d9 50%, #2b95ea 100%);
+  --edge-gradient: linear-gradient(90deg, #2456d9, #22d3ee);
+  --plasma: linear-gradient(90deg, #2456d9 0%, #3b82f6 45%, #22d3ee 100%);
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
   --usage-gradient: linear-gradient(90deg, #38bdf8, #2b95ea);
   --avatar-gradient: linear-gradient(135deg, #f784be, #8d5ef5);
@@ -63,19 +63,19 @@
   --radius-scale: 1;
   --radius-pill: 999px;
   /* The chosen option in segmented controls, and the purple glow of a picked choice. */
-  --accent-gradient: linear-gradient(180deg, #7174ff, #5357ec);
+  --accent-gradient: linear-gradient(180deg, #3a6cf0, #1f4fcf);
   --accent-ink: #fff; /* text on the accent: the chosen segment, a pressed key, a switch's knob when on */
-  --accent-shadow: rgba(83, 87, 236, 0.9);
-  --glow-rgb: 168, 85, 247;
-  /* The dashboard's sidebar, a deep indigo in both light and dark mode. */
-  --sb-bg: #121325;
+  --accent-shadow: rgba(31, 79, 207, 0.9);
+  --glow-rgb: 36, 86, 217;
+  /* The dashboard's sidebar, a deep blue in both light and dark mode. */
+  --sb-bg: #0f1524;
   --sb-ink: #f4f5fa;
   --sb-muted: #a0a5bc;
-  --sb-line: rgba(180, 182, 230, 0.1);
-  --sb-hover: rgba(180, 182, 230, 0.06);
-  --sb-active: rgba(99, 102, 241, 0.17);
-  --sb-focus: #a5a8ff;
-  --sb-marker: linear-gradient(180deg, #818cf8, #a855f7, #f472b6);
+  --sb-line: rgba(170, 192, 235, 0.1);
+  --sb-hover: rgba(170, 192, 235, 0.06);
+  --sb-active: rgba(36, 86, 217, 0.22);
+  --sb-focus: #9cc2ff;
+  --sb-marker: linear-gradient(180deg, #22d3ee, #3b82f6, #2456d9);
 
   font-family: var(--font);
   font-size: 14px;
@@ -89,29 +89,29 @@
   --ground: #0a0b12;
   --panel: #10121b;
   --panel2: #171a25;
-  --line: rgba(180, 183, 230, 0.09);
-  --line-strong: rgba(180, 183, 230, 0.17);
+  --line: rgba(170, 192, 235, 0.09);
+  --line-strong: rgba(170, 192, 235, 0.17);
   --ink: #f4f5fa;
   --muted: #9aa0b4;
-  --meter: #272a3c;
+  --meter: #232a3c;
   --shadow: none;
-  --solid-bg: #5d60d4;
+  --solid-bg: #2456d9;
   --solid-ink: #ffffff;
   --glow-strength: 1;
-  --aurora: radial-gradient(900px 380px at 78% -8%, rgba(99, 102, 241, 0.22), transparent 70%),
+  --aurora: radial-gradient(900px 380px at 78% -8%, rgba(36, 86, 217, 0.26), transparent 70%),
     radial-gradient(700px 320px at 40% -12%, rgba(56, 189, 248, 0.12), transparent 70%),
-    radial-gradient(600px 300px at 100% 30%, rgba(217, 70, 239, 0.1), transparent 70%);
+    radial-gradient(600px 300px at 100% 30%, rgba(34, 211, 238, 0.08), transparent 70%);
   --red: #ff6b7a;
   --red-soft: rgba(255, 80, 100, 0.12);
   --green: #4fd08a;
   --green-soft: rgba(60, 200, 120, 0.11);
   --amber: #fbbf4a;
   --amber-soft: rgba(245, 165, 36, 0.12);
-  --indigo: #a3a6ff;
-  --indigo-fill: #6366f1;
-  --indigo-soft: rgba(99, 102, 241, 0.16);
-  --key-ink: #d4d5ff;
-  --key-edge: rgba(140, 143, 255, 0.35);
+  --indigo: #8fb3ff;
+  --indigo-fill: #2f62e6;
+  --indigo-soft: rgba(59, 130, 246, 0.16);
+  --key-ink: #d2e3ff;
+  --key-edge: rgba(120, 170, 255, 0.35);
   --sky: #74c0f7;
   --sky-soft: rgba(43, 149, 234, 0.14);
   --pink: #f784be;
@@ -208,6 +208,7 @@ select.input, .field select { padding-right: 32px; }
 .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: calc(14px * var(--radius-scale)); background: var(--panel2); border: 1px solid var(--line); max-width: 100%; box-sizing: border-box; }
 .seg button { min-height: 36px; padding: 0 16px; border: 0; border-radius: calc(10px * var(--radius-scale)); background: transparent; color: var(--muted); font: 600 14px var(--font); cursor: pointer; }
 .seg button:hover { color: var(--ink); }
+.seg button.seg-icon { display: grid; place-items: center; padding: 0 12px; }
 .seg button[aria-checked='true'] { color: var(--accent-ink); background: var(--accent-gradient); box-shadow: 0 6px 16px -8px var(--accent-shadow); }
 /* Seg (ui.tsx): the highlight is one element that slides between options instead of each button's background. */
 .seg.sliding { position: relative; }

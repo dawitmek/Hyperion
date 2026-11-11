@@ -14,3 +14,4 @@ docs/TODO.md
 
 # The debug log (DEBUG_LOG in .env)
 logs/
+dist-ssr/

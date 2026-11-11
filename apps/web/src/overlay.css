@@ -3,11 +3,11 @@
 html.overlay-page, html.overlay-page body { background: transparent; }
 
 /* Accents: each panel takes one, the same as its widget's icon on the dashboard. Children can take their own. */
-.overlay-panel, .overlay-item { --accent: #a3a6ff; --accent-soft: rgba(163, 166, 255, 0.18); }
+.overlay-panel, .overlay-item { --accent: #93bbff; --accent-soft: rgba(147, 187, 255, 0.18); }
 .tone-amber { --accent: #ffc35a; --accent-soft: rgba(255, 195, 90, 0.18); }
 .tone-orange { --accent: #ff9a4d; --accent-soft: rgba(255, 154, 77, 0.18); }
 .tone-sky { --accent: #6cc6ff; --accent-soft: rgba(108, 198, 255, 0.18); }
-.tone-indigo { --accent: #a3a6ff; --accent-soft: rgba(163, 166, 255, 0.18); }
+.tone-indigo { --accent: #93bbff; --accent-soft: rgba(147, 187, 255, 0.18); }
 .tone-teal { --accent: #4fe0cc; --accent-soft: rgba(79, 224, 204, 0.16); }
 .tone-violet { --accent: #bb9cff; --accent-soft: rgba(187, 156, 255, 0.18); }
 .tone-pink { --accent: #ff7cb6; --accent-soft: rgba(255, 124, 182, 0.18); }
@@ -70,6 +70,11 @@ html.overlay-page, html.overlay-page body { background: transparent; }
 .overlay-leaderboard .overlay-score { color: var(--accent); }
 
 /* Crowd mode: the vote, the queue, or the gift-mode banner. */
+.overlay-win { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 10px; padding: 10px 14px; border-radius: 12px;
+  background: var(--accent-soft); border: 2px solid var(--accent); animation: pop 0.35s ease-out; }
+.overlay-win-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.overlay-win-command { font-size: 30px; font-weight: 900; line-height: 1.05; letter-spacing: 0.02em; text-transform: uppercase; color: #fff; }
+@media (prefers-reduced-motion: reduce) { .overlay-win { animation: none; } }
 .overlay-player { display: flex; align-items: center; gap: 8px; font-size: 26px; font-weight: 800; }
 .overlay-bar { position: relative; display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; padding: 6px 10px; border-radius: 10px; overflow: hidden; background: rgba(255, 255, 255, 0.07); }
 .overlay-bar > span { position: relative; }
@@ -93,7 +98,7 @@ html.overlay-page, html.overlay-page body { background: transparent; }
 .layout-phone.alerts-bottom { --alert-top: auto; }
 .layout-phone.alerts-bottom .overlay-alert { bottom: 30%; }
 /* An alert's look comes from its action's style as variables (alertLook in alert-style.ts); the fallbacks are the
-   Plasma preset. Sizes are in em, so padding and the media gap follow the text size. */
+   Ocean preset. Sizes are in em, so padding and the media gap follow the text size. */
 .overlay-alert {
   position: fixed;
   top: var(--alert-top);
@@ -103,7 +108,7 @@ html.overlay-page, html.overlay-page body { background: transparent; }
   padding: 0.45em 0.8em;
   overflow: hidden;
   border-radius: var(--a-radius, 18px);
-  background: var(--a-bg, linear-gradient(100deg, rgba(232, 23, 93, 0.95), rgba(124, 58, 237, 0.95)));
+  background: var(--a-bg, linear-gradient(100deg, rgba(36, 86, 217, 0.95), rgba(6, 182, 212, 0.95)));
   box-shadow: var(--a-border, inset 0 0 0 1px rgba(255, 255, 255, 0.2)), var(--a-glow, 0 18px 50px -12px rgba(124, 58, 237, 0.75));
   color: var(--a-ink, #fff);
   font-family: var(--a-font, var(--font));

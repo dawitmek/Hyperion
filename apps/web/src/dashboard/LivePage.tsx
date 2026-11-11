@@ -1,18 +1,20 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode, type RefObject } from 'react';
 import { levelForXp, MODES, type LeaderboardEntry, type LiveCard, type ModeState, type StreamStats } from '@hyperion/shared';
-import { api, type Command, type LiveStatus } from '../api';
+import { api, type Command, type Host, type LiveStatus } from '../api';
 import { Link } from '../router';
-import { Card, ErrorNotice, keyLabel, Spinner, useError, ViewerAvatar } from '../ui';
+import { Card, ErrorNotice, keyLabel, Spinner, Switch, useError, ViewerAvatar } from '../ui';
 import { Icon, type IconName } from '../icons';
 import type { PageProps } from './Dashboard';
 import type { Activity, ActivityKind } from './live-feed';
 import { MODE_INFO } from './modes';
-import { ModeTiles } from './ModePicker';
+import { PACES, type Pace } from './auto-chat';
+import { setExtras, setPace, startAutoChat, stopAutoChat, useAutoChat } from './auto-chat-run';
+import { ModeDetails, ModeTiles } from './ModePicker';
 import { ActivityFeed } from './ActivityFeed';
 import { CARD_LABELS, LiveCards } from './LiveLayout';
 import { Stat } from './AnalyticsPage';
 import { VoiceControls } from './VoiceControls';
-import { ViewerLink } from './ViewerPanel';
+import { ViewerContext, ViewerLink, ViewerPanel } from './ViewerPanel';
 import { ActivityChart, CommandUsage, useStreamDetail } from './StreamInsights';
 
 export function LivePage(props: PageProps) {
@@ -331,6 +333,7 @@ function CommandsOverview({ host, refreshHost, feed }: PageProps) {
   const { error, guard } = useError();
   useEffect(() => void api<Command[]>('GET', '/commands').then(setCommands), []);
   const setMode = (mode: (typeof MODES)[number]) => guard(() => api('PATCH', '/settings', { mode }).then(refreshHost))();
+  const saveMode = (patch: Partial<Host>) => guard(() => api('PATCH', '/settings', patch).then(refreshHost))();
   const enabled = commands?.filter((c) => c.enabled) ?? [];
   const pressed = feed.pressed;
   const most = Math.max(1, ...enabled.map((c) => pressed[c.keyword] ?? 0));
@@ -400,6 +403,11 @@ function CommandsOverview({ host, refreshHost, feed }: PageProps) {
       <p className="muted" style={{ marginTop: 8 }}>
         {MODE_INFO[host.mode].help}
       </p>
+      {/* The same settings as Commands → Crowd mode, opened here so they can be changed mid-stream. */}
+      <details className="mode-more">
+        <summary>Mode settings</summary>
+        <ModeDetails host={host} onSave={saveMode} />
+      </details>
       <ErrorNotice error={error} />
     </section>
   );
@@ -464,6 +472,17 @@ function ModeCard({ host, feed }: PageProps) {
           </div>
         ))}
         {state.tally.length === 0 && <p className="muted">Chat types a command to vote for it.</p>}
+        {state.lastCommand && (
+          <div key={state.lastDrawAt} className="mode-win mode-is-democracy">
+            <span className="mode-win-label">Last winning command</span>
+            <span className="mode-win-command">
+              {state.lastCommand}
+              <span className="mode-win-note">
+                {state.lastVotes} {state.lastVotes === 1 ? 'vote' : 'votes'}
+              </span>
+            </span>
+          </div>
+        )}
       </div>
     );
   }
@@ -476,11 +495,16 @@ function ModeCard({ host, feed }: PageProps) {
             <h2>{state.endsAt ? 'Raffle open' : 'Waiting for entries'}</h2>
             <p className="muted small">
               {state.entrants} {state.entrants === 1 ? 'viewer' : 'viewers'} entered
-              {state.lastWinner && `. Last winner: ${state.lastWinner}`}
             </p>
           </div>
           {state.endsAt && <Countdown endsAt={state.endsAt} windowMs={host.raffleMs} clockOffset={clockOffset} />}
         </div>
+        {state.lastCommand && (
+          <div key={state.lastDrawAt} className="mode-win mode-is-raffle">
+            <span className="mode-win-label">Last winning command</span>
+            <span className="mode-win-command">{state.lastCommand}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -507,7 +531,7 @@ function ModeCard({ host, feed }: PageProps) {
 
 const ACTIVITY_HUES: Record<ActivityKind, string> = { Key: 'indigo', Alert: 'pink', Level: 'violet', Voice: 'sky' };
 
-function ActivityCard({ feed }: PageProps) {
+function ActivityCard({ feed, status }: PageProps) {
   const [expanded, setExpanded] = useState(false);
   // A click anywhere on the card expands it; the button is there for the keyboard. The dialog sits outside the card,
   // so clicks inside it (closing it, say) don't reach the card and open it again.
@@ -522,19 +546,34 @@ function ActivityCard({ feed }: PageProps) {
         </div>
         <ActivityList items={feed.activity.slice(0, 8)} />
       </section>
-      {expanded && <ActivityDialog feed={feed} onClose={() => setExpanded(false)} />}
+      {expanded && <ActivityDialog feed={feed} live={status.live} onClose={() => setExpanded(false)} />}
     </>
   );
 }
 
-function ActivityList({ items, seconds }: { items: Activity[]; seconds?: boolean }) {
+// `onViewer`: a viewer's name opens their profile, with a button beside it that calls `onViewer` to show only them.
+function ActivityList({ items, seconds, onViewer, onProfile }: { items: Activity[]; seconds?: boolean; onViewer?: (viewer: string) => void; onProfile?: (viewer: string) => void }) {
   if (items.length === 0) return <p className="muted">Key presses, alerts and level-ups show up here as they happen.</p>;
   return (
     <ol className="activity">
       {items.map((a) => (
         <li key={a.id}>
           <span className={`tag ${ACTIVITY_HUES[a.kind]}`}>{a.kind}</span>
-          <span className="activity-text">{a.text}</span>
+          <span className="activity-text">
+            {onViewer && a.viewer && a.text.startsWith(a.viewer) ? (
+              <>
+                <button type="button" className="viewer-link" onClick={() => onProfile?.(a.viewer!)} title={`@${a.viewer}'s profile`}>
+                  {a.viewer}
+                </button>
+                <button type="button" className="activity-only" onClick={() => onViewer(a.viewer!)} title={`Only ${a.viewer}`} aria-label={`Show only ${a.viewer}`}>
+                  <Icon name="search" size={12} />
+                </button>
+                {a.text.slice(a.viewer.length)}
+              </>
+            ) : (
+              a.text
+            )}
+          </span>
           <span className="muted small num">
             {new Date(a.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', ...(seconds && { second: '2-digit' }) })}
           </span>
@@ -544,24 +583,96 @@ function ActivityList({ items, seconds }: { items: Activity[]; seconds?: boolean
   );
 }
 
+const ACTIVITY_KINDS = Object.keys(ACTIVITY_HUES) as ActivityKind[];
+const ACTIVITY_KIND_LABELS: Record<ActivityKind, string> = { Key: 'Key presses', Alert: 'Alerts', Level: 'Level-ups', Voice: 'Read aloud' };
+
 // The Activity card, bigger and over the page: everything since this page opened (the newest 100), updating live.
-function ActivityDialog({ feed, onClose }: { feed: PageProps['feed']; onClose: () => void }) {
+// It can show only some kinds, search, follow one viewer (the button by their name), and pause to read.
+// A click outside it closes it. A name opens the viewer's profile inside the dialog, as nothing outside a modal dialog
+// can show over it; closing the profile comes back to the dialog as it was.
+function ActivityDialog({ feed, live, onClose }: { feed: PageProps['feed']; live: boolean; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => dialog.current?.showModal(), []);
+  const [profile, setProfile] = useState<string | null>(null);
+  // Clicks on the backdrop land on the dialog itself, outside its box.
+  const closeOutside = (e: MouseEvent<HTMLDialogElement>) => {
+    if (e.target !== e.currentTarget) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.currentTarget.close();
+  };
+  const [kinds, setKinds] = useState<ActivityKind[]>(ACTIVITY_KINDS);
+  const [search, setSearch] = useState('');
+  const [viewer, setViewer] = useState<string | null>(null);
+  // Paused: the list holds what it showed, and counts what's arrived since.
+  const [frozen, setFrozen] = useState<Activity[] | null>(null);
+  const items = frozen ?? feed.activity;
+  const waiting = frozen ? feed.activity.filter((a) => a.id > (frozen[0]?.id ?? -1)).length : 0;
+  const query = search.trim().toLowerCase();
+  const shown = items.filter((a) => kinds.includes(a.kind) && (!viewer || a.viewer === viewer) && (!query || a.text.toLowerCase().includes(query)));
+  const counts = Object.fromEntries(ACTIVITY_KINDS.map((k) => [k, items.filter((a) => a.kind === k).length])) as Record<ActivityKind, number>;
+  const flip = (kind: ActivityKind) => setKinds((now) => (now.includes(kind) ? now.filter((k) => k !== kind) : [...now, kind]));
+
   return (
-    <dialog ref={dialog} className="activity-dialog" onClose={onClose} aria-labelledby="activity-dialog-title">
+    <dialog ref={dialog} className="activity-dialog" onClose={onClose} onCancel={(e) => profile && e.preventDefault()} onClick={closeOutside} aria-labelledby="activity-dialog-title">
       <div className="pos-head">
         <div>
           <h2 id="activity-dialog-title">Activity</h2>
-          <p className="muted small">Key presses, alerts, level-ups and read-aloud chat since this page opened, newest first.</p>
+          <p className="muted small">Key presses, alerts, level-ups and read-aloud chat since this page opened, newest first. Click a name for their profile, or the search icon beside it to see only them.</p>
         </div>
         <button className="btn btn-ghost btn-sm btn-icon" onClick={() => dialog.current?.close()} aria-label="Close">
           <Icon name="close" />
         </button>
       </div>
-      <div className="activity-dialog-body">
-        <ActivityList items={feed.activity} seconds />
+      <div className="activity-dialog-tools">
+        <div className="chips coded" role="group" aria-label="Show">
+          <button className={`chip ${kinds.length === ACTIVITY_KINDS.length ? 'on' : ''}`} aria-pressed={kinds.length === ACTIVITY_KINDS.length} onClick={() => setKinds(ACTIVITY_KINDS)}>
+            All
+          </button>
+          {ACTIVITY_KINDS.map((k) => (
+            <button
+              key={k}
+              className={`chip hue-${ACTIVITY_HUES[k]} ${kinds.includes(k) ? 'on' : ''}`}
+              aria-pressed={kinds.includes(k)}
+              title="Double-click to show only this"
+              onClick={(e) => (e.detail === 2 ? setKinds([k]) : flip(k))}
+            >
+              <i aria-hidden="true" />
+              {ACTIVITY_KIND_LABELS[k]}
+              <span className="chip-count num">{counts[k]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="row activity-dialog-row">
+          <input className="input" type="search" maxLength={64} placeholder="Search names and text" aria-label="Search activity" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <button className="btn btn-sm" aria-pressed={!!frozen} onClick={() => setFrozen(frozen ? null : feed.activity)}>
+            <Icon name={frozen ? 'play' : 'pause'} size={14} />
+            {frozen ? `Resume${waiting ? ` (${waiting} new)` : ''}` : 'Pause'}
+          </button>
+        </div>
+        {viewer && (
+          <div className="activity-focus" role="status">
+            <Icon name="search" size={14} />
+            <span>
+              Only <strong>{viewer}</strong>
+            </span>
+            <button className="btn btn-ghost btn-sm" onClick={() => setViewer(null)}>
+              Show everyone
+            </button>
+          </div>
+        )}
       </div>
+      <div className="activity-dialog-body">
+        {items.length > 0 && shown.length === 0 ? (
+          <p className="empty">{kinds.length === 0 ? 'Pick at least one kind to show.' : 'Nothing matches.'}</p>
+        ) : (
+          <ActivityList items={shown} seconds onViewer={setViewer} onProfile={setProfile} />
+        )}
+      </div>
+      {profile && (
+        <ViewerContext.Provider value={setProfile}>
+          <ViewerPanel key={profile} viewer={profile} live={live} onClose={() => setProfile(null)} />
+        </ViewerContext.Provider>
+      )}
     </dialog>
   );
 }
@@ -626,6 +737,7 @@ function TestConsole() {
         <p className="muted">Pretend to be chat. Commands go to your companion like the real thing.</p>
       </div>
       <ErrorNotice error={error} />
+      <AutoChat />
       <form className="row" onSubmit={comment}>
         <input className="input" value={viewer} maxLength={64} onChange={(e) => setViewer(e.target.value)} aria-label="Viewer name" placeholder="Viewer" />
         <input className="input" value={text} maxLength={200} onChange={(e) => setText(e.target.value)} aria-label="Comment" placeholder="Comment" />
@@ -668,6 +780,45 @@ function TestConsole() {
         </button>
       </div>
     </section>
+  );
+}
+
+// A made-up crowd that types your real commands and sends your real gifts, for recording a demo without going live.
+// The run itself lives in auto-chat-run.ts, so it carries on while you're on other pages; new names every run.
+function AutoChat() {
+  const { crowd, pace, extras, error } = useAutoChat();
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="row">
+        {crowd ? (
+          <button className="btn btn-primary" onClick={() => stopAutoChat()}>
+            Stop auto chat
+          </button>
+        ) : (
+          <button className="btn btn-primary" onClick={startAutoChat}>
+            Start auto chat
+          </button>
+        )}
+        <select className="input" style={{ flex: 'none', width: 'auto' }} aria-label="Pace" value={pace} onChange={(e) => setPace(e.target.value as Pace)}>
+          {Object.entries(PACES).map(([id, p]) => (
+            <option key={id} value={id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <Switch checked={extras} onChange={setExtras}>
+        Gifts, follows, likes and shares
+      </Switch>
+      <p className="muted small">
+        {crowd
+          ? `${crowd.length} made-up viewers are chatting: ${crowd.slice(0, 4).join(', ')} and more.`
+          : extras
+            ? 'Made-up viewers type your commands and send the gifts your actions use, with new names every run.'
+            : 'Made-up viewers type your commands and chat, with new names every run.'}
+      </p>
+      <ErrorNotice error={error} />
+    </div>
   );
 }
 

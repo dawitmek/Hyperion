@@ -465,7 +465,17 @@ const QUESTIONS: [string, ReactNode][] = [
       can run commands in it. See <Link href="/integrations">Integrations</Link>.
     </>,
   ],
-  ['Can viewers mess up my PC?', 'The companion only presses keys you have allowed, only while your game is in front, never the Windows key or Escape, and never combinations like Ctrl+W or Alt+F4. Ctrl+Shift+Backspace pauses everything instantly.'],
+  [
+    'Can viewers mess up my PC?',
+    <>
+      The companion only presses keys you have allowed, only while your game is in front and tabbed in, never the Windows key
+      or Escape, and never combinations like Ctrl+W or Alt+F4. Ctrl+Shift+Backspace pauses everything instantly.
+      <br />
+      <br />
+      Your security is also taken very seriously, with strict restrictions on allowed inputs, rate limits, and window focus
+      checks so chat can never interact with anything outside your game.
+    </>,
+  ],
   ['Do I need OBS?', 'No. The overlay works as a browser source in TikTok LIVE Studio or in OBS. Its background is transparent.'],
   ['Does it work on Mac?', 'Yes. The companion runs on Windows and macOS. On a Mac it needs Accessibility permission to press keys, and it walks you through granting it.'],
   [
@@ -485,7 +495,21 @@ export function FaqPage() {
           {QUESTIONS.map(([q, a]) => (
             <details key={q}>
               <summary>{q}</summary>
-              <p>{a}</p>
+              <p>
+                {typeof a === 'string' && a.includes('\n')
+                  ? a.split('\n\n').map((paragraph, i) => (
+                      <span key={i}>
+                        {i > 0 && (
+                          <>
+                            <br />
+                            <br />
+                          </>
+                        )}
+                        {paragraph}
+                      </span>
+                    ))
+                  : a}
+              </p>
             </details>
           ))}
         </div>

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { DEFAULT_MESSAGE, type GoalMetric, type GoalRaise, type ScreenEffect, type ScreenWidget, type StreamStats, type WidgetStyle } from '@hyperion/shared';
+import { DEFAULT_MESSAGE, type Goal, type GoalMetric, type GoalRaise, type ScreenEffect, type ScreenWidget, type StreamStats, type WidgetStyle } from '@hyperion/shared';
+import { api } from './api';
 import { ALERT_FONT_STACKS } from './alert-style';
 import { Icon, type IconName } from './icons';
 import { ViewerAvatar } from './ui';
@@ -466,9 +467,9 @@ export function usePreview(enabled: boolean, bus: GiftBus) {
   useEffect(() => {
     if (!enabled) return;
     let goals: StreamStats['goals'] = [];
-    fetch('/api/goals')
-      .then((res) => (res.ok ? res.json() : []))
-      .then((list: { id: string; name: string; metric: StreamStats['goals'][number]['metric']; target: number; enabled: boolean }[]) => {
+    // Through api(), so the demo's own goals show; on an overlay, where there's no login, there are none.
+    api<Goal[]>('GET', '/goals')
+      .then((list) => {
         goals = list.filter((g) => g.enabled).map((g) => ({ id: g.id, name: g.name, metric: g.metric, target: g.target, current: 0 }));
       })
       .catch(() => {});

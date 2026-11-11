@@ -107,7 +107,13 @@ export function LiveCards({ host, refreshHost, card, extra }: Pick<PageProps, 'h
       {editing ? (
         <section className="live-editor" aria-label="Add and arrange cards">
           <div className="live-editor-head">
-            <p className="muted small">Add cards below, drag them into place, or hide them. Hiding a card only takes it off this page; whatever it controls keeps working.</p>
+            <div className="live-editor-title">
+              <HueIcon name="layout" hue="indigo" size="sm" />
+              <div>
+                <h2>Editing the Live page</h2>
+                <p className="muted small">Add cards below, drag them into place, or hide them. Hiding a card only takes it off this page; whatever it controls keeps working.</p>
+              </div>
+            </div>
             <div className="row">
               <button className="btn btn-ghost btn-sm" onClick={() => setDraft(DEFAULT_LIVE_LAYOUT)}>
                 Reset to default

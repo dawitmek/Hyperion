@@ -6,7 +6,8 @@ import type { Engine, EngineContext } from './types.js';
 // per draw (a new command replaces the old); with gift boosts on, each gift adds an extra entry.
 export function createRaffle(ctx: EngineContext): Engine {
   let draw: { endsAt: number; entries: Map<string, string>; boosts: Map<string, number> } | null = null;
-  let lastWinner: string | null = null;
+  // The command that won the last draw, and when, so the overlay can show it fresh each time.
+  let last: { command: string; at: number } | null = null;
 
   return {
     handle(event) {
@@ -29,10 +30,10 @@ export function createRaffle(ctx: EngineContext): Engine {
       const winner = tickets.find((t) => (roll -= t.weight) < 0) ?? tickets[tickets.length - 1];
       const command = ctx.config.commands.find((c) => c.enabled && c.keyword === winner?.keyword);
       if (!winner || !command) return [];
-      lastWinner = winner.viewer;
+      last = { command: command.keyword, at: ctx.now() };
       return [decide(ctx, command, winner.viewer, [winner.viewer])];
     },
 
-    state: () => ({ mode: 'raffle', entrants: draw?.entries.size ?? 0, endsAt: draw?.endsAt ?? null, lastWinner }),
+    state: () => ({ mode: 'raffle', entrants: draw?.entries.size ?? 0, endsAt: draw?.endsAt ?? null, lastCommand: last?.command ?? null, lastDrawAt: last?.at ?? null }),
   };
 }

@@ -160,7 +160,8 @@ export function ModeDetails({
       )}
       {mode === "anarchy" && (
         <p className="muted small">
-          Cooldowns are set on each command above. The rate limit is in{" "}
+          Cooldowns are set on each command in{" "}
+          <Link href="/dashboard/commands">Commands</Link>. The rate limit is in{" "}
           <Link href="/dashboard/settings">Settings</Link>.
         </p>
       )}

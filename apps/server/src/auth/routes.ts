@@ -1,7 +1,23 @@
 import type { FastifyInstance } from 'fastify';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
+import { promisify } from 'node:util';
+import { gzip } from 'node:zlib';
 import { hash, verify } from '@node-rs/argon2';
-import { actions, commands, emailTokens, hosts, overlayScreens, profiles } from '../db/schema.js';
+import {
+  actions,
+  commands,
+  companions,
+  emailTokens,
+  goals,
+  hiddenMedia,
+  hosts,
+  media,
+  overlayScreens,
+  profiles,
+  streamEvents,
+  streams,
+  viewerStats,
+} from '../db/schema.js';
 import { DEFAULT_ACTIONS } from '../actions/defaults.js';
 import { newToken, sha256 } from '../crypto.js';
 import { cancelEmailTokens, createEmailToken } from './email-tokens.js';
@@ -29,6 +45,8 @@ const credentials = {
 } as const;
 
 type Credentials = { email: string; password: string };
+
+const gzipAsync = promisify(gzip);
 
 export async function authRoutes(app: FastifyInstance) {
   const { db, config } = app;
@@ -139,6 +157,82 @@ export async function authRoutes(app: FastifyInstance) {
       await endAllSessions(db, req.hostId);
       await startSession(db, req, reply, req.hostId, config.secureCookies);
       passwordChanged(host.email);
+      return { ok: true };
+    },
+  );
+
+  // A copy of everything the account holds, as one JSON file. Secrets are left out: the password hash, the cloud voice
+  // key, the TikTok session and the overlay, screen and companion tokens. Uploads come along as base64. Sent gzipped
+  // when the browser accepts it (it unpacks it on arrival, so the file saved is still plain JSON): stream history
+  // shrinks several times over.
+  app.get('/export', { onRequest: requireHost, config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { hostId } = req;
+    const { passwordHash: _p, ttsCloudKey: _k, ttsTiktokSession: _t, overlayToken: _o, ...account } = getTableColumns(hosts);
+    const { token: _s, ...screen } = getTableColumns(overlayScreens);
+    const { tokenHash: _c, ...companion } = getTableColumns(companions);
+    const { data: _d, ...upload } = getTableColumns(media);
+    const [host] = await db.select(account).from(hosts).where(eq(hosts.id, hostId));
+    const hostStreams = await db.select().from(streams).where(eq(streams.hostId, hostId)).orderBy(streams.startedAt);
+    const events = hostStreams.length
+      ? await db.select().from(streamEvents).where(inArray(streamEvents.streamId, hostStreams.map((s) => s.id))).orderBy(streamEvents.id)
+      : [];
+    const uploads = await db.select({ ...upload, data: media.data }).from(media).where(eq(media.hostId, hostId));
+    const data = {
+      exportedAt: new Date().toISOString(),
+      account: host,
+      profiles: await db.select().from(profiles).where(eq(profiles.hostId, hostId)),
+      commands: await db.select().from(commands).where(eq(commands.hostId, hostId)),
+      actions: await db.select().from(actions).where(eq(actions.hostId, hostId)),
+      goals: await db.select().from(goals).where(eq(goals.hostId, hostId)),
+      overlayScreens: await db.select(screen).from(overlayScreens).where(eq(overlayScreens.hostId, hostId)),
+      companions: await db.select(companion).from(companions).where(eq(companions.hostId, hostId)),
+      uploads: uploads.map(({ data, ...rest }) => ({ ...rest, base64: data.toString('base64') })),
+      hiddenUploads: await db.select().from(hiddenMedia).where(eq(hiddenMedia.hostId, hostId)),
+      leaderboard: await db.select().from(viewerStats).where(eq(viewerStats.hostId, hostId)),
+      streams: hostStreams.map((s) => ({ ...s, events: events.filter((e) => e.streamId === s.id) })),
+    };
+    reply.header('content-disposition', `attachment; filename="hyperion-data-${new Date().toISOString().slice(0, 10)}.json"`);
+    reply.header('cache-control', 'no-store');
+    reply.header('vary', 'accept-encoding');
+    reply.type('application/json; charset=utf-8');
+    const json = JSON.stringify(data);
+    if (!/\bgzip\b/.test(req.headers['accept-encoding'] ?? '')) return json;
+    reply.header('content-encoding', 'gzip');
+    return gzipAsync(json);
+  });
+
+  // Deletes the account and everything that belongs to it (every table cascades from hosts). Asks for the password,
+  // so a stolen session alone can't do it. A live stream stops first, so nothing is written after the rows are gone.
+  app.post<{ Body: { password: string } }>(
+    '/delete-account',
+    {
+      ...rateLimit,
+      onRequest: requireHost,
+      schema: { body: { type: 'object', required: ['password'], additionalProperties: false, properties: { password: { type: 'string', maxLength: 128 } } } },
+    },
+    async (req, reply) => {
+      const [host] = await db.select({ email: hosts.email, passwordHash: hosts.passwordHash }).from(hosts).where(eq(hosts.id, req.hostId));
+      if (!host) return reply.code(400).send({ error: 'Your password is wrong' });
+      if (app.loginLimiter.blocked(host.email)) {
+        return reply.code(429).send({ error: 'Too many wrong passwords for this account. Try again in 15 minutes.' });
+      }
+      // 400, not 401: a 401 makes the dashboard think the session ended.
+      if (!(await verify(host.passwordHash, req.body.password))) {
+        app.loginLimiter.fail(host.email);
+        return reply.code(400).send({ error: 'Your password is wrong' });
+      }
+      await app.live.stop(req.hostId, 'account deleted');
+      await db.delete(hosts).where(eq(hosts.id, req.hostId));
+      app.hub.disconnectHost(req.hostId);
+      app.loginLimiter.clear(host.email);
+      reply.clearCookie(SESSION_COOKIE, { path: '/' });
+      if (app.mail) {
+        sendMail('account deleted', {
+          to: host.email,
+          subject: 'Your Hyperion account was deleted',
+          text: 'Your Hyperion account and everything in it (settings, uploads, stream history and leaderboard) were just deleted. This can’t be undone.\n\nIf you didn’t do this, someone had your password: change it anywhere else you use it.',
+        });
+      }
       return { ok: true };
     },
   );

@@ -1,4 +1,7 @@
-// Thin JSON client for the Hyperion API. Same origin, so the session cookie rides along.
+import { isDemo } from './router';
+
+// Thin JSON client for the Hyperion API. Same origin, so the session cookie rides along. The demo answers in the
+// browser instead (demo/api.ts), loaded only when it's used.
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -9,6 +12,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+  if (isDemo()) return (await import('./demo/api')).demoApi<T>(method, path, body);
   const res = await fetch(`/api${path}`, {
     method,
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
@@ -54,6 +58,7 @@ export type { ActionTrigger, AlertPosition, AlertSound, Audience, Goal, CloudPro
 
 // Sends a file as the raw request body; the server works out what it is.
 export async function uploadMedia(file: File): Promise<MediaItem> {
+  if (isDemo()) throw new ApiError("Uploading files isn't part of the demo. Sign up free to use it.", 403);
   const res = await fetch(`/api/media?name=${encodeURIComponent(file.name.replace(/\.[^.]+$/, '') || file.name)}`, {
     method: 'POST',
     headers: { 'content-type': 'application/octet-stream' },

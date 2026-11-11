@@ -498,15 +498,14 @@ export class SessionManager {
   // The mode as overlays show it: the queue and the last raffle winner by display name.
   private shownState(hostId: string, session: LiveSession): ModeState {
     const state = session.engine.state();
-    if (state.mode === 'raffle') return { ...state, lastWinner: state.lastWinner && this.stats.nameOf(hostId, state.lastWinner) };
     if (state.mode !== 'queue') return state;
     return { ...state, viewer: state.viewer && this.stats.nameOf(hostId, state.viewer), queue: state.queue.map((viewer) => this.stats.nameOf(hostId, viewer)) };
   }
 
-  // Whose turn it is in queue mode, or who last won the raffle.
+  // Whose turn it is in queue mode.
   private playerAvatar(hostId: string, session: LiveSession) {
     const state = session.engine.state();
-    const viewer = state.mode === 'queue' ? state.viewer : state.mode === 'raffle' ? state.lastWinner : null;
+    const viewer = state.mode === 'queue' ? state.viewer : null;
     return viewer ? this.avatar(hostId, viewer) : {};
   }
 

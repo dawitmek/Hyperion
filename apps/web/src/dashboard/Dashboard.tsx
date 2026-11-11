@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import type { StreamStats } from '@hyperion/shared';
 import { api, type Host, type LiveStatus, type Profile } from '../api';
 import { Icon, Logo, type IconName } from '../icons';
-import { Link, navigate, usePath } from '../router';
+import { isDemo, Link, navigate, usePath } from '../router';
 import { Glow } from '../site/Glow';
 import { rememberTheme } from '../theme';
-import { ErrorNotice, Spinner, useError } from '../ui';
+import { ErrorNotice, ProfileBadge, Spinner, useError } from '../ui';
+import { setAutoChatMode, startAutoChat } from './auto-chat-run';
 import { useLiveFeed, type LiveFeed } from './live-feed';
 import { LivePage } from './LivePage';
 import { CommandsPage } from './CommandsPage';
@@ -72,6 +73,9 @@ export function Dashboard() {
   return <Shell host={host} refreshHost={refresh} />;
 }
 
+// The demo opens mid-stream: test mode with auto chat already going. Once per visit, so stopping it sticks.
+let demoStarted = false;
+
 function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<unknown> }) {
   const path = usePath();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -79,6 +83,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
   const [viewer, setViewer] = useState<string | null>(null); // whose profile is open
   const closeViewer = useCallback(() => setViewer(null), []);
   const feed = useLiveFeed(host.overlayToken);
+  useEffect(() => setAutoChatMode(feed.mode?.state), [feed.mode?.state]);
   // A stream that ends while this page is open gets a recap, unless turned off. Its last live totals are kept for it.
   const [recap, setRecap] = useState<{ stats: StreamStats | null } | null>(null);
   const wasLive = useRef(false);
@@ -99,6 +104,11 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
     return () => clearInterval(timer);
   }, []);
   useEffect(() => setMenuOpen(false), [path]);
+  useEffect(() => {
+    if (!isDemo() || demoStarted) return;
+    demoStarted = true;
+    void api<LiveStatus>('POST', '/live/start', { source: 'simulated' }).then((s) => (setStatus(s), startAutoChat()));
+  }, []);
 
   const here = path.replace(/\/$/, '');
   // A section's own pages (like one stream on Analytics) sit under its path.
@@ -154,6 +164,16 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
         <div className="content-glow" aria-hidden="true">
           <Glow />
         </div>
+        {isDemo() && (
+          <div className="demo-banner" role="note">
+            <span>
+              <strong>This is a demo.</strong> The viewers are made up, and nothing you change is saved.
+            </span>
+            <Link href="/signup" className="btn btn-primary btn-sm">
+              Sign up free
+            </Link>
+          </div>
+        )}
         <div className="topbar">
           <span className="crumbs">
             <span>Hyperion</span>
@@ -200,24 +220,90 @@ function ModeToggle({ host, refreshHost }: { host: Host; refreshHost: () => Prom
   );
 }
 
+// The active game profile, and a menu to switch: each profile with the game the companion follows for it.
 function ProfilePicker({ host, refreshHost }: { host: Host; refreshHost: () => Promise<unknown> }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [open, setOpen] = useState(false);
+  const [switching, setSwitching] = useState<string | null>(null);
+  const root = useRef<HTMLDivElement>(null);
   const { error, guard } = useError();
   useEffect(() => void api<Profile[]>('GET', '/profiles').then(setProfiles), [host]);
-  const activate = (id: string) => guard(() => api('POST', `/profiles/${id}/activate`).then(refreshHost))();
+  const activate = (id: string) => {
+    setSwitching(id);
+    return guard(() =>
+      api('POST', `/profiles/${id}/activate`)
+        .then(refreshHost)
+        .then(() => setOpen(false))
+        .finally(() => setSwitching(null)),
+    )();
+  };
+
+  // A click outside or Escape closes the menu; Escape puts focus back on the button.
+  useEffect(() => {
+    if (!open) return;
+    const click = (e: PointerEvent) => !root.current?.contains(e.target as Node) && setOpen(false);
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      root.current?.querySelector<HTMLButtonElement>('.profile-trigger')?.focus();
+    };
+    document.addEventListener('pointerdown', click);
+    document.addEventListener('keydown', key);
+    root.current?.querySelector<HTMLButtonElement>('.profile-option[aria-checked="true"]')?.focus();
+    return () => {
+      document.removeEventListener('pointerdown', click);
+      document.removeEventListener('keydown', key);
+    };
+  }, [open]);
+
+  // Up and down move between profiles in the menu.
+  const arrows = (e: ReactKeyboardEvent) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const options = [...(root.current?.querySelectorAll<HTMLButtonElement>('.profile-option') ?? [])];
+    const at = options.indexOf(document.activeElement as HTMLButtonElement);
+    options[(at + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length]?.focus();
+  };
 
   return (
-    <div className="profile-picker">
-      <label className="row muted">
-        Game profile
-        <select className="input" value={host.profileId} onChange={(e) => activate(e.target.value)}>
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
+    <div className="profile-picker" ref={root}>
+      <button className="profile-trigger" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)} title="Switch game profile">
+        <ProfileBadge name={host.profileName} />
+        <span className="profile-trigger-text">
+          <span className="muted small">Game profile</span>
+          <strong>{host.profileName}</strong>
+        </span>
+        <Icon name="chevron" size={16} />
+      </button>
+      {open && (
+        <div className="profile-menu" role="radiogroup" aria-label="Game profiles" onKeyDown={arrows}>
+          <div className="profile-menu-head muted small">Switch profile. Commands, gifts and crowd mode change with it, even while live.</div>
+          <ul>
+            {profiles.map((p) => (
+              <li key={p.id}>
+                <button
+                  className="profile-option"
+                  role="radio"
+                  aria-checked={p.id === host.profileId}
+                  disabled={switching !== null}
+                  onClick={() => (p.id === host.profileId ? setOpen(false) : void activate(p.id))}
+                >
+                  <ProfileBadge name={p.name} />
+                  <span className="profile-option-text">
+                    <strong>{p.name}</strong>
+                    <span className="muted small">{p.gameProcess ? `Follows ${p.gameProcess}` : 'Any game'}</span>
+                  </span>
+                  {switching === p.id ? <Spinner label="Switching" /> : p.id === host.profileId && <span className="tag teal">Active</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <Link href="/dashboard/profiles" className="profile-menu-manage" onClick={() => setOpen(false)}>
+            <Icon name="plus" size={14} />
+            New or edit profiles
+          </Link>
+        </div>
+      )}
       <ErrorNotice error={error} />
     </div>
   );

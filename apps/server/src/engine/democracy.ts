@@ -5,6 +5,8 @@ import type { Engine, EngineContext } from './types.js';
 // One vote per viewer per window (a new vote replaces the old). Ties go to the command voted first.
 export function createDemocracy(ctx: EngineContext): Engine {
   let window: { endsAt: number; votes: Map<string, string>; boosts: Map<string, number> } | null = null;
+  // The command that won the last vote, with its votes and when, so the overlay can show it fresh each time.
+  let last: { command: string; votes: number; at: number } | null = null;
 
   const tally = () => {
     const counts = new Map<string, number>();
@@ -45,6 +47,7 @@ export function createDemocracy(ctx: EngineContext): Engine {
       window = null;
       const command = ctx.config.commands.find((c) => c.enabled && c.keyword === winner?.keyword);
       if (!winner || !command) return [];
+      last = { command: command.keyword, votes: winner.votes, at: ctx.now() };
       return [decide(ctx, command, `${winner.votes} vote${winner.votes === 1 ? '' : 's'}`, voters)];
     },
 
@@ -52,6 +55,9 @@ export function createDemocracy(ctx: EngineContext): Engine {
       mode: 'democracy',
       tally: tally().sort((a, b) => b.votes - a.votes),
       endsAt: window?.endsAt ?? null,
+      lastCommand: last?.command ?? null,
+      lastVotes: last?.votes ?? null,
+      lastDrawAt: last?.at ?? null,
     }),
   };
 }
