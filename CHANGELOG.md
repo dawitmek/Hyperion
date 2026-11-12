@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-11-12
+
+Real visitor addresses behind Cloudflare.
+
+### Fixed
+- Behind Cloudflare's proxy, Caddy's access log and Hyperion's rate limits saw Cloudflare's addresses instead of each visitor's. Caddy now takes the visitor's address from Cloudflare's `CF-Connecting-IP` header, trusted only from Cloudflare's published ranges so it can't be faked, and passes it on to Hyperion. Servers not behind Cloudflare are unaffected.
+
 ## [0.10.3] - 2026-11-12
 
 Request logs for self-hosted servers.
