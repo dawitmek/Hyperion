@@ -11,6 +11,7 @@ export const hosts = pgTable('hosts', {
   // False only while a new account waits for its confirmation email; accounts on servers without email start true.
   emailVerified: boolean('email_verified').notNull().default(true),
   tiktokUsername: text('tiktok_username'),
+  tiktokAvatar: text('tiktok_avatar'), // the account's TikTok picture as a data: URL, fetched when the username is saved
   overlayToken: text('overlay_token').notNull().unique(),
   actionsPerSecond: integer('actions_per_second').notNull().default(5),
   // Set right after signup creates the first profile; only null inside that transaction.

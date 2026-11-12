@@ -167,3 +167,38 @@ export class TikTokAdapter implements PlatformAdapter {
     this.endListener(reason);
   }
 }
+
+const AVATAR_TYPES = ['image/webp', 'image/jpeg', 'image/png'];
+const AVATAR_MAX_BYTES = 200 * 1024;
+const LOOKUP_TIMEOUT_MS = 5000;
+
+const withTimeout = <T>(promise: Promise<T>) =>
+  Promise.race([promise, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out')), LOOKUP_TIMEOUT_MS))]);
+
+/**
+ * The account's small profile picture, as a data: URL, or null if TikTok doesn't say or can't be reached. Works when the
+ * account isn't live. Kept as data because TikTok's picture links are signed and expire, and so the dashboard never
+ * loads anything from TikTok itself.
+ */
+export async function fetchTiktokAvatar(username: string, signApiKey?: string): Promise<string | null> {
+  try {
+    const web = new TikTokLiveConnection(username, { signApiKey, processInitialData: false }).webClient;
+    const room = (await withTimeout(
+      web.getJsonObjectFromTikTokApi('api-live/user/room/', { ...web.clientParams, uniqueId: username, sourceType: '54' }),
+    )) as { data?: { user?: { uniqueId?: string; avatarThumb?: unknown; avatarMedium?: unknown } } };
+    const user = room.data?.user;
+    if (!user || user.uniqueId?.toLowerCase() !== username.toLowerCase()) return null;
+    const link = [user.avatarThumb, user.avatarMedium].find((u): u is string => typeof u === 'string');
+    const url = link ? new URL(link) : null;
+    // Only TikTok's own image servers.
+    if (!url || url.protocol !== 'https:' || !/(^|\.)tiktokcdn(-[a-z]+)?\.com$/.test(url.hostname)) return null;
+    const res = await fetch(url, { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS), redirect: 'error' });
+    const type = res.headers.get('content-type')?.split(';')[0]?.trim() ?? '';
+    if (!res.ok || !AVATAR_TYPES.includes(type)) return null;
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length > AVATAR_MAX_BYTES) return null;
+    return `data:${type};base64,${bytes.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}

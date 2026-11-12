@@ -44,67 +44,22 @@
 
 ![Six feature previews: crowd mode voting, a gift that presses a key and shows an alert, chat read aloud with a voice effect, viewer levels, switching game profiles, and allowed keys with a focus check](docs/images/features.png)
 
-- **Five crowd modes:**
-  - Anarchy: every command fires.
-  - Democracy: chat votes, and the winner fires when each window closes.
-  - Queue: viewers take turns.
-  - Raffle: every few seconds one random viewer who typed a command wins, and only their command fires. Made for big
-    commands, like spawning a mob.
-  - Gift-only: only gifts press keys.
-
-  You can switch modes mid-stream.
-
-- **Actions:** follows, shares, gifts, like milestones, joins, subscriptions, stickers, chat commands and a
-  viewer's first activity can each trigger an action. An action can:
-  - show an alert
-  - play a built-in sound or your own upload
-  - show your picture or video
-  - read its text aloud
-  - run a command (a key, macro, chain or game action), once per gift in a streak if you like
-  - give points
-
-  Actions can be limited to followers, subscribers, moderators, top gifters or one viewer, with cooldowns and random
-  picks. Gifts also add votes or move the gifter up the queue.
-
-- **Overlay screens:** up to eight overlay addresses, each choosing what it shows, where alerts appear, its size, and
-  whether it plays sound.
-- **Widgets and goals:** each screen can add widgets in any corner or edge:
-  - goal bars
-  - top gift and longest streak
-  - latest follower and latest gift
-  - stream stats (viewers, likes, follows, coins)
-  - chat
-  - a coin jar that fills with coins
-  - fireworks for big gifts
-
-  Goals count a stream's likes, follows, shares, coins or subscriptions, and reaching one can trigger an action.
-
-- **Points:** viewers earn points for chatting, gifts, follows and shares, and spend them on commands that cost
-  points. `!points` shows a balance on the overlay when you allow it.
-- **Text-to-speech:** read prefixed comments, alerts or all of chat. The Recommended mode reads all chat up to 25
-  viewers, then only prefixed comments. The engines are:
-  - Piper voices on your server (optional, for self-hosters)
-  - eSpeak in the overlay
-  - TikTok's own voices, after you sign in to TikTok in the companion (an unofficial TikTok API, so it may break)
-  - your own Google, Azure or ElevenLabs key
-  - the PC's own voices
-
-  Voice effects are available too.
-
-- **Game integrations:** commands sent straight into a game, set up in the companion and run by chat or gifts.
-  Minecraft is the first, Java and Bedrock: spawn mobs, drop TNT or hand out diamonds, with the viewer's name filled
-  in. Starter packs add a set of ready-made actions in one go, and streamers can share their own by copy and paste
-  or as a file, with every command shown before it's added. See the [Minecraft guide](docs/MINECRAFT.md) for setup
-  and sample commands.
-- **Levels and a leaderboard:** viewers earn XP, and level-ups and top players can show on stream.
-- **Key combinations:** a command can press a key or a combination like Ctrl+Shift+E. Set it by pressing the keys.
-- **Game profiles:** each game keeps its own commands, key-press actions and mode. The companion targets the game's
-  process automatically.
-- **Activity and analytics:** a full feed of everything viewers did during a stream (chat, gifts, joins, follows,
-  shares, likes, subscriptions and stickers), and an Analytics page with trends across streams. It covers new and returning viewers,
-  coins, how often each command fired or was refused, peak moments, gifts, and vote and queue stats.
-- **Test mode:** type as a pretend viewer and watch the keys press before you go live.
-- **Appearance:** color themes for the dashboard, with System, Light or Dark. The companion follows your choice.
+- **Five crowd modes:** Anarchy (every command fires), Democracy (chat votes), Queue (viewers take turns), Raffle
+  (a random viewer's command wins) and Gift-only. Switch any time, even mid-stream.
+- **Alerts:** follows, gifts, shares, likes, joins, subscriptions, stickers and commands can show an alert, play a
+  sound, show your picture or video, read text aloud, run a command or give points.
+- **Overlay editor:** up to eight overlays, each with its own widgets (goals, top gifts, latest follower, stream stats,
+  chat, a coin jar, fireworks), placed and sized by dragging, with undo.
+- **Game profiles:** each game keeps its own commands and mode, and can follow several programs, like Minecraft Java
+  and Bedrock. Ready-made profiles for popular games come with their controls.
+- **Game integrations:** commands sent straight into Minecraft (Java and Bedrock), with shareable starter packs. See
+  the [Minecraft guide](docs/MINECRAFT.md).
+- **Text-to-speech:** read chat, prefixed comments or alerts with Piper, eSpeak, TikTok's voices, your own Google,
+  Azure or ElevenLabs key, or the PC's voices.
+- **Points, levels and a leaderboard:** viewers earn points and XP, and spend points on commands.
+- **Activity and analytics:** a live feed of everything viewers do, and trends across your streams.
+- **Test mode:** stream to yourself with auto chat and watch the keys press before you go live.
+- **Setup guide:** a welcome window, a checklist and a short tour get a new account ready.
 
 ![The Analytics page: viewers, peak viewers, interactors, coins, chat messages and key presses per stream, each with a trend line, above charts of viewers, interactors and coins across your streams](docs/images/analytics.png)
 
@@ -167,72 +122,6 @@ Hyperion is then on http://127.0.0.1:3000.
 - **Signups:** open until you set `SIGNUPS_ENABLED=false`. Optional email (any SMTP service) adds email confirmation
   and password reset.
 - **More:** the step-by-step guide, settings, updates and backups are in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
-
-## Development
-
-You need Node 22 or later, and Docker for Postgres. The companion also needs Rust and the
-[Tauri prerequisites](https://tauri.app/start/prerequisites/).
-
-```sh
-npm install
-cp .env.example .env                  # then set SECRETS_KEY: openssl rand -base64 32
-npm run dev                           # Postgres (Docker) + server + dashboard on http://localhost:5173
-npm run tauri dev -w apps/companion   # the companion, in another terminal
-npm test                              # unit and end-to-end tests (needs the database from npm run dev or db:up)
-npm run typecheck
-```
-
-What `npm run dev` starts:
-
-- Postgres on 127.0.0.1:5432.
-- The server on the `PORT` from `.env` (default 3000). It applies migrations on start.
-- The dashboard on http://localhost:5173. It forwards `/api` and `/ws` to the server.
-
-If another program uses port 3000, set `PORT=3001` in `.env`. To start the server and dashboard separately, use
-`npm run dev:server` and `npm run dev:web`.
-
-TikTok and cloud voices that fail fall back to Piper, and without Piper they and the Piper engine fall back to eSpeak.
-To use Piper in development, install the `piper-tts` Python
-package and download a voice (an `.onnx` model and its `.onnx.json`) from
-[piper-voices](https://huggingface.co/rhasspy/piper-voices). Then set `PIPER_BIN` and `PIPER_VOICES_DIR` in `.env`.
-The `piper-tts` package works on macOS; the older standalone macOS build is missing its libraries.
-
-```sh
-uv venv .local/piper-venv && uv pip install --python .local/piper-venv/bin/python piper-tts
-# .env
-PIPER_BIN=/absolute/path/to/Hyperion/.local/piper-venv/bin/piper
-PIPER_VOICES_DIR=/absolute/path/to/voices
-```
-
-After changing `apps/server/src/db/schema.ts`, run `npm run db:generate -w apps/server` to create a migration.
-
-For production, `npm run build && npm start` serves everything from one address.
-
-### Project layout
-
-| Path                    | What                                                                                                                                                                               |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server`           | Fastify and WebSockets: TikTok connection, mode engine, API. Serves the built web app in production.                                                                               |
-| `apps/web`              | React and Vite: the public site (`/`, `/features`, `/how-it-works`, `/self-hosting`, `/faq`, `/download`), the dashboard (`/dashboard`) and the stream overlay (`/overlay/:token`) |
-| `apps/companion`        | Tauri 2 desktop app: presses allowed keys in the host's game on Windows and macOS                                                                                                  |
-| `packages/shared`       | Protocol types shared by the server, web app and companion                                                                                                                         |
-| `packages/theme`        | Design system (colours, type, components) shared by the web app and companion                                                                                                      |
-| `docker/`, `Dockerfile` | Self-hosting (server and Postgres)                                                                                                                                                 |
-
-### Releasing the companion
-
-Pushing a tag that starts with `companion-v` runs
-[`.github/workflows/release-companion.yml`](.github/workflows/release-companion.yml):
-
-```sh
-git tag companion-v0.3.0 && git push origin companion-v0.3.0
-```
-
-The workflow builds a Windows installer (`.exe`) and a universal macOS disk image (`.dmg`), and publishes them as a
-GitHub release once both have built. The site's Download page always offers the newest published release.
-
-To build an installer locally, run `npm run tauri build -w apps/companion`. It's saved in
-`apps/companion/src-tauri/target/release/bundle`.
 
 ## Built with Claude
 

@@ -220,6 +220,8 @@ export async function settingsRoutes(app: FastifyInstance) {
         ...tts,
         ...points,
         ...(tiktokUsername !== undefined && { tiktokUsername: tiktokUsername?.replace(/^@/, '') ?? null }),
+        // A new username brings its picture with it, or none if TikTok doesn't answer.
+        ...(tiktokUsername !== undefined && { tiktokAvatar: tiktokUsername ? await app.tiktokAvatar(tiktokUsername.replace(/^@/, '')) : null }),
         ...(actionsPerSecond !== undefined && { actionsPerSecond }),
         ...(progression !== undefined && { progression }),
         ...(levelGating !== undefined && { levelGating }),

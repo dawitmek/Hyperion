@@ -1,0 +1,1 @@
+ALTER TABLE "hosts" ADD COLUMN "tiktok_avatar" text;

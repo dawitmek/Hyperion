@@ -167,7 +167,23 @@ function TiktokField({ refreshHost }: { refreshHost: () => Promise<unknown> }) {
         if (name.replace(/^@/, '')) void guard(() => api('PATCH', '/settings', { tiktokUsername: name.trim() }).then(refreshHost))();
       }}
     >
-      <input className="input" value={name} maxLength={25} placeholder="@yourname" aria-label="TikTok username" onChange={(e) => setName(e.target.value.replace(/[^A-Za-z0-9_.@]/g, ''))} />
+      <input
+        className="input"
+        value={name}
+        maxLength={25}
+        placeholder="@yourname"
+        aria-label="TikTok username"
+        // Not a login: keep the browser and password managers from offering to fill it. Bitwarden goes by the word
+        // "username" and doesn't always honour data-bwignore, but it never fills a search field.
+        type="search"
+        autoComplete="off"
+        spellCheck={false}
+        data-bwignore="true"
+        data-1p-ignore="true"
+        data-lpignore="true"
+        data-form-type="other"
+        onChange={(e) => setName(e.target.value.replace(/[^A-Za-z0-9_.@]/g, ''))}
+      />
       <button className="btn btn-primary btn-sm">Save</button>
       <ErrorNotice error={error} />
     </form>

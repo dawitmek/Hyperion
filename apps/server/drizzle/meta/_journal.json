@@ -456,6 +456,13 @@
       "when": 1794455363153,
       "tag": "0064_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1794501187669,
+      "tag": "0065_tiktok_avatar",
+      "breakpoints": true
     }
   ]
 }

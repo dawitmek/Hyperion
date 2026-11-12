@@ -38,8 +38,8 @@ function noise(ctx: AudioContext, out: AudioNode, length: number) {
   source.start(t);
 }
 
-// volume: 0 to 1, the host's volume for this sound.
-export function playSound(ctx: AudioContext, sound: AlertSound, volume = 1) {
+// volume: 0 to 1, the host's volume for this sound. Returns the sound's output: disconnect it to cut the sound off.
+export function playSound(ctx: AudioContext, sound: AlertSound, volume = 1): GainNode {
   const out = ctx.createGain();
   out.gain.value = volume;
   out.connect(ctx.destination);
@@ -64,4 +64,5 @@ export function playSound(ctx: AudioContext, sound: AlertSound, volume = 1) {
       noise(ctx, out, 0.7);
       break;
   }
+  return out;
 }

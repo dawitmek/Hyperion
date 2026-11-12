@@ -47,7 +47,14 @@ beforeAll(async () => {
   };
   app = await buildApp(
     { databaseUrl, port: 0, host: '127.0.0.1', eulerApiKey: undefined, production: false, secureCookies: false, piperBin: undefined, piperVoicesDir: undefined, tiktokSessionId: undefined, secretsKey, signupsEnabled: true },
-    { logger: false, createTikTok: fakeTikTok, fetch: fakeFetch, onRoute: (route) => routes.push(route) },
+    {
+      logger: false,
+      createTikTok: fakeTikTok,
+      // A picture for every username but one TikTok doesn't know.
+      tiktokAvatar: async (username) => (username === 'unknown_user' ? null : `data:image/png;base64,${Buffer.from(username).toString('base64')}`),
+      fetch: fakeFetch,
+      onRoute: (route) => routes.push(route),
+    },
   );
   await app.listen({ port: 0, host: '127.0.0.1' });
   baseWs = `ws://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -548,7 +555,7 @@ describe('live pipeline (simulated source)', () => {
     expect(await overlay.next()).toMatchObject({ type: 'mode', state: { mode: 'anarchy' } });
 
     await api(cookie, 'POST', '/api/live/simulate', { viewer: 'alice', text: 'A' });
-    expect(await companion.next()).toMatchObject({ type: 'action', action: { key: 'KeyA', holdMs: 300 } });
+    expect(await companion.next()).toMatchObject({ type: 'action', action: { key: 'KeyA', holdMs: 500 } });
     expect(await overlay.next()).toMatchObject({ type: 'command', viewer: 'alice', keyword: 'a' });
 
     // Same viewer within the 1s cooldown: nothing. Another viewer: fires.
@@ -1547,6 +1554,19 @@ describe('media and actions', () => {
     expect((await api(cookie, 'GET', '/api/actions')).json().find((a: any) => a.id === follow.id).sound).toBeNull();
     await api(cookie, 'PATCH', '/api/settings', { hiddenSounds: [] });
     expect((await api(cookie, 'GET', '/api/auth/me')).json().hiddenSounds).toEqual([]);
+  });
+
+  it('fetches the TikTok picture with the username', async () => {
+    const { cookie } = await signUp();
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().tiktokAvatar).toBeNull();
+    await api(cookie, 'PATCH', '/api/settings', { tiktokUsername: '@streamer' });
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().tiktokAvatar).toBe(`data:image/png;base64,${Buffer.from('streamer').toString('base64')}`);
+    // A username TikTok has no picture for, and no username, clear it.
+    await api(cookie, 'PATCH', '/api/settings', { tiktokUsername: 'unknown_user' });
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().tiktokAvatar).toBeNull();
+    await api(cookie, 'PATCH', '/api/settings', { tiktokUsername: 'streamer' });
+    await api(cookie, 'PATCH', '/api/settings', { tiktokUsername: null });
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().tiktokAvatar).toBeNull();
   });
 
   it('keeps the setup guide and its steps done', async () => {

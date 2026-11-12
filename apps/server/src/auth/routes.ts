@@ -25,11 +25,11 @@ import type { Mail } from './mail.js';
 import { endAllSessions, endSession, requireHost, SESSION_COOKIE, startSession } from './session.js';
 
 const DEFAULT_COMMANDS = [
-  { keyword: 'w', key: 'KeyW', holdMs: 300 },
-  { keyword: 'a', key: 'KeyA', holdMs: 300 },
-  { keyword: 's', key: 'KeyS', holdMs: 300 },
-  { keyword: 'd', key: 'KeyD', holdMs: 300 },
-  { keyword: 'jump', key: 'Space', holdMs: 300 },
+  { keyword: 'w', key: 'KeyW', holdMs: 500 },
+  { keyword: 'a', key: 'KeyA', holdMs: 500 },
+  { keyword: 's', key: 'KeyS', holdMs: 500 },
+  { keyword: 'd', key: 'KeyD', holdMs: 500 },
+  { keyword: 'jump', key: 'Space', holdMs: 500 },
   { keyword: 'run', key: 'Shift+KeyW', holdMs: 1000 }, // running needs a longer hold than a step to get anywhere
 ].map((c) => ({ ...c, cooldownMs: 1000 }));
 
@@ -354,6 +354,7 @@ export async function authRoutes(app: FastifyInstance) {
         id: hosts.id,
         email: hosts.email,
         tiktokUsername: hosts.tiktokUsername,
+        tiktokAvatar: hosts.tiktokAvatar,
         overlayToken: hosts.overlayToken,
         actionsPerSecond: hosts.actionsPerSecond,
         progression: hosts.progression,

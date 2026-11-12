@@ -77,25 +77,22 @@ export function SiteLayout({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => setMenuOpen(false), [path]);
 
-  const download = (
-    <Link href={DOWNLOAD.href} className="s-btn s-btn-line s-btn-sm" aria-current={path === DOWNLOAD.href ? 'page' : undefined}>
-      <Icon name="download" size={16} />
-      {DOWNLOAD.label}
-    </Link>
+  const github = (
+    <a href={GITHUB_URL} className="s-btn s-btn-line s-btn-sm">
+      <Icon name="github" size={16} />
+      GitHub
+    </a>
   );
   const actions = signedIn ? (
     <>
-      {download}
+      {github}
       <Link href="/dashboard" className="s-btn s-btn-solid s-btn-sm">
         Open dashboard
       </Link>
     </>
   ) : (
     <>
-      {download}
-      <Link href="/demo" className="s-text-link">
-        Try the demo
-      </Link>
+      {github}
       <Link href="/login" className="s-text-link">
         Log in
       </Link>
@@ -132,17 +129,16 @@ export function SiteLayout({ children }: { children: ReactNode }) {
               {p.label}
             </Link>
           ))}
-          <Link href={DOWNLOAD.href} className="s-btn s-btn-line">
-            <Icon name="download" size={18} />
-            Download the companion
-          </Link>
+          <a href={GITHUB_URL} className="s-btn s-btn-line">
+            <Icon name="github" size={18} />
+            GitHub
+          </a>
           {signedIn ? (
             <Link href="/dashboard" className="s-btn s-btn-solid">
               Open dashboard
             </Link>
           ) : (
             <>
-              <Link href="/demo">Try the demo</Link>
               <Link href="/login">Log in</Link>
               <Link href="/signup" className="s-btn s-btn-solid">
                 Sign up
@@ -183,6 +179,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
               ))}
               <a href={GITHUB_URL}>GitHub</a>
             </nav>
+            <span className="s-version">Hyperion v{__APP_VERSION__}</span>
           </footer>
         </div>
       </section>

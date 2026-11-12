@@ -1,16 +1,17 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { QUEUE_JOIN, type Mode } from '@hyperion/shared';
 import { Icon } from '../icons';
 
 // A short looping scene of how a crowd mode plays: chat on one side, what reaches the game on the other. Made-up
 // viewers, a step every TICK_MS. It's only a picture; the words beside it say the same thing.
 const TICK_MS = 850;
+const MODE_TICK_MS: Partial<Record<Mode, number>> = { raffle: 650 }; // entries and the win go by quicker
 
 type Msg = { who: string; text: string; state?: 'fired' | 'ignored' | 'gift' };
 type Scene = { chat: Msg[]; key: string | null; note: string; side?: ReactNode };
 
 const VIEWERS: Record<string, string> = { mia: 'pink', jay: 'sky', sam: 'teal', leo: 'orange', ava: 'violet' };
-const LOOP: Record<Mode, number> = { anarchy: 8, democracy: 11, queue: 12, raffle: 11, gift: 9 };
+const LOOP: Record<Mode, number> = { anarchy: 8, democracy: 11, queue: 12, raffle: 12, gift: 9 }; // raffle: 5 entries, 3 spinning, 4 won
 
 function anarchy(t: number): Scene {
   const said: Msg[] = [
@@ -103,6 +104,11 @@ function queue(t: number): Scene {
   };
 }
 
+// Entries drop into the draw, a reel spins and slows onto one of them, and only that viewer's command fires.
+const RAFFLE_SPINS = 3; // times round the entries before the reel lands
+const RAFFLE_COLLECT = 5;
+const RAFFLE_SPIN = 3; // ticks the reel spins for, long enough for its 1.7 s slow-down
+
 function raffle(t: number): Scene {
   const entries: Msg[] = [
     { who: 'mia', text: 'spawn' },
@@ -111,25 +117,47 @@ function raffle(t: number): Scene {
     { who: 'leo', text: 'spawn' },
     { who: 'ava', text: 'jump' },
   ];
-  const collecting = t < entries.length;
-  const drawing = !collecting && t < entries.length + 3;
   const winner = 2; // sam
-  const chat = entries.slice(0, Math.min(t + 1, entries.length));
-  const lit = collecting ? -1 : drawing ? (t * 3) % entries.length : winner;
+  const phase = t < RAFFLE_COLLECT ? 'collect' : t < RAFFLE_COLLECT + RAFFLE_SPIN ? 'spin' : 'won';
+  const shown = entries.slice(0, Math.min(t + 1, entries.length));
+  const chat = shown.map((m, i): Msg => (phase === 'won' ? { ...m, state: i === winner ? 'fired' : 'ignored' } : m));
+  // The reel: the entries a few times over, landing on the winner in the last round.
+  const strip = Array.from({ length: RAFFLE_SPINS + 1 }, () => entries).flat();
+  const land = RAFFLE_SPINS * entries.length + winner;
   return {
     chat,
-    key: !collecting && !drawing ? entries[winner]!.text : null,
-    note: collecting ? 'Collecting entries' : drawing ? 'Drawing…' : '@sam wins the draw',
-    side: (
-      <div className="demo-entries">
-        {chat.map((m, i) => (
-          <span key={i} className={`demo-entry ${i === lit ? 'lit' : ''} ${!collecting && !drawing && i === winner ? 'won' : ''}`}>
-            <Avatar who={m.who} />
-            {m.text}
-          </span>
-        ))}
-      </div>
-    ),
+    key: phase === 'won' ? entries[winner]!.text : null,
+    note: phase === 'collect' ? `${shown.length} in the draw` : phase === 'spin' ? 'Drawing…' : '@sam wins the draw',
+    side:
+      phase === 'collect' ? (
+        <div className="demo-drum">
+          {shown.map((m, i) => (
+            <span key={i} className="demo-ticket">
+              <Avatar who={m.who} />
+              {m.text}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <div className={`demo-reel ${phase}`} style={{ '--land': land } as CSSProperties}>
+          <span className="demo-reel-pointer" />
+          <div className="demo-reel-strip">
+            {strip.map((m, i) => (
+              <span key={i} className={`demo-reel-item ${phase === 'won' && i === land ? 'won' : ''}`}>
+                <Avatar who={m.who} />
+                {m.text}
+              </span>
+            ))}
+          </div>
+          {phase === 'won' && (
+            <span className="demo-confetti">
+              {Array.from({ length: 8 }, (_, i) => (
+                <i key={i} style={{ '--i': i } as CSSProperties} />
+              ))}
+            </span>
+          )}
+        </div>
+      ),
   };
 }
 
@@ -160,7 +188,7 @@ export function ModeDemo({ mode }: { mode: Mode }) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     setTick(0);
-    const timer = setInterval(() => setTick((n) => n + 1), TICK_MS);
+    const timer = setInterval(() => setTick((n) => n + 1), MODE_TICK_MS[mode] ?? TICK_MS);
     return () => clearInterval(timer);
   }, [mode]);
   const t = tick % LOOP[mode];

@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ACTION_TRIGGERS, ALERT_SOUNDS, BUILT_IN_MEDIA, AUDIENCES, DEFAULT_ALERT_STYLE, GOAL_METRICS, type GoalMetric, MAX_KEY_REPEATS, MAX_MEDIA_TOTAL_BYTES, type AlertFx, type AlertSound, type AlertStyle, type ServerToOverlay } from '@hyperion/shared';
 import { api, uploadMedia, type Action, type ActionTrigger, type Audience, type Command, type Goal, type Host, type MediaItem, type Screen } from '../api';
-import { playSound } from '../sounds';
 import { Card, cleanTyped, closeOnBackdrop, ConfirmButton, ErrorNotice, HueIcon, Scrubber, useError, type Hue } from '../ui';
 import { Icon, type IconName } from '../icons';
 import { alertPlace, useClearOfWidgets } from '../Overlay';
@@ -14,7 +13,7 @@ import { AlertLookEditor } from './AlertLookEditor';
 import { GiftBus, usePreview } from '../overlay-widgets';
 import { canvasStyle, FadedWidgets, METRIC_LABELS, stageProps, useStageFit } from './OverlayPage';
 import { alertHandleCorner, dragAlert, dragAlertSize } from './alert-drag';
-import { playAlertPreview, previewAudio } from './audio';
+import { playAlertPreview, playingPreview, previewFile, previewSound } from './audio';
 import { Link } from '../router';
 import type { PageProps } from './Dashboard';
 
@@ -1049,15 +1048,10 @@ function AlertPreview({ draft, media, compact }: { draft: Draft; media: MediaIte
 }
 
 function PreviewSound({ value, volumes }: { value: string; volumes: Host['soundVolumes'] }) {
-  const audio = useRef<HTMLAudioElement | null>(null);
   if (!value) return null;
   const play = () => {
-    if (value.startsWith('file:')) {
-      audio.current?.pause();
-      audio.current = new Audio(`/media/${value.slice(5)}`);
-      audio.current.volume = (volumes[value.slice(5)] ?? 100) / 100;
-      void audio.current.play();
-    } else playSound(previewAudio(), value as AlertSound, (volumes[value as AlertSound] ?? 100) / 100);
+    if (value.startsWith('file:')) previewFile(value.slice(5), (volumes[value.slice(5)] ?? 100) / 100);
+    else previewSound(value as AlertSound, (volumes[value as AlertSound] ?? 100) / 100);
   };
   return (
     <button type="button" className="btn btn-ghost btn-sm" onClick={play} aria-label="Play sound">
@@ -1270,7 +1264,10 @@ function MediaTile({
       <div className="media-preview">
         {m.kind === 'image' && <img src={`/media/${m.id}`} alt="" loading="lazy" />}
         {m.kind === 'video' && <video src={`/media/${m.id}`} muted loop playsInline onMouseEnter={(e) => void e.currentTarget.play()} onMouseLeave={(e) => e.currentTarget.pause()} />}
-        {m.kind === 'audio' && <audio src={`/media/${m.id}`} controls preload="none" />}
+        {m.kind === 'audio' && <audio src={`/media/${m.id}`} controls preload="none" onPlay={(e) => {
+              const el = e.currentTarget;
+              playingPreview(() => el.pause(), el);
+            }} />}
         <input
           className="media-check"
           type="checkbox"

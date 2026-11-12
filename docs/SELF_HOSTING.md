@@ -78,7 +78,7 @@ The first build takes a few minutes, longer with Piper voices. Either way, datab
 startup.
 
 The published image is the newest release (`latest`). To stay on one release until you choose to update, add
-`HYPERION_VERSION=0.8.0` (or another version from the
+`HYPERION_VERSION=0.10.1` (or another version from the
 [image's page](https://github.com/users/dawitmek/packages/container/package/hyperion)) to `.env`.
 
 ### 5. Check it's running

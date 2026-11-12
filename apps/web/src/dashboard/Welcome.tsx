@@ -108,6 +108,13 @@ function WelcomeDialog({ host, refreshHost }: HostProps) {
                 autoFocus
                 spellCheck={false}
                 autoComplete="off"
+                // Not a login: keep password managers from offering to fill it. Bitwarden goes by the word "username"
+                // and doesn't always honour data-bwignore, but it never fills a search field.
+                type="search"
+                data-bwignore="true"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-form-type="other"
                 placeholder="yourname"
                 onChange={(e) => (setName(e.target.value.replace(/[^A-Za-z0-9_.]/g, '')), setError(null))}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), next())}
@@ -116,20 +123,22 @@ function WelcomeDialog({ host, refreshHost }: HostProps) {
           </label>
           <div className="welcome-next">
             <span className="muted small">Up next</span>
-            <ul>
+            <ol>
               <li>
                 <HueIcon name="cube" hue="indigo" size="sm" />
                 Your game
               </li>
               <li>
+                <Icon name="chevron" size={14} />
                 <HueIcon name="crowd" hue="orange" size="sm" />
                 How chat plays
               </li>
               <li>
+                <Icon name="chevron" size={14} />
                 <HueIcon name="sun" hue="amber" size="sm" />
                 Your look
               </li>
-            </ul>
+            </ol>
           </div>
         </div>
       ),

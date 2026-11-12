@@ -77,6 +77,7 @@ export const host: Host = {
   id: 'demo',
   email: 'demo@hyperion.local',
   tiktokUsername: 'hyperion.demo',
+  tiktokAvatar: null,
   overlayToken: MAIN_TOKEN,
   actionsPerSecond: 5,
   progression: true,

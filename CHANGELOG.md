@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-11-12
+
+Your TikTok picture in the dashboard, a tidier landing page, and setup polish.
+
+### Added
+- Your TikTok profile picture shows beside your name at the bottom of the dashboard's sidebar, fetched when you save your TikTok username. It's saved with your account, so it keeps working, and your browser never loads anything from TikTok.
+- The version number, under the logo in the dashboard and at the foot of every page of the site.
+
+### Changed
+- The site's header links to GitHub in place of Download and no longer has Try the demo. The download button moved from the top of the home page to its setup steps.
+- New commands, and the starter commands of new accounts, press their key for 500 ms instead of 300 ms. Commands already made keep their own.
+- In the welcome window, the raffle mode's animation shows entries going into a draw, a reel spinning onto the winner, and only the winner's command going through. The "Up next" list has arrows between its steps.
+
+### Fixed
+- Previewing a sound on the Alerts page stops the one already playing, instead of playing over it.
+- Password managers such as Bitwarden no longer offer to fill the TikTok username field in the welcome window and the setup checklist.
+
 ## [0.10.1] - 2026-11-12
 
 A companion safety fix.
@@ -212,7 +229,8 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/dawitmek/Hyperion/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/dawitmek/Hyperion/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/dawitmek/Hyperion/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/dawitmek/Hyperion/compare/v0.8.0...v0.9.0

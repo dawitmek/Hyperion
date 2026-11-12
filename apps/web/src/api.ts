@@ -80,6 +80,7 @@ export interface Host {
   id: string;
   email: string;
   tiktokUsername: string | null;
+  tiktokAvatar: string | null; // the TikTok account's picture, as a data: URL
   overlayToken: string;
   actionsPerSecond: number;
   progression: boolean;

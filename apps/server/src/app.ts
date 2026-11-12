@@ -14,7 +14,7 @@ import { hosts } from './db/schema.js';
 import { Hub } from './gateway/hub.js';
 import { SessionManager } from './live/session-manager.js';
 import { Stats } from './leaderboard/stats.js';
-import { TikTokAdapter } from './platforms/tiktok.js';
+import { fetchTiktokAvatar, TikTokAdapter } from './platforms/tiktok.js';
 import type { PlatformAdapter } from './platforms/types.js';
 import { authRoutes } from './auth/routes.js';
 import { settingsRoutes } from './settings/routes.js';
@@ -56,6 +56,7 @@ declare module 'fastify' {
     mail: { mailer: Mailer; publicUrl: string } | null;
     loginLimiter: LoginLimiter;
     emailCooldown: EmailCooldown;
+    tiktokAvatar: (username: string) => Promise<string | null>;
   }
 }
 
@@ -63,6 +64,8 @@ interface Options {
   logger?: boolean;
   // Tests swap in a fake so they never contact TikTok.
   createTikTok?: (username: string) => PlatformAdapter;
+  // Tests swap in a fake so they never contact TikTok for a profile picture.
+  tiktokAvatar?: (username: string) => Promise<string | null>;
   // Tests swap in a fake so they never contact a cloud TTS provider.
   fetch?: typeof fetch;
   // Tests swap in a fake that records emails instead of sending them.
@@ -118,6 +121,7 @@ export async function buildApp(config: Config, options: Options = {}) {
     new SessionManager(db, hub, stats, speech, secrets, createTikTok, (err) => app.log.warn({ err }, 'Could not record stream events'), debug),
   );
   app.decorate('tiktokAccount', tiktokAccount);
+  app.decorate('tiktokAvatar', options.tiktokAvatar ?? ((username: string) => fetchTiktokAvatar(username, config.eulerApiKey)));
   tiktokAccount.start();
   app.addHook('onClose', async () => {
     tiktokAccount.stop();

@@ -85,6 +85,10 @@
 .h-steps { padding: 100px 0; background: var(--brand); color: #fff; }
 .h-steps-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 56px; align-items: start; }
 .h-steps h2 { max-width: 10ch; }
+.h-steps-head { display: grid; justify-items: start; gap: 32px; }
+.h-btn-light { background: #fff; color: var(--brand) !important; box-shadow: 0 5px 0 rgba(7, 8, 12, 0.35); }
+.h-btn-light:hover { background: #eef1ff; }
+.h-btn-light:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(7, 8, 12, 0.35); }
 .h-steps ol { margin: 0; padding: 0; list-style: none; counter-reset: step; }
 .h-steps li { display: grid; grid-template-columns: 64px 1fr; column-gap: 20px; padding: 26px 0; border-top: 2px solid rgba(255, 255, 255, 0.28);
   counter-increment: step; }

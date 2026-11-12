@@ -467,7 +467,7 @@ export const DEFAULT_LIVE_LAYOUT: LiveLayout = { main: ['stream', 'commands', 'f
 
 // What a new command starts with, until the host sets their own.
 export type CommandDefaults = { holdMs: number; cooldownMs: number; minLevel: number; cost: number };
-export const DEFAULT_COMMAND: CommandDefaults = { holdMs: 300, cooldownMs: 1000, minLevel: 1, cost: 0 };
+export const DEFAULT_COMMAND: CommandDefaults = { holdMs: 500, cooldownMs: 1000, minLevel: 1, cost: 0 };
 
 // Template placeholders: {viewer}, {count}, {gift}, {diamonds}, {total} (likes), {months}, {text} (command), {goal}, {target}.
 

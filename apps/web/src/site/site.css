@@ -312,6 +312,7 @@
 .s-cta-buttons .s-btn-line { background: #07080c; border-color: #07080c; }
 .s-cta-note { margin-top: 14px; font-size: 14px; color: #c9ccd8; }
 .s-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px 30px; padding: 110px 0 36px; font-size: 14px; }
+.s-version { flex-basis: 100%; font-size: 12px; color: #8a8da3; text-align: center; }
 .s-footer nav { display: flex; flex-wrap: wrap; gap: 8px 28px; }
 .s-footer nav a { text-decoration: none; color: #d7d9e4; }
 .s-footer nav a:hover { color: #fff; }

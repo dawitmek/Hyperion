@@ -57,10 +57,6 @@ export function HomePage() {
                 <Link href="/demo" className="h-btn h-btn-line">
                   Try the demo
                 </Link>
-                <Link href="/download" className="h-btn h-btn-line">
-                  <Icon name="download" size={18} />
-                  Download for Windows or Mac
-                </Link>
               </div>
             </div>
             <LiveScene />
@@ -97,7 +93,13 @@ export function HomePage() {
 
         <section className="h-steps" aria-labelledby="steps-title">
           <div className="s-wrap h-steps-grid">
-            <h2 id="steps-title">Set up once, then just go live</h2>
+            <div className="h-steps-head">
+              <h2 id="steps-title">Set up once, then just go live</h2>
+              <Link href="/download" className="h-btn h-btn-light">
+                <Icon name="download" size={18} />
+                Download for Windows or Mac
+              </Link>
+            </div>
             <ol>
               {STEPS.map((s) => (
                 <li key={s.title}>

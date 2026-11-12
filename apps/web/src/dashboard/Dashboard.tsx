@@ -141,7 +141,10 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
         {/* The logo keeps you in the app; the public site is reached by its own address. */}
         <Link href="/dashboard" className="brand">
           <Logo />
-          Hyperion
+          <span className="brand-name">
+            Hyperion
+            <span className="brand-version">v{__APP_VERSION__}</span>
+          </span>
         </Link>
         {SECTIONS.map((group, i) => (
           <div key={i} className="nav-group">
@@ -159,7 +162,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
         <SetupNavItem host={host} refreshHost={refreshHost} />
         <div className="sidebar-account">
           <span className="avatar" aria-hidden="true">
-            {(host.tiktokUsername ?? host.email)[0]!.toUpperCase()}
+            {host.tiktokAvatar ? <img src={host.tiktokAvatar} alt="" /> : (host.tiktokUsername ?? host.email)[0]!.toUpperCase()}
           </span>
           <span>
             <strong>{host.tiktokUsername ? host.tiktokUsername.replace(/^@/, '') : host.email}</strong>
