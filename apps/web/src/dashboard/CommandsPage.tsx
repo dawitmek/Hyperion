@@ -1,15 +1,15 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
-import { BLOCKED_COMBOS, MAX_CHAIN_DELAY_MS, MAX_CHAIN_STEPS, MAX_LEVEL, type ChainStep } from '@hyperion/shared';
+import { BLOCKED_COMBOS, DEFAULT_COMMAND, MAX_CHAIN_DELAY_MS, MAX_CHAIN_STEPS, MAX_LEVEL, type ChainStep } from '@hyperion/shared';
 import { api, type Command, type Host } from '../api';
 import { Icon, type IconName } from '../icons';
-import { Card, cleanTyped, ConfirmButton, ErrorNotice, KeyCapture, keyLabel, NumberCell, Seg, useError } from '../ui';
+import { Card, cleanTyped, closeOnBackdrop, ConfirmButton, ErrorNotice, KeyCapture, keyLabel, NumberCell, Seg, useError } from '../ui';
 import type { PageProps } from './Dashboard';
 import { ModeDetails, ModeTiles } from './ModePicker';
 
 export function CommandsPage({ host, refreshHost }: PageProps) {
   return (
     <div className="stack">
-      <CommandsCard host={host} />
+      <CommandsCard host={host} refreshHost={refreshHost} />
       <ModeCard host={host} refreshHost={refreshHost} />
     </div>
   );
@@ -17,7 +17,8 @@ export function CommandsPage({ host, refreshHost }: PageProps) {
 
 type Editable = Pick<Command, 'keyword' | 'key' | 'macro' | 'gameAction' | 'chain' | 'holdMs' | 'cooldownMs' | 'minLevel' | 'cost'> & { id?: string };
 
-const emptyCommand: Editable = { keyword: '', key: 'KeyA', macro: null, gameAction: null, chain: null, holdMs: 300, cooldownMs: 1000, minLevel: 1, cost: 0 };
+// A new command: a key press, with the host's defaults for the rest.
+const emptyCommand = (host: Host): Editable => ({ keyword: '', key: 'KeyA', macro: null, gameAction: null, chain: null, ...(host.commandDefaults ?? DEFAULT_COMMAND) });
 
 // The map is the default; the tiles were the first look, kept for those who like them.
 type View = 'map' | 'deck' | 'list';
@@ -36,11 +37,12 @@ function savedView(): View {
 const HOLD_MS = 450; // pressing a command this long picks it, for batch editing
 const SEARCH_FROM = 9; // a shorter list is quicker to scan than to search
 
-function CommandsCard({ host }: { host: Host }) {
+function CommandsCard({ host, refreshHost }: { host: Host; refreshHost: () => Promise<unknown> }) {
   const gated = host.progression && host.levelGating;
   const [commands, setCommands] = useState<Command[]>([]);
   const [open, setOpen] = useState<string | null>(null); // a command's id, or 'new' while adding one
-  const [draft, setDraft] = useState(emptyCommand);
+  const [draft, setDraft] = useState(() => emptyCommand(host));
+  const [editingDefaults, setEditingDefaults] = useState(false);
   const [search, setSearch] = useState('');
   const [view, setView] = useState(savedView);
   const { error, guard } = useError();
@@ -61,11 +63,11 @@ function CommandsCard({ host }: { host: Host }) {
   const remove = (id: string) => guard(() => api('DELETE', `/commands/${id}`).then(() => (setOpen(null), load())))();
   const add = (e: FormEvent) => {
     e.preventDefault();
-    guard(() => api('POST', '/commands', draft).then(() => (setOpen(null), setDraft(emptyCommand), load())))();
+    guard(() => api('POST', '/commands', draft).then(() => (setOpen(null), setDraft(emptyCommand(host)), load())))();
   };
   const startAdding = () => {
     setPicked(new Set());
-    setDraft(emptyCommand);
+    setDraft(emptyCommand(host));
     setOpen('new');
   };
 
@@ -114,6 +116,19 @@ function CommandsCard({ host }: { host: Host }) {
     window.addEventListener('keydown', leave);
     return () => window.removeEventListener('keydown', leave);
   }, [picked.size]);
+  // Ctrl+A (Cmd+A on a Mac) picks every command shown, except while typing, where it still selects the text.
+  useEffect(() => {
+    const all = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 'a') return;
+      const target = e.target as HTMLElement;
+      if (target.closest('input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"], dialog')) return;
+      e.preventDefault();
+      setOpen(null);
+      setPicked(new Set(shown.map((c) => c.id)));
+    };
+    window.addEventListener('keydown', all);
+    return () => window.removeEventListener('keydown', all);
+  }, [shown]);
   // What every view's command button gets: click, Shift- and Ctrl-click, and a long press.
   const holdTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const held = useRef(false);
@@ -204,6 +219,7 @@ function CommandsCard({ host }: { host: Host }) {
       <button className="btn btn-primary">Add command</button>
     </form>
   );
+  const rename = (c: Command) => <KeywordName command={c} commands={commands} onRename={(keyword) => update(c.id, { keyword })} />;
   const details = (c: Command) => (
     <>
       <CommandEditor key={c.id} command={c} commands={commands} macros={macros} gameActions={gameActions} gated={gated} points={host.points} onChange={(patch) => update(c.id, patch)} />
@@ -223,30 +239,37 @@ function CommandsCard({ host }: { host: Host }) {
 
   return (
     <Card
+      badge="commands"
+      hue="indigo"
       title="Commands"
       description={`For the ${host.profileName} profile. A comment runs a command when it is exactly the keyword, in any capitalization.`}
-      actions={
-        <div className="row">
-          <Seg
-            label="Commands view"
-            value={view}
-            options={[
-              ['map', 'Map', 'flow'],
-              ['deck', 'Tiles', 'grid'],
-              ['list', 'List', 'feed'],
-            ]}
-            onChange={chooseView}
-          />
-          <button type="button" className="btn btn-primary btn-sm" onClick={startAdding}>
-            <Icon name="plus" size={14} />
-            Add command
-          </button>
-        </div>
-      }
     >
-      {commands.length >= SEARCH_FROM && (
-        <input className="input command-search" type="search" maxLength={100} placeholder="Find a command" aria-label="Find a command" value={search} onChange={(e) => setSearch(e.target.value)} />
-      )}
+      {/* Stays in view while scrolling a long list. */}
+      <div className="command-toolbar">
+        {commands.length >= SEARCH_FROM && (
+          <input className="input command-search" type="search" maxLength={100} placeholder="Find a command" aria-label="Find a command" value={search} onChange={(e) => setSearch(e.target.value)} />
+        )}
+        <span className="spacer" />
+        <Seg
+          label="Commands view"
+          value={view}
+          options={[
+            ['map', 'Map', 'flow'],
+            ['deck', 'Tiles', 'grid'],
+            ['list', 'List', 'feed'],
+          ]}
+          onChange={chooseView}
+        />
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditingDefaults(true)} title="What new commands start with">
+          <Icon name="settings" size={14} />
+          Defaults
+        </button>
+        <button type="button" className="btn btn-primary btn-sm" onClick={startAdding}>
+          <Icon name="plus" size={14} />
+          Add command
+        </button>
+      </div>
+      {editingDefaults && <DefaultsDialog host={host} gated={gated} refreshHost={refreshHost} onClose={() => setEditingDefaults(false)} />}
       {view !== 'list' ? (
         <div className="deck-layout">
           <div>
@@ -272,13 +295,13 @@ function CommandsCard({ host }: { host: Host }) {
             {open === null && !picked.size && (
               <>
                 {notice}
-                <p className="muted small deck-hint">Pick a command to change what it does. To change several at once, hold one down, or Shift- or Ctrl-click them.</p>
+                <p className="muted small deck-hint">Pick a command to change what it does. To change several at once, hold one down, Shift- or Ctrl-click them, or press Ctrl+A for all.</p>
               </>
             )}
             {open === 'new' && newForm}
             {selected && (
               <div className="command-editor">
-                <PanelTitle title={selected.keyword} onClose={() => setOpen(null)} />
+                <PanelTitle title={rename(selected)} onClose={() => setOpen(null)} />
                 {details(selected)}
               </div>
             )}
@@ -294,8 +317,10 @@ function CommandsCard({ host }: { host: Host }) {
               <li key={c.id} className={`command ${c.enabled ? '' : 'off'} ${picked.has(c.id) ? 'picked' : ''}`}>
                 <div className="command-row">
                   {onSwitch(c)}
-                  <button type="button" className="command-open" aria-expanded={open === c.id} aria-controls={`command-${c.id}`} {...press(c.id)}>
-                    <strong className="command-keyword">{c.keyword}</strong>
+                  {/* Open, its name moves out of the row's button, so the pencil beside it can be a button of its own. */}
+                  {open === c.id && rename(c)}
+                  <button type="button" className={`command-open ${open === c.id ? 'renaming' : ''}`} aria-expanded={open === c.id} aria-controls={`command-${c.id}`} {...press(c.id)}>
+                    {open !== c.id && <strong className="command-keyword">{c.keyword}</strong>}
                     <span className="command-does">
                       <CommandSummary command={c} commands={commands} />
                     </span>
@@ -319,14 +344,126 @@ function CommandsCard({ host }: { host: Host }) {
   );
 }
 
-function PanelTitle({ title, onClose }: { title: string; onClose: () => void }) {
+// What a new command starts with. Each field saves as it changes; commands already made keep their own values.
+function DefaultsDialog({ host, gated, refreshHost, onClose }: { host: Host; gated: boolean; refreshHost: () => Promise<unknown>; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const { error, guard } = useError();
+  useEffect(() => dialog.current?.showModal(), []);
+  const defaults = host.commandDefaults ?? DEFAULT_COMMAND;
+  const save = (commandDefaults: typeof defaults | null) => guard(() => api('PATCH', '/settings', { commandDefaults }).then(refreshHost))();
+  const set = (patch: Partial<typeof defaults>) => save({ ...defaults, ...patch });
+  const changed = (Object.keys(DEFAULT_COMMAND) as (keyof typeof defaults)[]).some((k) => defaults[k] !== DEFAULT_COMMAND[k]);
+  return (
+    <dialog ref={dialog} className="game-dialog" onClose={onClose} {...closeOnBackdrop()} aria-labelledby="defaults-title">
+      <div className="pos-head">
+        <div>
+          <h2 id="defaults-title">Defaults for new commands</h2>
+          <p className="muted small">What each command you add starts with. Commands you already have keep their own. To change those, press Ctrl+A to pick them all.</p>
+        </div>
+        <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => dialog.current?.close()} aria-label="Close">
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className="form-grid">
+        <label className="field">
+          Hold, in ms
+          <span className="hint">How long a key stays down.</span>
+          <NumberCell value={defaults.holdMs} min={10} max={5000} onSave={(holdMs) => set({ holdMs })} />
+        </label>
+        <label className="field">
+          Cooldown per viewer, in ms
+          <span className="hint">How long each viewer waits to use it again.</span>
+          <NumberCell value={defaults.cooldownMs} min={0} max={600000} onSave={(cooldownMs) => set({ cooldownMs })} />
+        </label>
+        {gated && (
+          <label className="field">
+            Minimum level
+            <span className="hint">Viewers below this level can't use it.</span>
+            <NumberCell value={defaults.minLevel} min={1} max={MAX_LEVEL} onSave={(minLevel) => set({ minLevel })} />
+          </label>
+        )}
+        {host.points && (
+          <label className="field">
+            Cost in points
+            <span className="hint">What each use takes from the viewer.</span>
+            <NumberCell value={defaults.cost} min={0} max={1000000} onSave={(cost) => set({ cost })} />
+          </label>
+        )}
+      </div>
+      <ErrorNotice error={error} />
+      {changed && (
+        <div className="row">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => save(null)}>
+            <Icon name="refresh" size={14} />
+            Back to the built-in defaults
+          </button>
+        </div>
+      )}
+    </dialog>
+  );
+}
+
+function PanelTitle({ title, onClose }: { title: ReactNode; onClose: () => void }) {
   return (
     <div className="deck-panel-title">
-      <strong>{title}</strong>
+      {typeof title === 'string' ? <strong>{title}</strong> : title}
       <button type="button" className="btn btn-ghost btn-sm btn-icon" aria-label="Close" onClick={onClose}>
         <Icon name="close" size={14} />
       </button>
     </div>
+  );
+}
+
+// A command's name, with a pencil beside it on hover to rename it. Chains that run it follow the new name.
+function KeywordName({ command, commands, onRename }: { command: Command; commands: Command[]; onRename: (keyword: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const start = () => {
+    setText(command.keyword);
+    setProblem(null);
+    setEditing(true);
+  };
+  const finish = () => {
+    const next = text.trim().toLowerCase();
+    if (!next || next === command.keyword) return setEditing(false);
+    if (commands.some((o) => o.id !== command.id && o.keyword === next)) return setProblem(`There's already a command called ${next}`);
+    setEditing(false);
+    onRename(next);
+  };
+  if (editing) {
+    return (
+      <span className="keyword-name editing">
+        <input
+          className="input"
+          autoFocus
+          value={text}
+          maxLength={32}
+          aria-label={`New name for ${command.keyword}`}
+          aria-invalid={problem ? true : undefined}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => (setText(cleanTyped(e.target.value, /\S/)), setProblem(null))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.preventDefault(), finish());
+            if (e.key === 'Escape') (e.preventDefault(), setEditing(false));
+          }}
+          onBlur={finish}
+        />
+        {problem && (
+          <span className="field-problem" role="alert">
+            {problem}
+          </span>
+        )}
+      </span>
+    );
+  }
+  return (
+    <span className="keyword-name">
+      <strong className="command-keyword">{command.keyword}</strong>
+      <button type="button" className="btn btn-ghost btn-sm btn-icon keyword-edit" aria-label={`Rename ${command.keyword}`} title="Rename" onClick={start}>
+        <Icon name="pencil" size={14} />
+      </button>
+    </span>
   );
 }
 
@@ -934,7 +1071,7 @@ function ModeCard({ host, refreshHost }: { host: Host; refreshHost: () => Promis
   const save = (patch: Partial<Host>) => guard(() => api('PATCH', '/settings', patch).then(refreshHost))();
 
   return (
-    <Card title="Crowd mode" description="How chat shares control. Saved with the active profile, and you can switch while live.">
+    <Card badge="crowd" hue="orange" title="Crowd mode" description="How chat shares control. Saved with the active profile, and you can switch while live.">
       <ErrorNotice error={error} />
       <ModeTiles value={host.mode} onChange={(mode) => save({ mode })} />
       <ModeDetails host={host} onSave={save} />

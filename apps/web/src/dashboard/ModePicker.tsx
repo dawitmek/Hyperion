@@ -168,7 +168,7 @@ export function ModeDetails({
       {mode === "gift" && (
         <p className="muted small">
           Tie gifts to commands on the{" "}
-          <Link href="/dashboard/actions">Actions</Link> page.
+          <Link href="/dashboard/alerts">Alerts</Link> page.
         </p>
       )}
     </div>

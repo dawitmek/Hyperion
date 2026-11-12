@@ -27,6 +27,8 @@ function LeaderboardCard({ host, live }: { host: Host; live: LeaderboardEntry[] 
 
   return (
     <Card
+      badge="leaderboard"
+      hue="sky"
       title="Leaderboard"
       description={`${host.tiktokUsername ? `For @${host.tiktokUsername.replace(/^@/, '')}. Each TikTok account you set has its own leaderboard and points. ` : ''}Your most active viewers, ranked by XP. Updates every few seconds.`}
       actions={
@@ -201,6 +203,8 @@ function PointsCard({ host, refreshHost }: { host: Host; refreshHost: () => Prom
   const save = (patch: Partial<Host>) => guard(() => api('PATCH', '/settings', patch).then(refreshHost))();
   return (
     <Card
+      badge="coin"
+      hue="amber"
       title="Points"
       description="A balance viewers earn on your streams and spend on commands. Set what each command costs on the Commands page. Unlike XP, points go down when spent."
       actions={
@@ -249,6 +253,8 @@ function ProgressionCard({ host, refreshHost }: { host: Host; refreshHost: () =>
   const save = (patch: Partial<Host>) => guard(() => api('PATCH', '/settings', patch).then(refreshHost))();
   return (
     <Card
+      badge="star"
+      hue="violet"
       title="Viewer levels"
       description={`Viewers earn XP on your streams: 1 per command that presses a key, plus each gift's value in coins. Level 2 takes ${xpForLevel(2)} XP, level 3 ${xpForLevel(3)}, level 5 ${xpForLevel(5)}, level 10 ${xpForLevel(10)}.`}
     >

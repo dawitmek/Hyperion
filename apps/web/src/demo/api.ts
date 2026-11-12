@@ -1,4 +1,4 @@
-import { levelForXp, type AnalyticsOverview, type StreamEvent, type StreamSummary, type ViewerProfile } from '@hyperion/shared';
+import { levelForXp, type AnalyticsOverview, type ProfileGame, type StreamEvent, type StreamSummary, type ViewerProfile } from '@hyperion/shared';
 import { ApiError, type Action, type Command, type Host, type Screen } from '../api';
 import { actions, commands, companions, gifts, goals, host, media, newId, pastStreams, profiles, report, screens, summarize, templateCommands, viewersOf, type PastStream } from './data';
 import * as live from './engine';
@@ -61,14 +61,27 @@ route('PATCH', '/settings', (_, body: Partial<Host> & { ttsCloudKey?: string; ti
 
 // --- Profiles ---
 
-const profileView = ({ id, name, gameProcess, active }: (typeof profiles)[number]) => ({ id, name, gameProcess, active });
+const profileView = ({ id, name, games, active }: (typeof profiles)[number]) => ({ id, name, games, active });
 route('GET', '/profiles', () => profiles.map(profileView));
+// The demo has no PC, so it shows what a streamer's might have open.
+route('GET', '/profiles/running-games', () => ({
+  companions: 1,
+  answered: 1,
+  games: [
+    { title: 'Minecraft', process: 'javaw.exe', icon: null },
+    { title: 'Grand Theft Auto V', process: 'gta5.exe', icon: null },
+    { title: 'OBS Studio', process: 'obs64.exe', icon: null },
+    { title: 'Discord', process: 'discord.exe', icon: null },
+  ],
+}));
+const cleanGames = (games: ProfileGame[] = []) =>
+  games.map((g) => ({ process: g.process.trim().toLowerCase(), icon: g.icon ?? null })).filter((g, i, all) => g.process && all.findIndex((x) => x.process === g.process) === i);
 // As on the server: a new profile takes the active one's settings, and either a game template's commands or a copy of
 // the active one's commands and its own actions.
-route('POST', '/profiles', (_, body: { name: string; gameProcess?: string | null; template?: string }) => {
+route('POST', '/profiles', (_, body: { name: string; games?: ProfileGame[]; template?: string }) => {
   if (profiles.some((p) => p.name.toLowerCase() === body.name.trim().toLowerCase())) throw new ApiError('A profile with that name already exists', 409);
   const source = profiles.find((p) => p.id === host.profileId)!;
-  const profile = { ...source, id: newId(), name: body.name.trim(), gameProcess: body.gameProcess?.trim().toLowerCase() || null, active: false };
+  const profile = { ...source, id: newId(), name: body.name.trim(), games: cleanGames(body.games), active: false };
   profiles.push(profile);
   if (body.template) {
     commands.push(...templateCommands(body.template, profile.id));
@@ -87,14 +100,14 @@ route('POST', '/profiles', (_, body: { name: string; gameProcess?: string | null
 });
 route('PATCH', '/profiles/:id', ([, id], body) => {
   const profile = find(profiles, id!, 'Profile');
-  Object.assign(profile, body);
-  if (profile.id === host.profileId) host.profileName = profile.name;
+  Object.assign(profile, body, body.games && { games: cleanGames(body.games) });
+  if (profile.id === host.profileId) Object.assign(host, { profileName: profile.name, profileGames: profile.games });
   return profileView(profile);
 });
 route('POST', '/profiles/:id/activate', ([, id]) => {
   const profile = find(profiles, id!, 'Profile');
   profiles.forEach((p) => (p.active = p === profile));
-  Object.assign(host, { profileId: profile.id, profileName: profile.name, mode: profile.mode, voteWindowMs: profile.voteWindowMs, turnMs: profile.turnMs, raffleMs: profile.raffleMs, giftBoosts: profile.giftBoosts });
+  Object.assign(host, { profileId: profile.id, profileName: profile.name, profileGames: profile.games, mode: profile.mode, voteWindowMs: profile.voteWindowMs, turnMs: profile.turnMs, raffleMs: profile.raffleMs, giftBoosts: profile.giftBoosts });
   live.resetMode();
   // Auto chat types the commands it read when it started; restarted, it plays the new game's.
   if (autoChatRunning()) setTimeout(() => void startAutoChat());
@@ -122,7 +135,14 @@ route('POST', '/commands', (_, body: Omit<Command, 'id' | 'enabled'>) => {
 route('PATCH', '/commands/:id', ([, id], body: Partial<Command>) => {
   const command = find(commands, id!, 'Command');
   if (body.keyword && keywordTaken(body.keyword, command.id)) throw new ApiError('Keyword already exists', 409);
-  return Object.assign(command, body);
+  // Lowercase, and kept in the chains that run it, as on the server.
+  const before = command.keyword;
+  if (body.keyword) body = { ...body, keyword: body.keyword.toLowerCase() };
+  Object.assign(command, body);
+  if (command.keyword !== before) {
+    for (const c of commands) if (c.profileId === command.profileId && c.chain) c.chain = c.chain.map((s) => (s.keyword === before ? { ...s, keyword: command.keyword } : s));
+  }
+  return command;
 });
 route('DELETE', '/commands/:id', ([, id]) => remove(commands, id!));
 
@@ -165,6 +185,13 @@ route('DELETE', '/goals/:id', ([, id]) => remove(goals, id!));
 route('GET', '/screens', () => screens);
 route('POST', '/screens', (_, body: { name: string }) => {
   const screen: Screen = { ...screens[0]!, id: newId(), token: `demo.${newId()}`, name: body.name, main: false, widgets: [], linkStyles: {} };
+  screens.push(screen);
+  return screen;
+});
+route('POST', '/screens/:id/duplicate', ([, id], body: { name: string }) => {
+  const source = find(screens, id!, 'Screen');
+  if (screens.length >= 8) throw new ApiError('You can have up to 8 screens', 400);
+  const screen: Screen = { ...structuredClone(source), id: newId(), token: `demo.${newId()}`, name: body.name.trim(), main: false, linkStyles: {} };
   screens.push(screen);
   return screen;
 });

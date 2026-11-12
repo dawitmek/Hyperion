@@ -8,9 +8,12 @@ import {
   WIDGET_TYPES,
   widgetKey,
   type LeaderboardEntry,
+  type Mode,
+  type OverlayPart,
   type ModeState,
   type AlertPosition,
   type OverlayScreen,
+  type PhoneSafe,
   type ScreenLayout,
   type ScreenWidget,
   type OverlayToServer,
@@ -26,7 +29,7 @@ import { alertLook } from './alert-style';
 import { openOverlaySocket, type OverlaySocket } from './demo/socket';
 
 // A command, a level-up shout-out, or a viewer's points when they ask.
-type FeedItem = { id: number; viewer: string; avatar?: string } & ({ keyword: string; level?: number } | { levelUp: number } | { points: number });
+export type FeedItem = { id: number; viewer: string; avatar?: string } & ({ keyword: string; level?: number } | { levelUp: number } | { points: number });
 
 const MAX_ITEMS = 6;
 const ITEM_TTL_MS = 8000;
@@ -49,7 +52,9 @@ const SINGLE = (WIDGET_TYPES as readonly string[]).includes(params.get('widget')
 export const LAYOUT_CANVAS: Record<ScreenLayout, { width: number; height: number }> = { desktop: { width: 1920, height: 1080 }, phone: { width: 1080, height: 1920 } };
 // Kept clear at the top and bottom of the screen, as fractions of its height: by alerts on desktop, and on phone by
 // widgets too, as TikTok's own buttons cover the top of a portrait stream and its chat the bottom.
+// A phone screen's come from its phoneSafe, set as --safe-top and --safe-bottom (safeVars) for the CSS and read back here.
 export const LAYOUT_SAFE: Record<ScreenLayout, { top: number; bottom: number }> = { desktop: { top: 0.05, bottom: 0.05 }, phone: { top: 0.13, bottom: 0.3 } };
+export const safeVars = (safe: PhoneSafe | undefined) => (safe ? ({ '--safe-top': `${safe.top}%`, '--safe-bottom': `${safe.bottom}%` } as CSSProperties) : {});
 
 // How much the layout is scaled for a page this size, and the part of the page it takes. A phone screen opened in a
 // browser window to preview is shown at a phone's shape, in the middle.
@@ -220,7 +225,7 @@ export function Overlay({ token }: { token: string }) {
   return (
     <>
       <div className={`overlay-fit ${PREVIEW && screen.layout === 'phone' ? 'phone-frame' : ''}`} style={fit}>
-        <div className={`overlay-screen layout-${screen.layout} alerts-${screen.alertPosition}`} style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
+        <div className={`overlay-screen layout-${screen.layout} alerts-${screen.alertPosition}`} style={{ '--overlay-scale': screen.scale / 100, ...safeVars(screen.phoneSafe) } as CSSProperties}>
           {/* Alerts show even while offline, so the dashboard's Test button works before going live. */}
           <ScreenEffects bus={bus} />
           {alert && (
@@ -241,8 +246,8 @@ export function Overlay({ token }: { token: string }) {
             <LiveWidgets
               screen={screen}
               mode={screen.mode ? mode : null}
-              leaderboard={screen.leaderboard ? leaderboard : { entries: [], progression: false }}
-              items={items}
+              leaderboard={screen.leaderboard ? (!live && leaderboard.entries.length === 0 ? { ...leaderboard, entries: SAMPLE_LEADERBOARD } : leaderboard) : { entries: [], progression: false }}
+              items={!live && items.length === 0 ? SAMPLE_FEED : items}
               stats={live ? stats : preview.stats}
               chat={live ? chat : preview.chat}
               bus={bus}
@@ -262,26 +267,49 @@ export function Overlay({ token }: { token: string }) {
   );
 }
 
+// What the feed, leaderboard and crowd mode panel show in a preview, before anyone has played: the dashboard's editor
+// and ?preview both use these, so every part of a screen can be seen where it sits.
+export const SAMPLE_FEED: FeedItem[] = [
+  { id: -1, viewer: 'nightowl', keyword: 'jump' },
+  { id: -2, viewer: 'pixelpanda', keyword: 'left', level: 4 },
+  { id: -3, viewer: 'mapleleaf', keyword: 'right', level: 2 },
+  { id: -4, viewer: 'riverstone', keyword: 'tnt' },
+];
+export const SAMPLE_LEADERBOARD: LeaderboardEntry[] = ['nightowl', 'pixelpanda', 'mapleleaf', 'riverstone', 'kitekid', 'sunnyside', 'quietfox', 'bluejay', 'pebble', 'moss'].map(
+  (viewer, i) => ({ viewer, name: null, avatar: null, commands: 48 - i * 4, gifts: 0, coins: 0, points: 0, xp: 2400 - i * 220 }),
+);
+export function sampleMode(mode: Mode): ModeState {
+  if (mode === 'democracy') return { mode, tally: [{ keyword: 'jump', votes: 6 }, { keyword: 'left', votes: 4 }, { keyword: 'tnt', votes: 2 }], endsAt: null, lastCommand: null, lastVotes: null, lastDrawAt: null };
+  if (mode === 'queue') return { mode, viewer: 'nightowl', endsAt: null, queue: ['pixelpanda', 'mapleleaf'] };
+  if (mode === 'raffle') return { mode, entrants: 0, endsAt: null, lastCommand: 'creeper', lastDrawAt: 1 };
+  return { mode };
+}
+
 const ALERT_GAP = 12; // px of the layout's canvas
 const CANVASES = '.overlay-fit, .pos-canvas'; // the overlay's, and the dashboard previews'
 const WIDGET_BOXES = '.overlay-spot, .overlay-placed';
 
 // `box` moved clear of the widgets, as an alert at `position` is on stream; null `position` leaves it where it is. The
 // overlay and the dashboard's previews share this, so a preview shows the place the alert really gets.
-export function useClearOfWidgets(box: RefObject<HTMLElement | null>, position: AlertPosition | null, zoom: number, alertScale: number, changes: unknown[]): CSSProperties {
+// `paused`: while something's being dragged in an editor, the alert stays put rather than jumping past it as it goes by,
+// and moves once it's let go.
+export function useClearOfWidgets(box: RefObject<HTMLElement | null>, position: AlertPosition | null, zoom: number, alertScale: number, changes: unknown[], paused = false): CSSProperties {
   const [clear, setClear] = useState<CSSProperties>({});
   useLayoutEffect(() => {
-    setClear({});
+    if (paused) return;
     const alert = box.current;
-    if (!alert || !position) return;
-    const place = () => setClear(clearOfWidgets(alert, position, zoom, alertScale));
+    if (!alert || !position) return setClear({});
+    // Placed at once, before the browser paints, so it never shows a frame at its usual place first.
+    const place = () => setClear((old) => same(old, clearOfWidgets(alert, position, zoom, alertScale)));
+    place();
     const resize = new ResizeObserver(place);
     resize.observe(alert);
     alert.closest(CANVASES)!.querySelectorAll(WIDGET_BOXES).forEach((w) => resize.observe(w));
     return () => resize.disconnect();
-  }, [position, zoom, alertScale, ...changes]);
+  }, [position, zoom, alertScale, paused, ...changes]);
   return clear;
 }
+const same = (old: CSSProperties, next: CSSProperties) => (JSON.stringify(old) === JSON.stringify(next) ? old : next);
 
 // Where an alert at `position` goes to clear the widgets above and below it: from its usual place, it moves past
 // each one it would touch, down the screen (up from the bottom). With no free space it stays put.
@@ -299,7 +327,9 @@ function clearOfWidgets(box: HTMLElement, position: AlertPosition, zoom: number,
     .filter((w) => w.height > 0 && w.left < left + width && w.right > left);
   const up = position === 'bottom';
   // Kept clear of the screen's edges (see LAYOUT_SAFE); in the middle, it's the middle of what's left.
-  const safe = LAYOUT_SAFE[box.closest('.layout-phone') ? 'phone' : 'desktop'];
+  const phone = box.closest<HTMLElement>('.layout-phone');
+  const css = phone && getComputedStyle(phone);
+  const safe = css ? { top: (parseFloat(css.getPropertyValue('--safe-top')) || 13) / 100, bottom: (parseFloat(css.getPropertyValue('--safe-bottom')) || 30) / 100 } : LAYOUT_SAFE.desktop;
   const [above, below] = [page.height * safe.top, page.height * safe.bottom];
   const usual = position === 'middle' ? page.top + above + (page.height - above - below - height) / 2 : up ? page.bottom - below - height : page.top + above;
   let top = usual;
@@ -347,14 +377,21 @@ function LiveWidgets({
   bus: GiftBus;
 }) {
   const spots = Object.fromEntries(WIDGET_SPOTS.map((s) => [s, [] as ReactNode[]])) as Record<WidgetSpot, ReactNode[]>;
-  if (mode) spots['top-left'].push(<ModePanel key="mode" state={mode.state} clockOffset={mode.clockOffset} avatar={mode.avatar} />);
-  if (leaderboard.entries.length > 0) spots['top-right'].push(<Leaderboard key="leaderboard" leaderboard={leaderboard} size={screen.leaderboardSize} />);
-  if (screen.feed) spots['bottom-left'].push(<Feed key="feed" items={items} />);
+  // Widgets placed by hand sit where they were put; the rest stack in their spots.
+  const placed: ReactNode[] = [];
+  // The feed, leaderboard and mode panel go first in their corners, unless moved; sized by hand, they keep that size.
+  const part = (key: OverlayPart, node: ReactNode) => {
+    const place = screen.parts?.[key];
+    const el = <PartBox key={key} size={place?.size}>{node}</PartBox>;
+    if (place?.pos) placed.push(<div key={key} className="overlay-placed" style={{ left: `${place.pos.x}%`, top: `${place.pos.y}%` }}>{el}</div>);
+    else spots[PART_SPOTS[key]].push(el);
+  };
+  if (mode) part('mode', <ModePanel state={mode.state} clockOffset={mode.clockOffset} avatar={mode.avatar} />);
+  if (leaderboard.entries.length > 0) part('leaderboard', <Leaderboard leaderboard={leaderboard} size={screen.leaderboardSize} />);
+  if (screen.feed) part('feed', <Feed items={items} />);
   // The grouped goals widget leaves out goals that have a widget of their own on this screen.
   const own = new Set(screen.widgets.map((w) => w.goalId).filter(Boolean));
   const grouped = stats && { ...stats, goals: stats.goals.filter((g) => !own.has(g.id)) };
-  // Widgets placed by hand sit where they were put; the rest stack in their spots.
-  const placed: ReactNode[] = [];
   screen.widgets.forEach((w, i) => {
     const widget = <Widget key={`w${i}`} widget={w} stats={w.type === 'goals' && !w.goalId ? grouped : stats} chat={chat} bus={bus} />;
     if (w.pos) {
@@ -377,7 +414,20 @@ function LiveWidgets({
   );
 }
 
-function Leaderboard({ leaderboard, size }: { leaderboard: { entries: LeaderboardEntry[]; progression: boolean }; size: number }) {
+// The corner each part keeps until it's moved.
+export const PART_SPOTS: Record<OverlayPart, WidgetSpot> = { mode: 'top-left', leaderboard: 'top-right', feed: 'bottom-left' };
+
+// A part at a size of its own, in place of the screen's (see .part-box); without one, just the part.
+export function PartBox({ size, children }: { size?: number; children: ReactNode }) {
+  if (!size) return <>{children}</>;
+  return (
+    <div className="part-box" style={{ '--p-size': size / 100 } as CSSProperties}>
+      {children}
+    </div>
+  );
+}
+
+export function Leaderboard({ leaderboard, size }: { leaderboard: { entries: LeaderboardEntry[]; progression: boolean }; size: number }) {
   return (
     <div className="overlay-panel overlay-leaderboard tone-sky">
       <Title icon="trophy">Top players</Title>
@@ -395,7 +445,7 @@ function Leaderboard({ leaderboard, size }: { leaderboard: { entries: Leaderboar
 }
 
 // Who pressed what, level-ups and !points answers, newest at the bottom.
-function Feed({ items }: { items: FeedItem[] }) {
+export function Feed({ items }: { items: FeedItem[] }) {
   return (
     <div className="overlay">
       {items.map((item) =>
@@ -437,7 +487,7 @@ function AlertVideo({ src, audible }: { src: string; audible: boolean }) {
   return <video ref={video} className="overlay-alert-media" src={src} playsInline />;
 }
 
-function ModePanel({ state, clockOffset, avatar }: { state: ModeState; clockOffset: number; avatar?: string }) {
+export function ModePanel({ state, clockOffset, avatar }: { state: ModeState; clockOffset: number; avatar?: string }) {
   const endsAt = 'endsAt' in state && state.endsAt !== null ? state.endsAt + clockOffset : null;
   const secondsLeft = useCountdown(endsAt);
 

@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react';
 import { levelForXp, MODES, type LeaderboardEntry, type LiveCard, type ModeState, type StreamStats } from '@hyperion/shared';
 import { api, type Command, type Host, type LiveStatus } from '../api';
 import { Link } from '../router';
-import { Card, ErrorNotice, keyLabel, Spinner, Switch, useError, ViewerAvatar } from '../ui';
+import { Card, closeOnBackdrop, ErrorNotice, HueIcon, hueStyle, keyLabel, Spinner, Switch, useError, ViewerAvatar } from '../ui';
 import { Icon, type IconName } from '../icons';
 import type { PageProps } from './Dashboard';
 import type { Activity, ActivityKind } from './live-feed';
@@ -11,15 +11,17 @@ import { PACES, type Pace } from './auto-chat';
 import { setExtras, setPace, startAutoChat, stopAutoChat, useAutoChat } from './auto-chat-run';
 import { ModeDetails, ModeTiles } from './ModePicker';
 import { ActivityFeed } from './ActivityFeed';
-import { CARD_LABELS, LiveCards } from './LiveLayout';
+import { CARD_INFO, CARD_LABELS, LiveCards } from './LiveLayout';
 import { Stat } from './AnalyticsPage';
 import { VoiceControls } from './VoiceControls';
 import { ViewerContext, ViewerLink, ViewerPanel } from './ViewerPanel';
 import { ActivityChart, CommandUsage, useStreamDetail } from './StreamInsights';
+import { SetupGuide } from './Onboarding';
 
 export function LivePage(props: PageProps) {
   return (
     <>
+      <SetupGuide {...props} />
       <StatusTiles {...props} />
       <LiveCards
         host={props.host}
@@ -134,9 +136,13 @@ function StatusTiles({ host, status, setStatus, feed }: PageProps) {
             Offline
           </div>
           <p className="muted" style={{ marginTop: 8 }}>
-            {host.tiktokUsername
-              ? `Go live on TikTok first, then connect ${host.tiktokUsername}.`
-              : 'Add your TikTok username in Settings to go live.'}
+            {host.tiktokUsername ? (
+              `Go live on TikTok first, then connect ${host.tiktokUsername}.`
+            ) : (
+              <>
+                <Link href="/dashboard/settings#tiktok-username">Add your TikTok username in Settings</Link> to go live.
+              </>
+            )}
           </p>
         </div>
       )}
@@ -356,10 +362,13 @@ function CommandsOverview({ host, refreshHost, feed }: PageProps) {
   const shown = sorted.slice(0, columns * shownRows);
 
   return (
-    <section className="card" aria-labelledby="live-commands">
+    <section className="card card-hued" style={hueStyle(CARD_INFO.commands.hue)} aria-labelledby="live-commands">
       <div className="card-head">
         <div>
-          <h2 id="live-commands">Commands</h2>
+          <h2 id="live-commands" className="card-title-badged">
+            <HueIcon name={CARD_INFO.commands.icon} hue={CARD_INFO.commands.hue} />
+            Commands
+          </h2>
           <p>What chat types, and the key it presses. Counts are for this stream.</p>
         </div>
         <Link href="/dashboard/commands" className="btn btn-primary">
@@ -448,10 +457,13 @@ function ModeCard({ host, feed }: PageProps) {
   if (state?.mode === 'democracy') {
     const total = state.tally.reduce((sum, t) => sum + t.votes, 0);
     return (
-      <div className="card mode-card">
+      <div className="card card-hued mode-card" style={hueStyle(CARD_INFO.mode.hue)}>
         <div className="mode-card-head">
           <div>
-            <h2>{state.endsAt ? 'Vote in progress' : 'Waiting for votes'}</h2>
+            <h2 className="card-title-badged">
+              <HueIcon name={CARD_INFO.mode.icon} hue={CARD_INFO.mode.hue} />
+              {state.endsAt ? 'Vote in progress' : 'Waiting for votes'}
+            </h2>
             <p className="muted small">
               {total} {total === 1 ? 'vote' : 'votes'} this round
             </p>
@@ -489,10 +501,13 @@ function ModeCard({ host, feed }: PageProps) {
 
   if (state?.mode === 'raffle') {
     return (
-      <div className="card mode-card">
+      <div className="card card-hued mode-card" style={hueStyle(CARD_INFO.mode.hue)}>
         <div className="mode-card-head">
           <div>
-            <h2>{state.endsAt ? 'Raffle open' : 'Waiting for entries'}</h2>
+            <h2 className="card-title-badged">
+              <HueIcon name={CARD_INFO.mode.icon} hue={CARD_INFO.mode.hue} />
+              {state.endsAt ? 'Raffle open' : 'Waiting for entries'}
+            </h2>
             <p className="muted small">
               {state.entrants} {state.entrants === 1 ? 'viewer' : 'viewers'} entered
             </p>
@@ -511,10 +526,13 @@ function ModeCard({ host, feed }: PageProps) {
 
   if (state?.mode === 'queue') {
     return (
-      <div className="card mode-card">
+      <div className="card card-hued mode-card" style={hueStyle(CARD_INFO.mode.hue)}>
         <div className="mode-card-head">
           <div>
-            <h2>{state.viewer ? `${state.viewer} is playing` : 'Queue is empty'}</h2>
+            <h2 className="card-title-badged">
+              <HueIcon name={CARD_INFO.mode.icon} hue={CARD_INFO.mode.hue} />
+              {state.viewer ? `${state.viewer} is playing` : 'Queue is empty'}
+            </h2>
             <p className="muted small">
               {state.queue.length} waiting{state.queue.length > 0 && `: ${state.queue.slice(0, 3).join(', ')}`}
               {state.queue.length > 3 && '…'}
@@ -537,9 +555,12 @@ function ActivityCard({ feed, status }: PageProps) {
   // so clicks inside it (closing it, say) don't reach the card and open it again.
   return (
     <>
-      <section className="card card-clickable" aria-labelledby="live-activity" onClick={() => setExpanded(true)}>
+      <section className="card card-hued card-clickable" style={hueStyle(CARD_INFO.activity.hue)} aria-labelledby="live-activity" onClick={() => setExpanded(true)}>
         <div className="mode-card-head" style={{ marginBottom: 6 }}>
-          <h2 id="live-activity">Activity</h2>
+          <h2 id="live-activity" className="card-title-badged">
+            <HueIcon name={CARD_INFO.activity.icon} hue={CARD_INFO.activity.hue} />
+            Activity
+          </h2>
           <button className="btn btn-ghost btn-sm btn-icon" title="Expand" aria-label="Expand activity">
             <Icon name="expand" />
           </button>
@@ -594,12 +615,6 @@ function ActivityDialog({ feed, live, onClose }: { feed: PageProps['feed']; live
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => dialog.current?.showModal(), []);
   const [profile, setProfile] = useState<string | null>(null);
-  // Clicks on the backdrop land on the dialog itself, outside its box.
-  const closeOutside = (e: MouseEvent<HTMLDialogElement>) => {
-    if (e.target !== e.currentTarget) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.currentTarget.close();
-  };
   const [kinds, setKinds] = useState<ActivityKind[]>(ACTIVITY_KINDS);
   const [search, setSearch] = useState('');
   const [viewer, setViewer] = useState<string | null>(null);
@@ -613,7 +628,7 @@ function ActivityDialog({ feed, live, onClose }: { feed: PageProps['feed']; live
   const flip = (kind: ActivityKind) => setKinds((now) => (now.includes(kind) ? now.filter((k) => k !== kind) : [...now, kind]));
 
   return (
-    <dialog ref={dialog} className="activity-dialog" onClose={onClose} onCancel={(e) => profile && e.preventDefault()} onClick={closeOutside} aria-labelledby="activity-dialog-title">
+    <dialog ref={dialog} className="activity-dialog" onClose={onClose} onCancel={(e) => profile && e.preventDefault()} {...closeOnBackdrop()} aria-labelledby="activity-dialog-title">
       <div className="pos-head">
         <div>
           <h2 id="activity-dialog-title">Activity</h2>
@@ -687,9 +702,12 @@ function TopPlayers({ host, feed }: PageProps) {
   const best = Math.max(1, ...entries.map(score));
 
   return (
-    <section className="card" aria-labelledby="live-players">
+    <section className="card card-hued" style={hueStyle(CARD_INFO.players.hue)} aria-labelledby="live-players">
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
-        <h2 id="live-players">Top players</h2>
+        <h2 id="live-players" className="card-title-badged">
+          <HueIcon name={CARD_INFO.players.icon} hue={CARD_INFO.players.hue} />
+          Top players
+        </h2>
         <Link href="/dashboard/leaderboard" className="small">
           Full leaderboard
         </Link>
@@ -731,9 +749,12 @@ function TestConsole() {
   };
 
   return (
-    <section className="card stack" aria-labelledby="live-test">
+    <section className="card stack card-hued" style={hueStyle('green')} aria-labelledby="live-test">
       <div>
-        <h2 id="live-test">Test as a viewer</h2>
+        <h2 id="live-test" className="card-title-badged">
+          <HueIcon name="chat" hue="green" />
+          Test as a viewer
+        </h2>
         <p className="muted">Pretend to be chat. Commands go to your companion like the real thing.</p>
       </div>
       <ErrorNotice error={error} />
@@ -788,7 +809,7 @@ function TestConsole() {
 function AutoChat() {
   const { crowd, pace, extras, error } = useAutoChat();
   return (
-    <div className="stack" style={{ gap: 8 }}>
+    <div className="stack" style={{ gap: 8 }} data-tour="auto-chat">
       <div className="row">
         {crowd ? (
           <button className="btn btn-primary" onClick={() => stopAutoChat()}>
@@ -849,7 +870,7 @@ function ThisStream({ stats }: { stats: StreamStats | null }) {
   };
   if (detail === undefined) {
     return (
-      <Card title="This stream" description="Updates as it happens. Past streams are on the Analytics page.">
+      <Card badge="analytics" hue="teal" title="This stream" description="Updates as it happens. Past streams are on the Analytics page.">
         <Spinner />
       </Card>
     );
@@ -861,7 +882,7 @@ function ThisStream({ stats }: { stats: StreamStats | null }) {
   // A rate means little in the first few minutes, so it waits until there's enough to go on.
   const rate = (value: number | undefined) => (value === undefined || minutes < 3 ? undefined : `${(value / minutes).toFixed(value / minutes < 10 ? 1 : 0)} a minute`);
   return (
-    <Card title="This stream" description="Updates as it happens. Past streams are on the Analytics page.">
+    <Card badge="analytics" hue="teal" title="This stream" description="Updates as it happens. Past streams are on the Analytics page.">
       <div className="stat-tiles live-metrics">
         <Stat icon="eye" hue="sky" label="Viewers now" value={n(stats?.viewers)} note={stats ? `peak ${n(stats.peakViewers)}` : undefined} />
         <Stat icon="follower" hue="pink" label="New followers" value={n(stats?.follows)} note={stats?.lastFollower ? `latest ${stats.lastFollower}` : undefined} />

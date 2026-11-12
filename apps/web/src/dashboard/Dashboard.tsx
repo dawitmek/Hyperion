@@ -21,6 +21,8 @@ import { OverlayPage } from './OverlayPage';
 import { SettingsPage } from './SettingsPage';
 import { StreamRecap } from './StreamRecap';
 import { LiveDock } from './LiveDock';
+import { SetupNavItem, takeTourTestStopped, Tour, useSetupSteps } from './Onboarding';
+import { Welcome } from './Welcome';
 
 export interface PageProps {
   host: Host;
@@ -37,8 +39,8 @@ const SECTIONS: Section[][] = [
   [
     { path: '/dashboard', label: 'Live', blurb: 'What chat is doing right now, and the controls to go live.', icon: 'live', hue: 'red', page: LivePage },
     { path: '/dashboard/commands', label: 'Commands', blurb: 'What chat types, the key it presses, and how the crowd shares control.', icon: 'commands', hue: 'indigo', page: CommandsPage },
-    { path: '/dashboard/actions', label: 'Actions', blurb: 'What happens on stream when viewers follow, gift, subscribe or type a command.', icon: 'gift', hue: 'pink', page: ActionsPage },
-    { path: '/dashboard/voice', label: 'Voice', blurb: 'What gets read aloud on your stream, and how it sounds.', icon: 'voice', hue: 'violet', page: VoicePage },
+    { path: '/dashboard/alerts', label: 'Alerts', blurb: 'What happens on stream when viewers follow, gift, subscribe or type a command.', icon: 'gift', hue: 'pink', page: ActionsPage },
+    { path: '/dashboard/voice', label: 'Text to Speech', blurb: 'What gets read aloud on your stream, and how it sounds.', icon: 'voice', hue: 'violet', page: VoicePage },
     { path: '/dashboard/leaderboard', label: 'Leaderboard', blurb: 'Who plays the most, and the levels and points viewers earn.', icon: 'leaderboard', hue: 'sky', page: LeaderboardPage },
     { path: '/dashboard/analytics', label: 'Analytics', blurb: 'How your streams are going, and how chat plays.', icon: 'analytics', hue: 'teal', page: AnalyticsPage },
     { path: '/dashboard/profiles', label: 'Game profiles', blurb: 'A set of commands, gifts and crowd mode for each game.', icon: 'profiles', hue: 'teal', page: ProfilesPage },
@@ -84,6 +86,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
   const closeViewer = useCallback(() => setViewer(null), []);
   const feed = useLiveFeed(host.overlayToken);
   useEffect(() => setAutoChatMode(feed.mode?.state), [feed.mode?.state]);
+  useSetupSteps({ host, refreshHost, status });
   // A stream that ends while this page is open gets a recap, unless turned off. Its last live totals are kept for it.
   const [recap, setRecap] = useState<{ stats: StreamStats | null } | null>(null);
   const wasLive = useRef(false);
@@ -92,7 +95,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
     if (status.live && feed.stats) lastStats.current = feed.stats;
   }, [status.live, feed.stats]);
   useEffect(() => {
-    if (wasLive.current && !status.live && host.streamRecap) setRecap({ stats: lastStats.current });
+    if (wasLive.current && !status.live && !takeTourTestStopped() && host.streamRecap) setRecap({ stats: lastStats.current });
     if (status.live && !wasLive.current) lastStats.current = null; // a new stream's totals start over
     wasLive.current = status.live;
   }, [status.live]);
@@ -104,6 +107,10 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
     return () => clearInterval(timer);
   }, []);
   useEffect(() => setMenuOpen(false), [path]);
+  // The Alerts page was called Actions, at /dashboard/actions: old links still land on it.
+  useEffect(() => {
+    if (path.replace(/\/$/, '') === '/dashboard/actions') navigate('/dashboard/alerts', { replace: true });
+  }, [path]);
   useEffect(() => {
     if (!isDemo() || demoStarted) return;
     demoStarted = true;
@@ -139,7 +146,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
         {SECTIONS.map((group, i) => (
           <div key={i} className="nav-group">
             {group.map((s) => (
-              <Link key={s.path} href={s.path} className="nav-item" aria-current={s === section ? 'page' : undefined}>
+              <Link key={s.path} href={s.path} data-tour={s.path} className="nav-item" aria-current={s === section ? 'page' : undefined}>
                 <span className={`nav-icon ${s.hue}`}>
                   <Icon name={s.icon} />
                 </span>
@@ -149,6 +156,7 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
             ))}
           </div>
         ))}
+        <SetupNavItem host={host} refreshHost={refreshHost} />
         <div className="sidebar-account">
           <span className="avatar" aria-hidden="true">
             {(host.tiktokUsername ?? host.email)[0]!.toUpperCase()}
@@ -195,6 +203,8 @@ function Shell({ host, refreshHost }: { host: Host; refreshHost: () => Promise<u
           {viewer && <ViewerPanel key={viewer} viewer={viewer} live={status.live} onClose={closeViewer} />}
           {/* The Live page has these controls already. */}
           {section.path !== '/dashboard' && <LiveDock host={host} refreshHost={refreshHost} status={status} setStatus={setStatus} feed={feed} />}
+          <Tour status={status} setStatus={setStatus} />
+          <Welcome host={host} refreshHost={refreshHost} />
           {recap && <StreamRecap stats={recap.stats} refreshHost={refreshHost} onClose={() => setRecap(null)} />}
         </ViewerContext.Provider>
       </main>
@@ -268,7 +278,7 @@ function ProfilePicker({ host, refreshHost }: { host: Host; refreshHost: () => P
   return (
     <div className="profile-picker" ref={root}>
       <button className="profile-trigger" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)} title="Switch game profile">
-        <ProfileBadge name={host.profileName} />
+        <ProfileBadge name={host.profileName} games={host.profileGames} />
         <span className="profile-trigger-text">
           <span className="muted small">Game profile</span>
           <strong>{host.profileName}</strong>
@@ -288,10 +298,10 @@ function ProfilePicker({ host, refreshHost }: { host: Host; refreshHost: () => P
                   disabled={switching !== null}
                   onClick={() => (p.id === host.profileId ? setOpen(false) : void activate(p.id))}
                 >
-                  <ProfileBadge name={p.name} />
+                  <ProfileBadge name={p.name} games={p.games} />
                   <span className="profile-option-text">
                     <strong>{p.name}</strong>
-                    <span className="muted small">{p.gameProcess ? `Follows ${p.gameProcess}` : 'Any game'}</span>
+                    <span className="muted small">{p.games.length ? `Follows ${p.games.map((g) => g.process).join(', ')}` : 'Any game'}</span>
                   </span>
                   {switching === p.id ? <Spinner label="Switching" /> : p.id === host.profileId && <span className="tag teal">Active</span>}
                 </button>

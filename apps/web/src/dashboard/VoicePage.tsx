@@ -61,6 +61,8 @@ export function VoicePage({ host, refreshHost }: PageProps) {
     <div className="stack">
       <ErrorNotice error={error} />
       <Card
+        badge="chat"
+        hue="sky"
         title="What gets read aloud"
         description='Your overlay reads chat aloud as "viewer says …", and speaks alerts marked "Read aloud". Links are never read, and in "all chat" mode game commands are skipped.'
       >
@@ -106,6 +108,8 @@ export function VoicePage({ host, refreshHost }: PageProps) {
       <VoiceCard host={host} save={save} guard={guard} setError={setError} refreshHost={refreshHost} />
       <GiftUnlock host={host} save={save} />
       <Card
+        badge="shield"
+        hue="amber"
         title="Chat filters"
         description={host.ttsMode === 'off' ? 'Turn on reading chat above to use these.' : 'Applies to chat only; alerts are always read.'}
       >
@@ -200,6 +204,8 @@ function VoiceCard({
 
   return (
     <Card
+      badge="voice"
+      hue="violet"
       title="Voice"
       description={host.ttsMode === 'off' ? 'Chat isn\u2019t read aloud right now. This voice is still used for alerts marked "Read aloud".' : undefined}
       actions={
@@ -536,6 +542,8 @@ function GiftUnlock({ host, save }: { host: Host; save: (patch: SettingsPatch) =
   };
   return (
     <Card
+      badge="gift"
+      hue="pink"
       title="Unlock with gifts"
       icon={<HueIcon name="gift" hue="amber" />}
       description={host.ttsMode === 'off' ? 'Turn on reading chat above to use this.' : `Only read viewers who send a gift you choose, with ${host.ttsPrefix} or in all chat.`}

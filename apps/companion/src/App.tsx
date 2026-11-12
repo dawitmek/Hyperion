@@ -27,8 +27,9 @@ interface Snapshot {
   paused: boolean;
   pausedByHost: boolean; // paused with the button or the panic key; otherwise it hasn't been started yet
   targetProcess: string | null;
+  targets: string[]; // every program keys go to: the one picked, or all the profile's games when it's one of them
   profileName: string | null;
-  profileGame: string | null;
+  profileGames: string[];
   allowedKeys: string[];
   allKeys: string[];
   log: LogEntry[];
@@ -50,6 +51,7 @@ interface Snapshot {
   themeStyle: string | null;
   themeMode: string | null; // "light", "dark" or "system"
   version: string;
+  debugMode: boolean;
   updatesSupported: boolean;
   autoUpdate: boolean | null; // null until the host answers the one-time question
   update: UpdateView;
@@ -127,7 +129,11 @@ export default function App() {
   const run: Run = (command, args) =>
     invoke(command, args)
       .then(() => (setError(null), true))
-      .catch((e) => (setError(String(e)), false));
+      .catch((e) => {
+        void invoke("log_window_error", { message: `${command}: ${e}` }).catch(() => {});
+        setError(String(e));
+        return false;
+      });
 
   // The look: the dashboard's (see @hyperion/theme), as the server last sent it, unless one was picked for this PC.
   const [ownLook, setOwnLook] = useState(savedLook);
@@ -488,17 +494,18 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
   useEffect(() => void refreshWindows(), []);
 
   const connected = state.connection === "connected";
+  const targets = state.targets.join(" or ");
   // One state for the whole PC, most pressing first: nothing arrives while disconnected, and nothing is pressed until
   // a game is picked and the host presses Play. The companion starts paused, but only a pause the host made says so.
   const status = !connected
     ? { hue: "red", title: state.connection === "connecting" ? "Connecting" : "Offline", text: "Not connected to the server, so chat's keys can't reach this PC." }
     : !state.targetProcess
-      ? { hue: "amber", title: "Pick a game", text: "Pick the game chat plays below, then press Play." }
+      ? { hue: "amber", title: "Pick a game", text: "Pick the game chat plays below, then press Start." }
       : state.paused && !state.pausedByHost
-        ? { hue: "amber", title: "Not started", text: `Press Play when you're ready. Keys will go to ${state.targetProcess}.` }
+        ? { hue: "amber", title: "Not started", text: `Press Start when you're ready. Keys will go to ${targets}.` }
         : state.paused
-          ? { hue: "amber", title: "Paused", text: `Nothing is pressed until you resume. Keys will go to ${state.targetProcess}.` }
-          : { hue: "green", title: "Ready", text: `Chat's keys go to ${state.targetProcess} while its window is in focus.` };
+          ? { hue: "amber", title: "Paused", text: `Nothing is pressed until you resume. Keys will go to ${targets}.` }
+          : { hue: "green", title: "Ready", text: `Chat's keys go to ${targets} while its window is in focus.` };
 
   return (
     <SectionsProvider>
@@ -519,7 +526,7 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
               onClick={() => run("set_paused", { paused: !state.paused })}
             >
               <Icon name={state.paused ? "play" : "pause"} />
-              {!state.paused ? "Pause" : state.pausedByHost ? "Resume" : "Play"}
+              {!state.paused ? "Pause" : state.pausedByHost ? "Resume" : "Start"}
             </button>
           ) : (
             <button className="btn hero-toggle" onClick={() => run("reconnect")}>
@@ -541,9 +548,9 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
             </span>
             <GamePicker value={state.targetProcess} windows={windows} onOpen={refreshWindows} onPick={(process) => run("set_target", { process })} />
           </div>
-          {state.profileGame && state.targetProcess !== state.profileGame && (
+          {state.profileGames.length > 0 && !state.profileGames.includes(state.targetProcess ?? "") && (
             <p className="notice warning">
-              The {state.profileName} profile is for {state.profileGame}, but this PC is targeting {state.targetProcess ?? "nothing"}.
+              The {state.profileName} profile is for {state.profileGames.join(" or ")}, but this PC is targeting {state.targetProcess ?? "nothing"}.
             </p>
           )}
         </div>
@@ -577,7 +584,7 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
       <Macros state={state} run={run} />
       <GameActions state={state} run={run} />
 
-      <TiktokVoices serverUrl={state.serverUrl} />
+      <Misc state={state} run={run} />
 
       <Section
         id="activity"
@@ -608,7 +615,65 @@ function Paired({ state, run }: { state: Snapshot; run: Run }) {
   );
 }
 
-// Signs in to TikTok in a separate window so the server can use TikTok's own voices for text-to-speech.
+// Everything else: debug mode and the log for troubleshooting, and the TikTok sign-in for TikTok's voices.
+function Misc({ state, run }: { state: Snapshot; run: Run }) {
+  const [saved, setSaved] = useState<{ ok: boolean; text: string } | null>(null);
+  const exportLogs = () =>
+    invoke<string>("export_logs").then(
+      (path) => setSaved({ ok: true, text: `Saved to ${path}` }),
+      (e) => setSaved({ ok: false, text: String(e) }),
+    );
+  return (
+    <Section
+      id="misc"
+      label="Misc"
+      icon="sliders"
+      hue="pink"
+      title="Misc"
+      description="Troubleshooting, and the TikTok sign-in for TikTok's voices."
+      summary={state.debugMode ? "Debug mode on" : "Debug mode off"}
+    >
+      <div className="misc-row">
+        <span className="misc-icon" aria-hidden="true">
+          <Icon name="bug" size={18} />
+        </span>
+        <div className="misc-text">
+          <strong>Debug mode</strong>
+          <span className="muted small">
+            Keeps every message from the server and every key and action in the log, not just connections, pauses and errors. Turn it on before
+            reproducing a problem, then export the log.
+          </span>
+        </div>
+        <label className="approve">
+          <span className="switch">
+            <input type="checkbox" checked={state.debugMode} aria-label="Debug mode" onChange={(e) => run("set_debug_mode", { on: e.target.checked })} />
+          </span>
+        </label>
+      </div>
+      <div className="misc-row">
+        <span className="misc-icon" aria-hidden="true">
+          <Icon name="file" size={18} />
+        </span>
+        <div className="misc-text">
+          <strong>Export logs</strong>
+          <span className="muted small">Saves the log to your Downloads folder as a text file, to send with a bug report. It never includes passwords or sign-ins.</span>
+        </div>
+        <button className="btn btn-sm" onClick={exportLogs}>
+          <Icon name="import" size={14} />
+          Export logs
+        </button>
+      </div>
+      {saved && (
+        <p className={`notice ${saved.ok ? "info" : "error"} small`} role="status">
+          {saved.text}
+        </p>
+      )}
+      <TiktokVoices serverUrl={state.serverUrl} />
+    </Section>
+  );
+}
+
+// Signs in to TikTok in a separate window so the server can use TikTok's own voices for text-to-speech. Part of Misc.
 function TiktokVoices({ serverUrl }: { serverUrl: string | null }) {
   // null until the server answers. `needed` is false while the server's own TikTok account works.
   const [status, setStatus] = useState<{ signedIn: boolean; needed: boolean } | null>(null);
@@ -643,15 +708,16 @@ function TiktokVoices({ serverUrl }: { serverUrl: string | null }) {
   if (!status?.needed && !message) return null;
 
   return (
-    <Section
-      id="tiktok"
-      label="Voices"
-      icon="voice"
-      hue="pink"
-      title="TikTok voices"
-      description="Read chat aloud in TikTok's own voices. Sign in to TikTok here and Hyperion uses your account to make the speech."
-      summary={signedIn ? "Signed in to TikTok" : "Not signed in"}
-    >
+    <div className="misc-block">
+      <div className="misc-row">
+        <span className="misc-icon" aria-hidden="true">
+          <Icon name="voice" size={18} />
+        </span>
+        <div className="misc-text">
+          <strong>TikTok voices</strong>
+          <span className="muted small">Read chat aloud in TikTok's own voices. Sign in to TikTok here and Hyperion uses your account to make the speech.</span>
+        </div>
+      </div>
       {message && (
         <div className={`notice ${message.ok ? "info" : "error"}`} role="status">
           {message.text}
@@ -677,7 +743,7 @@ function TiktokVoices({ serverUrl }: { serverUrl: string | null }) {
           </button>
         )}
       </div>
-    </Section>
+    </div>
   );
 }
 
@@ -978,6 +1044,15 @@ type Draft = GameAction & { editing: string | null };
 // Step-by-step setup for both editions, with sample commands.
 const MINECRAFT_GUIDE = "https://github.com/dawitmek/Hyperion/blob/main/docs/MINECRAFT.md";
 
+const FOLDED_KEY = "hyperion.companion.foldedGames";
+function savedFolded(): Set<Game> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(FOLDED_KEY) ?? "[]") as Game[]);
+  } catch {
+    return new Set();
+  }
+}
+
 function GameActions({ state, run }: { state: Snapshot; run: Run }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [pack, setPack] = useState<"import" | "export" | null>(null);
@@ -1002,6 +1077,21 @@ function GameActions({ state, run }: { state: Snapshot; run: Run }) {
       return next;
     });
   const share = (names: string[] | null) => (setShareNames(names), setPack("export"));
+  // Each game's list folds away under its heading; which ones are folded is remembered on this PC.
+  const [folded, setFolded] = useState<Set<Game>>(savedFolded);
+  const fold = (game: Game) =>
+    setFolded((set) => {
+      const next = new Set(set);
+      if (!next.delete(game)) next.add(game);
+      try {
+        localStorage.setItem(FOLDED_KEY, JSON.stringify([...next]));
+      } catch {
+        // Not remembered on this PC; it still folds.
+      }
+      return next;
+    });
+  // The actions under their game, in the games' usual order; a game with none isn't shown.
+  const groups = (Object.keys(GAME_NAMES) as Game[]).map((g) => [g, actions.filter((a) => a.game === g)] as const).filter(([, list]) => list.length > 0);
 
   return (
     <Section
@@ -1051,57 +1141,85 @@ function GameActions({ state, run }: { state: Snapshot; run: Run }) {
             </button>
           </div>
         ))}
-      {actions.length > 0 && (
-        <ul className={`actions ${selected ? "selecting" : ""}`}>
-          {actions.map((a) => {
-            if (draft?.editing === a.name) return <li key={a.name}>{editor(draft)}</li>;
-            const picked = selected?.has(a.name) ?? false;
-            const body = (
-              <>
-                <div className="action-head">
-                  {selected && <input type="checkbox" className="check" checked={picked} onChange={() => toggle(a.name)} aria-label={`Select ${a.name}`} />}
-                  <GameBadge game={a.game} />
-                  <div className="action-title">
-                    <strong className="action-name">{a.name}</strong>
-                    <span className="action-meta">
-                      {GAME_NAMES[a.game]}
-                      {a.repeat > 1 && (
+      {groups.map(([game, list]) => (
+        <section key={game} className="action-group" aria-labelledby={`actions-${game}`}>
+          <div className="action-group-head">
+            <h3 id={`actions-${game}`}>
+              <button type="button" className="action-group-toggle" aria-expanded={!folded.has(game)} aria-controls={`actions-${game}-list`} onClick={() => fold(game)}>
+                <GameBadge game={game} size={26} />
+                {GAME_NAMES[game]}
+                <span className="action-group-count">{list.length}</span>
+                <Icon name="chevron" size={16} />
+              </button>
+            </h3>
+            {selected && !folded.has(game) && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  const all = list.every((a) => selected.has(a.name));
+                  setSelected((set) => {
+                    const next = new Set(set);
+                    for (const a of list) {
+                      if (all) next.delete(a.name);
+                      else next.add(a.name);
+                    }
+                    return next;
+                  });
+                }}
+              >
+                {list.every((a) => selected.has(a.name)) ? "Select none" : "Select all"}
+              </button>
+            )}
+          </div>
+          {!folded.has(game) && (
+            <ul id={`actions-${game}-list`} className={`actions ${selected ? "selecting" : ""}`}>
+              {list.map((a) => {
+                if (draft?.editing === a.name) return <li key={a.name}>{editor(draft)}</li>;
+                const picked = selected?.has(a.name) ?? false;
+                const body = (
+                  <>
+                    <div className="action-head">
+                      {selected && <input type="checkbox" className="check" checked={picked} onChange={() => toggle(a.name)} aria-label={`Select ${a.name}`} />}
+                      <div className="action-title">
+                        <strong className="action-name">{a.name}</strong>
+                        {a.repeat > 1 && (
+                          <span className="action-meta">
+                            <Icon name="repeat" size={12} />
+                            {a.repeat} times{a.delayMs > 0 ? `, ${a.delayMs / 1000} s apart` : ""}
+                          </span>
+                        )}
+                      </div>
+                      {!selected && (
                         <>
-                          <span aria-hidden="true">·</span>
-                          <Icon name="repeat" size={12} />
-                          {a.repeat} times{a.delayMs > 0 ? `, ${a.delayMs / 1000} s apart` : ""}
+                          <TryButton disabled={!ready[a.game]} title={ready[a.game] ? "Runs it now, as a viewer called Tester" : notReady[a.game]} onTry={() => run("try_game_action", { name: a.name })} />
+                          <button className="btn btn-ghost btn-sm btn-icon" aria-label={`Edit ${a.name}`} title="Edit" onClick={() => setDraft({ ...a, editing: a.name })}>
+                            <Icon name="edit" size={15} />
+                          </button>
                         </>
                       )}
-                    </span>
-                  </div>
-                  {!selected && (
-                    <>
-                      <TryButton disabled={!ready[a.game]} title={ready[a.game] ? "Runs it now, as a viewer called Tester" : notReady[a.game]} onTry={() => run("try_game_action", { name: a.name })} />
-                      <button className="btn btn-ghost btn-sm btn-icon" aria-label={`Edit ${a.name}`} title="Edit" onClick={() => setDraft({ ...a, editing: a.name })}>
-                        <Icon name="edit" size={15} />
-                      </button>
-                    </>
-                  )}
-                </div>
-                <ol className="action-lines">
-                  {a.commands.slice(0, 3).map((c, i) => (
-                    <li key={i}>
-                      <CommandLine text={c} />
-                    </li>
-                  ))}
-                  {a.commands.length > 3 && <li className="more">and {a.commands.length - 3} more</li>}
-                </ol>
-              </>
-            );
-            return (
-              <li key={a.name} className={`action ${GAME_HUES[a.game]} ${picked ? "picked" : ""}`}>
-                {/* While selecting, the whole card ticks its box. */}
-                {selected ? <label className="action-select">{body}</label> : body}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                    </div>
+                    <ol className="action-lines">
+                      {a.commands.slice(0, 3).map((c, i) => (
+                        <li key={i}>
+                          <CommandLine text={c} />
+                        </li>
+                      ))}
+                      {a.commands.length > 3 && <li className="more">and {a.commands.length - 3} more</li>}
+                    </ol>
+                  </>
+                );
+                return (
+                  <li key={a.name} className={`action ${GAME_HUES[a.game]} ${picked ? "picked" : ""}`}>
+                    {/* While selecting, the whole card ticks its box. */}
+                    {selected ? <label className="action-select">{body}</label> : body}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      ))}
       {selected ? null : draft && draft.editing === null ? (
         editor(draft)
       ) : (

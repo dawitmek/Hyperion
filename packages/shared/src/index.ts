@@ -155,7 +155,22 @@ export interface OverlayScreen {
   layout: ScreenLayout;
   widgets: ScreenWidget[];
   linkStyles: Record<string, WidgetStyle>; // by widgetKey: looks for Widget links, over the same widget's look on this screen
+  parts: Partial<Record<OverlayPart, PartPlace>>; // the feed, leaderboard and mode panel moved or resized by hand
+  phoneSafe: PhoneSafe; // on a phone screen, how much TikTok's buttons and chat cover
 }
+
+// On a phone screen, the percent of the screen TikTok's buttons cover at the top and its chat at the bottom. Widgets'
+// spots and alerts stay between. Streamers drag the edges to fit their own stream, leaving at least MIN_PHONE_ROOM.
+export type PhoneSafe = { top: number; bottom: number };
+export const DEFAULT_PHONE_SAFE: PhoneSafe = { top: 13, bottom: 30 };
+export const PHONE_SAFE_LIMITS = { top: [0, 40], bottom: [0, 50] } as const;
+export const MIN_PHONE_ROOM = 30;
+
+// The parts of a screen that aren't widgets but can be moved and sized like them. Without a place of their own they
+// keep their corners (the mode panel top left, the leaderboard top right, the feed bottom left), and the screen's size.
+export const OVERLAY_PARTS = ['feed', 'leaderboard', 'mode'] as const;
+export type OverlayPart = (typeof OVERLAY_PARTS)[number];
+export type PartPlace = { pos?: { x: number; y: number }; size?: number }; // pos: its top-left corner, in percent; size: percent, in place of the screen's
 
 // How the stream is doing, sent by the platform every few seconds while live.
 export interface RoomStats {
@@ -193,15 +208,39 @@ export type CompanionToServer =
   // The macros recorded on this PC, by name: they stay on the PC, so a server can only ask for one, never write one.
   | { type: 'macros'; names: string[] }
   // Likewise the game actions set up on it: commands it sends into a game such as Minecraft.
-  | { type: 'gameActions'; names: string[] };
+  | { type: 'gameActions'; names: string[] }
+  // The programs with a window open on this PC, in answer to `listWindows`, for picking a profile's games.
+  | { type: 'windows'; windows: RunningGame[] };
 
-// `profile` tells the companion which game to target (null: keep the host's own choice).
+// A program the companion can see, as it lists it: the window's title, the executable's name, and its icon.
+export interface RunningGame {
+  title: string;
+  process: string;
+  icon: string | null; // a small PNG as a data: URL
+}
+
+// A game a profile targets: the program as the companion lists it ("gta5.exe" on Windows, "minecraft" on macOS),
+// with its icon when it was picked from the companion's list.
+export interface ProfileGame {
+  process: string;
+  icon: string | null;
+}
+export const MAX_PROFILE_GAMES = 8;
+export const MAX_GAME_ICON_CHARS = 32_000;
+// No paths: a program's file name only.
+export const GAME_PROCESS_PATTERN = '^[^\\\\/:*?"<>|\\u0000-\\u001f\\u007f]{1,64}$';
+export const GAME_ICON_PATTERN = '^data:image/png;base64,[A-Za-z0-9+/]+={0,2}$';
+
+// `profile` tells the companion which games to target (none: keep the host's own choice). `gameProcess` is the first
+// of them, for companions from before a profile could have several.
 // Older companions ignore message types they don't know, so this needs no protocol bump.
 export type ServerToCompanion =
   | { type: 'ready'; hostId: string }
   | { type: 'error'; reason: string }
   | { type: 'action'; action: KeyAction }
-  | { type: 'profile'; name: string; gameProcess: string | null }
+  | { type: 'profile'; name: string; gameProcess: string | null; gameProcesses: string[] }
+  // Asks for the programs with a window open, answered with `windows`.
+  | { type: 'listWindows' }
   // The active profile's commands, so the companion can show them and ask for its own OK on key combinations.
   // Sent on connect and whenever commands or the active profile change.
   | { type: 'commands'; commands: { keyword: string; key: string; enabled: boolean; macro: string | null; gameAction: string | null }[] }
@@ -408,6 +447,14 @@ export type UiThemeStyle = 'full' | 'colors';
 export const UI_MODES = ['system', 'light', 'dark'] as const;
 export type UiMode = (typeof UI_MODES)[number]; // light or dark; 'system' follows the computer's setting
 
+// The dashboard's setup guide: the welcome window on first sign-in, then the checklist shown, tucked into the
+// sidebar, finished or skipped. Steps are kept once done, so one that only shows for a moment (a companion online,
+// a test stream) stays ticked.
+export const ONBOARDING_STATES = ['new', 'open', 'collapsed', 'done', 'skipped'] as const;
+export type OnboardingState = (typeof ONBOARDING_STATES)[number];
+export const ONBOARDING_STEPS = ['tiktok', 'game', 'companion', 'overlay', 'test'] as const;
+export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
 // The dashboard Live page's cards. A card in neither column is hidden.
 export const LIVE_CARDS = [
   'commands', 'feed', 'stream', 'mode', 'voice', 'activity', 'players',
@@ -417,6 +464,10 @@ export type LiveCard = (typeof LIVE_CARDS)[number];
 export type LiveColumn = 'main' | 'side';
 export type LiveLayout = Record<LiveColumn, LiveCard[]>;
 export const DEFAULT_LIVE_LAYOUT: LiveLayout = { main: ['stream', 'commands', 'feed'], side: ['mode', 'voice', 'activity', 'players'] };
+
+// What a new command starts with, until the host sets their own.
+export type CommandDefaults = { holdMs: number; cooldownMs: number; minLevel: number; cost: number };
+export const DEFAULT_COMMAND: CommandDefaults = { holdMs: 300, cooldownMs: 1000, minLevel: 1, cost: 0 };
 
 // Template placeholders: {viewer}, {count}, {gift}, {diamonds}, {total} (likes), {months}, {text} (command), {goal}, {target}.
 

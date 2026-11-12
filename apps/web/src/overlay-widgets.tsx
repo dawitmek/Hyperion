@@ -83,7 +83,7 @@ export function Widget(props: WidgetProps) {
   // Always the same wrapper: a widget that gains a look keeps what it's showing.
   const { style, size } = props.widget;
   return (
-    <div className={`widget-box ${style ? 'widget-look' : ''}`} style={{ ...(style && widgetLook(style)), ...(size && { '--w-scale': size / 100 }) } as CSSProperties}>
+    <div className={`widget-box ${style ? 'widget-look' : ''} ${size ? 'own-size' : ''}`} style={{ ...(style && widgetLook(style)), ...(size && { '--w-scale': size / 100 }) } as CSSProperties}>
       <WidgetBody {...props} />
     </div>
   );

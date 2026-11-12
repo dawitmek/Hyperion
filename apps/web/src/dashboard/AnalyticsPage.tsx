@@ -37,7 +37,7 @@ export function AnalyticsPage({ host, status }: PageProps) {
   if (opened) return <StreamPage id={opened} streams={streams} detail={detail} status={status} />;
   if (streams.length === 0) {
     return (
-      <Card title="No streams yet" description="Your TikTok streams show up here once you go live. Test mode isn't counted.">
+      <Card badge="analytics" hue="teal" title="No streams yet" description="Your TikTok streams show up here once you go live. Test mode isn't counted.">
         <p className="empty">Go live from the Live page and come back afterwards, or during the stream.</p>
       </Card>
     );
@@ -79,7 +79,7 @@ function StreamPage({ id, streams, detail, status }: { id: string; streams: Stre
   const summary = streams.find((s) => s.id === id);
   if (!summary) {
     return (
-      <Card title="Stream not found" description="It may have been a test session, which isn't kept here, or it belongs to another account.">
+      <Card badge="search" hue="amber" title="Stream not found" description="It may have been a test session, which isn't kept here, or it belongs to another account.">
         <Link href="/dashboard/analytics" className="btn">
           Back to all streams
         </Link>
@@ -136,6 +136,8 @@ function AllStreams({ account, live }: { account: string; live: boolean }) {
   const cameBack = o ? o.loyalty.few + o.loyalty.many : 0;
   return (
     <Card
+      badge="grid"
+      hue="violet"
       title="Patterns"
       description={
         o &&
@@ -304,6 +306,8 @@ function Trends({ streams, selected, onSelect }: { streams: StreamSummary[]; sel
 
   return (
     <Card
+      badge="analytics"
+      hue="teal"
       title="Across your streams"
       description={
         `${number(latest.viewers)} viewers in your latest stream${change === null ? '' : `, ${change >= 0 ? `${change}% more` : `${-change}% fewer`} than the one before`}. ${number(latest.participants)} interacted.`
@@ -362,7 +366,7 @@ function Trends({ streams, selected, onSelect }: { streams: StreamSummary[]; sel
 
 function StreamList({ streams, showAccount }: { streams: StreamSummary[]; showAccount: boolean }) {
   return (
-    <Card title="Streams" description="Open one for its full report: who took part, its busiest moments, and everything that happened. Bars on the charts above open theirs too.">
+    <Card badge="live" hue="red" title="Streams" description="Open one for its full report: who took part, its busiest moments, and everything that happened. Bars on the charts above open theirs too.">
       <div className="table-wrap stream-scroll">
         <table className="table stream-table">
           <thead>
@@ -421,6 +425,8 @@ function StreamReport({ detail, previous, status }: { detail: StreamDetail | nul
   return (
     <>
       <Card
+        badge="record"
+        hue="indigo"
         title={`Stream on ${longDate(s.startedAt)}`}
         description={`${s.tiktokUsername ? `@${s.tiktokUsername}, ` : ''}${s.profileName} profile, ${duration((s.endedAt ?? Date.now()) - s.startedAt)}.${before ? ' Arrows compare it with the stream before.' : ''}`}
       >
@@ -442,19 +448,19 @@ function StreamReport({ detail, previous, status }: { detail: StreamDetail | nul
         />
       </Card>
       <div className="analytics-grid">
-        <Card title="Commands" description="How often each fired, and how often chat asked but it didn't. Click one to see who used it.">
+        <Card badge="commands" hue="indigo" title="Commands" description="How often each fired, and how often chat asked but it didn't. Click one to see who used it.">
           <CommandUsage detail={detail} selected={focus?.keyword} onSelect={(keyword) => toggle({ label: `the ${keyword} command`, keyword })} />
         </Card>
-        <Card title="Peak moments" description="The busiest two minutes, worth checking for clips. Click one to see what happened.">
+        <Card badge="flame" hue="amber" title="Peak moments" description="The busiest two minutes, worth checking for clips. Click one to see what happened.">
           <Peaks detail={detail} focus={focus} onSelect={toggle} />
         </Card>
       </div>
       <StreamViewers id={s.id} live={s.endedAt === null} focus={focus} onSelect={toggle} />
       <div className="analytics-grid">
-        <Card title="Gifts" description="What viewers sent, by total coins. Click one to see who sent it.">
+        <Card badge="gift" hue="pink" title="Gifts" description="What viewers sent, by total coins. Click one to see who sent it.">
           <Gifts detail={detail} selected={focus?.gift} onSelect={(gift) => toggle({ label: `${gift} gifts`, gift })} />
         </Card>
-        <Card title="Crowd modes" description="Votes in democracy, and the line in queue mode.">
+        <Card badge="crowd" hue="orange" title="Crowd modes" description="Votes in democracy, and the line in queue mode.">
           <Modes detail={detail} />
         </Card>
       </div>
@@ -542,6 +548,8 @@ function StreamViewers({ id, live, focus, onSelect }: { id: string; live: boolea
   const rows = all ? sorted : sorted.slice(0, VIEWER_ROWS);
   return (
     <Card
+      badge="profiles"
+      hue="sky"
       title="Viewers"
       description={`${number(viewers.length)}${viewers.length >= 500 ? '+' : ''} seen in this stream. Click a name for their profile, or Activity for what they did in this stream.`}
     >

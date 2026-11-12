@@ -93,10 +93,10 @@ html.overlay-page, html.overlay-page body { background: transparent; }
 .alerts-bottom { --alert-top: auto; }
 .alerts-bottom .overlay-alert { bottom: 5%; transform-origin: 50% 100%; }
 .alerts-middle .overlay-alert { transform-origin: 50% 50%; }
-.overlay-screen.layout-phone { --alert-top: 13%; }
-.layout-phone.alerts-middle { --alert-top: 41.5%; }
+.overlay-screen.layout-phone { --alert-top: var(--safe-top, 13%); }
+.layout-phone.alerts-middle { --alert-top: calc((100% + var(--safe-top, 13%) - var(--safe-bottom, 30%)) / 2); }
 .layout-phone.alerts-bottom { --alert-top: auto; }
-.layout-phone.alerts-bottom .overlay-alert { bottom: 30%; }
+.layout-phone.alerts-bottom .overlay-alert { bottom: var(--safe-bottom, 30%); }
 /* An alert's look comes from its action's style as variables (alertLook in alert-style.ts); the fallbacks are the
    Ocean preset. Sizes are in em, so padding and the media gap follow the text size. */
 .overlay-alert {
@@ -160,8 +160,12 @@ html.overlay-page, html.overlay-page body { background: transparent; }
 .widget-box { display: contents; }
 .widget-look .overlay-panel, .widget-look .overlay-item, .widget-look .w-stats > div { --accent: var(--w-accent); --accent-soft: var(--w-accent-soft); }
 .widget-look .overlay-panel, .widget-look .overlay-item { border: var(--w-border); border-radius: var(--w-radius); background: var(--w-bg); box-shadow: none; color: var(--w-ink); text-shadow: var(--w-shadow); font-family: var(--w-font); }
-/* A widget's size: its own on a screen, times its look's. */
+/* A widget's size: its own on a screen, times its look's. The screen's size zooms everything on it; a widget given a
+   size of its own has that instead, so the screen's zoom is taken back out. */
 .widget-box .overlay-panel, .widget-box .overlay-item { zoom: calc(var(--w-size, 1) * var(--w-scale, 1)); }
+.widget-box.own-size .overlay-panel, .widget-box.own-size .overlay-item { zoom: calc(var(--w-size, 1) * var(--w-scale, 1) / var(--overlay-scale, 1)); }
+/* The feed, leaderboard or mode panel at a size of its own, likewise in place of the screen's. */
+.part-box { zoom: calc(var(--p-size, 1) / var(--overlay-scale, 1)); }
 .widget-look .overlay-title, .widget-look .overlay-muted, .widget-look .w-stat-label { color: var(--w-ink); opacity: 0.75; }
 .widget-look .overlay-item .overlay-keyword { background: var(--w-accent-soft); color: var(--accent); }
 .widget-look .overlay-item svg { color: var(--accent); }
@@ -176,11 +180,11 @@ html.overlay-page, html.overlay-page body { background: transparent; }
 .spot-bottom-left { bottom: 16px; left: 16px; align-items: flex-start; justify-content: flex-end; }
 .spot-bottom { bottom: 16px; left: 50%; transform: translateX(-50%); align-items: center; }
 .spot-bottom-right { bottom: 16px; right: 16px; align-items: flex-end; }
-/* Phone: a portrait stream. The spots stay between TikTok's buttons at the top and its chat at the bottom (LAYOUT_SAFE
-   in Overlay.tsx), the side ones in the middle of that. */
-.layout-phone .spot-top-left, .layout-phone .spot-top, .layout-phone .spot-top-right { top: 13%; }
-.layout-phone .spot-left, .layout-phone .spot-right { top: 41.5%; }
-.layout-phone .spot-bottom-left, .layout-phone .spot-bottom, .layout-phone .spot-bottom-right { bottom: 30%; }
+/* Phone: a portrait stream. The spots stay between TikTok's buttons at the top and its chat at the bottom (the screen's
+   phoneSafe, as --safe-top and --safe-bottom), the side ones in the middle of that. */
+.layout-phone .spot-top-left, .layout-phone .spot-top, .layout-phone .spot-top-right { top: var(--safe-top, 13%); }
+.layout-phone .spot-left, .layout-phone .spot-right { top: calc((100% + var(--safe-top, 13%) - var(--safe-bottom, 30%)) / 2); }
+.layout-phone .spot-bottom-left, .layout-phone .spot-bottom, .layout-phone .spot-bottom-right { bottom: var(--safe-bottom, 30%); }
 /* A phone screen opened in a browser to preview: the stream's edges. */
 .phone-frame { outline: 2px dashed rgba(127, 127, 127, 0.6); }
 

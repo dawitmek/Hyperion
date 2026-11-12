@@ -154,11 +154,12 @@ A game action is one or more commands the companion sends in order, saved on you
 
    ```
    summon creeper ~ ~ ~
-   say {viewer} sent a creeper!
+   titleraw @a actionbar {"rawtext":[{"text":"§a{viewer} sent a creeper!"}]}
    ```
 
 4. To run it more than once, set **Run it** to a number of times and the seconds between each.
-5. Click **Save action**, then **Try**. A creeper should appear next to you, and chat says "Tester sent a creeper!".
+5. Click **Save action**, then **Try**. A creeper should appear next to you, with "Tester sent a creeper!" in chat (Java) or
+   above your hotbar (Bedrock).
 
 ### Or start from a pack
 
@@ -271,37 +272,43 @@ execute at {player} run spreadplayers ~ ~ 0 50 false {player}
 ```
 
 ### Bedrock
+Each one also shows who sent it in the game, as a colored line above your hotbar. `titleraw` takes Bedrock's
+JSON text; `§` and a letter or digit sets the color, such as `§a` for green.
+
 
 **Creeper next to you**
 
 ```
 summon creeper ~ ~ ~
-say {viewer} sent a creeper!
+titleraw @a actionbar {"rawtext":[{"text":"§a{viewer} sent a creeper!"}]}
 ```
 
 **A zombie wearing the viewer's name**
 
 ```
 summon zombie "{viewer}" ~ ~ ~
+titleraw @a actionbar {"rawtext":[{"text":"§2{viewer} joined as a zombie!"}]}
 ```
 
 **TNT rain** (set Run it to 5 times, 1 second apart)
 
 ```
 summon tnt ~ ~8 ~
+titleraw @a actionbar {"rawtext":[{"text":"§c{viewer} made it rain TNT!"}]}
 ```
 
 **Diamonds, one for each gift**
 
 ```
 give @s diamond {count}
-title @s title {viewer} sent diamonds
+titleraw @a actionbar {"rawtext":[{"text":"§b{viewer} sent {count} diamonds!"}]}
 ```
 
 **Lightning strike**
 
 ```
 summon lightning_bolt ~ ~ ~
+titleraw @a actionbar {"rawtext":[{"text":"§e{viewer} called down lightning!"}]}
 ```
 
 **Thunderstorm at night**
@@ -309,19 +316,21 @@ summon lightning_bolt ~ ~ ~
 ```
 weather thunder
 time set night
-say {viewer} brought the storm
+titleraw @a actionbar {"rawtext":[{"text":"§9{viewer} brought the storm!"}]}
 ```
 
 **Speed boost for 30 seconds**
 
 ```
 effect @s speed 30 2
+titleraw @a actionbar {"rawtext":[{"text":"§d{viewer} gave you a speed boost!"}]}
 ```
 
 **Teleport somewhere random within 50 blocks**
 
 ```
 spreadplayers ~ ~ 0 50 @s
+titleraw @a actionbar {"rawtext":[{"text":"§5{viewer} teleported you!"}]}
 ```
 
 ## Troubleshooting

@@ -1,23 +1,25 @@
 import '@fontsource-variable/bricolage-grotesque';
+import type { CSSProperties } from 'react';
 import { Icon, type IconName } from '../icons';
 import { Link } from '../router';
 import { Glow } from './Glow';
 import { LiveScene } from './LiveScene';
+import { LoopVideo } from './LoopVideo';
 import { SiteLayout } from './SiteLayout';
 import './home.css';
 
 // Games streamers run on TikTok LIVE. Minecraft has a full integration; the rest are played on the keyboard alone, so
 // key presses from chat are enough to play them. Games that need the mouse to look or aim don't fit and aren't listed.
-// `media` is a sample image in public/games (Steam store art; Minecraft from the Microsoft Store). Swap in a video clip per game later.
-const GAMES: { name: string; colour: string; media: string; integrated?: string }[] = [
-  { name: 'Minecraft: Java Edition', colour: '#2f7a46', media: '/games/minecraft-java.jpg', integrated: 'Spawn mobs, drop TNT' },
-  { name: 'Minecraft: Bedrock Edition', colour: '#24603a', media: '/games/minecraft-bedrock.jpg', integrated: 'Spawn mobs, drop TNT' },
-  { name: 'GTA V', colour: '#c2366e', media: '/games/gta-v.jpg' },
-  { name: 'Fall Guys', colour: '#d04a6a', media: '/games/fall-guys.jpg' },
-  { name: 'Only Up!', colour: '#b0398f', media: '/games/only-up.jpg' },
-  { name: 'Geometry Dash', colour: '#2456d9', media: '/games/geometry-dash.jpg' },
-  { name: 'Forza Horizon', colour: '#d0632b', media: '/games/forza-horizon.jpg' },
-  { name: 'Vampire Survivors', colour: '#8a2b3f', media: '/games/vampire-survivors.jpg' },
+// `clip` names a gameplay loop in public/games: <clip>.mp4, its first frame <clip>.jpg, and the logo logos/<clip>.webp.
+const GAMES: { name: string; colour: string; clip: string; integrated?: string }[] = [
+  { name: 'Minecraft: Java & Bedrock', colour: '#2f7a46', clip: 'minecraft', integrated: 'Spawn mobs, drop TNT' },
+  { name: 'Hollow Knight', colour: '#3a4660', clip: 'hollow-knight' },
+  { name: 'GTA V', colour: '#c2366e', clip: 'gta-v' },
+  { name: 'Fall Guys', colour: '#d04a6a', clip: 'fall-guys' },
+  { name: 'Only Up!', colour: '#b0398f', clip: 'only-up' },
+  { name: 'Geometry Dash', colour: '#2456d9', clip: 'geometry-dash' },
+  { name: 'Forza Horizon', colour: '#d0632b', clip: 'forza-horizon' },
+  { name: 'Vampire Survivors', colour: '#8a2b3f', clip: 'vampire-survivors' },
 ];
 
 const STEPS = [
@@ -76,10 +78,12 @@ export function HomePage() {
             </div>
             <ul className="h-game-grid">
               {GAMES.map((g) => (
-                <li key={g.name} className="h-game" style={{ background: g.colour }}>
-                  <img className="h-game-media" src={g.media} alt="" loading="lazy" />
+                <li key={g.name} className="h-game" style={{ background: g.colour, '--tint': g.colour } as CSSProperties}>
+                  <LoopVideo className="h-game-media" src={`/games/${g.clip}.mp4`} poster={`/games/${g.clip}.jpg`} />
                   <span className="h-game-kind">{g.integrated ? 'Integration' : 'Key presses'}</span>
-                  <h3>{g.name}</h3>
+                  <h3>
+                    <img src={`/games/logos/${g.clip}.webp`} alt={g.name} loading="lazy" />
+                  </h3>
                   {g.integrated && <span className="h-game-does">{g.integrated}</span>}
                 </li>
               ))}

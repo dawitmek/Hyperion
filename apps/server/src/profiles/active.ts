@@ -14,10 +14,11 @@ export async function activeProfile(db: Db, hostId: string) {
   return row.profile;
 }
 
-// Tells the host's companions which game the active profile targets, and what its commands press.
+// Tells the host's companions which games the active profile targets, and what its commands press.
 export async function sendProfileToCompanions(app: FastifyInstance, hostId: string) {
   const profile = await activeProfile(app.db, hostId);
-  app.hub.sendToCompanions(hostId, { type: 'profile', name: profile.name, gameProcess: profile.gameProcess });
+  const gameProcesses = profile.games.map((g) => g.process);
+  app.hub.sendToCompanions(hostId, { type: 'profile', name: profile.name, gameProcess: gameProcesses[0] ?? null, gameProcesses });
   await sendCommandsToCompanions(app, hostId, profile.id);
 }
 

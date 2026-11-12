@@ -1,0 +1,1 @@
+ALTER TABLE "overlay_screens" ADD COLUMN "phone_safe" jsonb DEFAULT '{"top":13,"bottom":30}'::jsonb NOT NULL;

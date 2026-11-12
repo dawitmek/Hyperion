@@ -1,7 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import type { RawData, WebSocket } from 'ws';
 import { eq } from 'drizzle-orm';
-import { MAX_GAME_ACTIONS, MAX_MACROS, PROTOCOL_VERSION, type CompanionToServer, type OverlayToServer, type ServerToCompanion } from '@hyperion/shared';
+import {
+  GAME_ICON_PATTERN,
+  GAME_PROCESS_PATTERN,
+  MAX_GAME_ACTIONS,
+  MAX_GAME_ICON_CHARS,
+  MAX_MACROS,
+  PROTOCOL_VERSION,
+  type CompanionToServer,
+  type OverlayToServer,
+  type RunningGame,
+  type ServerToCompanion,
+} from '@hyperion/shared';
 import { companions, hosts, overlayScreens } from '../db/schema.js';
 import { toScreen } from '../screens/routes.js';
 import { sha256 } from '../crypto.js';
@@ -9,6 +20,18 @@ import { sendProfileToCompanions } from '../profiles/active.js';
 import { sendThemeToCompanions } from '../settings/routes.js';
 
 const HELLO_TIMEOUT_MS = 5000;
+const MAX_WINDOWS = 100;
+const processPattern = new RegExp(GAME_PROCESS_PATTERN);
+const iconPattern = new RegExp(GAME_ICON_PATTERN);
+
+// What a companion says is running, kept only where it's well formed: it ends up on the dashboard.
+const runningGames = (windows: unknown[]): RunningGame[] =>
+  windows.slice(0, MAX_WINDOWS).flatMap((w) => {
+    const { title, process, icon } = (w ?? {}) as Record<string, unknown>;
+    if (typeof process !== 'string' || !processPattern.test(process) || typeof title !== 'string') return [];
+    const goodIcon = typeof icon === 'string' && icon.length <= MAX_GAME_ICON_CHARS && iconPattern.test(icon);
+    return [{ title: title.replaceAll('\0', '').slice(0, 200), process: process.toLowerCase(), icon: goodIcon ? icon : null }];
+  });
 
 const reply = (socket: WebSocket, message: ServerToCompanion) => socket.send(JSON.stringify(message));
 
@@ -55,6 +78,9 @@ export async function gatewayRoutes(app: FastifyInstance) {
         }
         if (message.type === 'gameActions' && Array.isArray(message.names)) {
           hub.setGameActions(companion.id, message.names.filter((n) => typeof n === 'string').slice(0, MAX_GAME_ACTIONS));
+        }
+        if (message.type === 'windows' && Array.isArray(message.windows)) {
+          hub.setWindows(companion.id, runningGames(message.windows));
         }
       } catch {
         // Ignore malformed messages from an authenticated companion.

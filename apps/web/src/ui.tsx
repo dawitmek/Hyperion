@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { CONTROL_CHARS, formatKey, keyProblem, type Modifier } from '@hyperion/shared';
 import { ApiError } from './api';
 import { Icon, type IconName } from './icons';
@@ -87,6 +87,27 @@ export function ConfirmButton({
 // The theme's hues; each has an ink, a soft background and a fill (see theme.css).
 export type Hue = 'red' | 'green' | 'amber' | 'indigo' | 'sky' | 'pink' | 'violet' | 'teal' | 'orange';
 
+// What a modal <dialog> needs to close when its backdrop is clicked. Clicks on the backdrop land on the dialog itself,
+// outside its box. Only a press that starts and ends out there counts, so dragging out of the dialog (moving a widget,
+// selecting text) doesn't close it. `close` is for a dialog that animates out first.
+let pressedOutside = false;
+const onBackdrop = (e: ReactMouseEvent<HTMLDialogElement>) => {
+  if (e.target !== e.currentTarget) return false;
+  const r = e.currentTarget.getBoundingClientRect();
+  return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+};
+export const closeOnBackdrop = (close: (dialog: HTMLDialogElement) => void = (dialog) => dialog.close()) => ({
+  onMouseDown: (e: ReactMouseEvent<HTMLDialogElement>) => void (pressedOutside = onBackdrop(e)),
+  onClick: (e: ReactMouseEvent<HTMLDialogElement>) => {
+    if (pressedOutside && onBackdrop(e)) close(e.currentTarget);
+    pressedOutside = false;
+  },
+});
+
+// A section's colour, for a card drawn by hand (with the card-hued class): its border and background take a little
+// of it, so sections side by side are told apart at a glance.
+export const hueStyle = (hue: Hue) => ({ '--card-hue': `var(--${hue})` }) as CSSProperties;
+
 // An icon on a tinted tile, so a row can be told apart at a glance.
 export function HueIcon({ name, hue, size = 'md' }: { name: IconName; hue: Hue; size?: 'sm' | 'md' }) {
   return (
@@ -120,6 +141,8 @@ export function Card({
   children,
   id,
   icon,
+  badge,
+  hue = 'indigo',
   className,
 }: {
   title: string;
@@ -128,15 +151,18 @@ export function Card({
   children: ReactNode;
   id?: string;
   icon?: ReactNode; // sets the title apart, like a screen's name on the Overlay page
+  badge?: IconName; // an icon before the title, and the card's border and background take `hue`
+  hue?: Hue;
   className?: string;
 }) {
   const headingId = id ?? `card-${title.toLowerCase().replace(/\W+/g, '-')}`;
   return (
-    <section className={`card stack ${className ?? ''}`} aria-labelledby={headingId}>
+    <section className={`card stack ${badge ? 'card-hued' : ''} ${className ?? ''}`} style={badge ? hueStyle(hue) : undefined} aria-labelledby={headingId}>
       <div className="card-head" style={{ marginBottom: 0 }}>
         <div>
-          <h2 id={headingId} className={icon ? 'card-title' : undefined}>
-            {icon}
+          <h2 id={headingId} className={icon ? 'card-title' : badge ? 'card-title-badged' : undefined}>
+            {/* One icon: a card can set `icon` for its title and `badge` for its colours. */}
+            {icon ?? (badge && <HueIcon name={badge} hue={hue} />)}
             {title}
           </h2>
           {description && <p>{description}</p>}
@@ -754,13 +780,15 @@ export function Seg<T extends string>({
   );
 }
 
-// A profile's badge: its first letter, in a colour that stays the same for that name.
+// A profile's badge: its game's icon when it has one, or else its first letter, in a colour that stays the same for
+// that name.
 const PROFILE_HUES = ['indigo', 'teal', 'pink', 'violet', 'sky', 'orange'];
-export function ProfileBadge({ name, size }: { name: string; size?: 'lg' }) {
+export function ProfileBadge({ name, size, games }: { name: string; size?: 'lg'; games?: { icon: string | null }[] }) {
   const hue = PROFILE_HUES[[...name].reduce((n, c) => n + c.charCodeAt(0), 0) % PROFILE_HUES.length];
+  const icon = games?.find((g) => g.icon)?.icon;
   return (
-    <span className={`profile-badge hue-${hue} ${size === 'lg' ? 'lg' : ''}`} aria-hidden="true">
-      {[...name.trim()][0]?.toUpperCase() ?? '?'}
+    <span className={`profile-badge hue-${hue} ${size === 'lg' ? 'lg' : ''} ${icon ? 'has-icon' : ''}`} aria-hidden="true">
+      {icon ? <img src={icon} alt="" /> : ([...name.trim()][0]?.toUpperCase() ?? '?')}
     </span>
   );
 }

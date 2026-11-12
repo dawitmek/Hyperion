@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { UI_THEMES, type UiMode, type UiTheme, type UiThemeStyle } from '@hyperion/shared';
 import { THEME_SWATCHES } from '@hyperion/theme/swatches';
 import { api, type Host } from '../api';
@@ -7,6 +7,7 @@ import { Link, navigate } from '../router';
 import { Card, Choices, ConfirmButton, ErrorNotice, Seg, Switch, useError } from '../ui';
 import { rememberTheme } from '../theme';
 import type { PageProps } from './Dashboard';
+import { reopenSetup, startTour } from './Onboarding';
 
 // Settings sections, in page order: the side nav links to each card's heading.
 const SECTIONS: { id: string; title: string; icon: IconName }[] = [
@@ -17,17 +18,16 @@ const SECTIONS: { id: string; title: string; icon: IconName }[] = [
 ];
 
 // A card title's icon badge, so each section is easy to spot when scrolling.
-const badge = (icon: IconName) => (
-  <span className="settings-badge" aria-hidden="true">
-    <Icon name={icon} size={18} />
-  </span>
-);
 
 export function SettingsPage({ host, refreshHost }: PageProps) {
   const [username, setUsername] = useState(host.tiktokUsername ?? '');
   const [rate, setRate] = useState(host.actionsPerSecond);
   const [saved, setSaved] = useState(false);
   const { error, guard } = useError();
+  // Linked to from the Live page while there's no username yet.
+  useEffect(() => {
+    if (location.hash === '#tiktok-username') document.getElementById('tiktok-username')?.focus();
+  }, []);
   const save = guard(() =>
     api('PATCH', '/settings', { tiktokUsername: username.trim() || null, actionsPerSecond: rate })
       .then(refreshHost)
@@ -45,7 +45,7 @@ export function SettingsPage({ host, refreshHost }: PageProps) {
         ))}
       </nav>
       <div className="stack settings-body">
-        <Card id="settings-stream" icon={badge('live')} title="Stream" description="You must already be live on TikTok before Hyperion can connect to your stream.">
+        <Card id="settings-stream" badge="live" hue="red" title="Stream" description="You must already be live on TikTok before Hyperion can connect to your stream.">
           <ErrorNotice error={error} />
           <form
             className="stack"
@@ -59,6 +59,7 @@ export function SettingsPage({ host, refreshHost }: PageProps) {
                 TikTok username
                 <span className="hint">Each account keeps its own leaderboard and viewer points. Switching back brings them back.</span>
                 <input
+                  id="tiktok-username"
                   value={username}
                   maxLength={25}
                   onChange={(e) => (setUsername(e.target.value.replace(/[^A-Za-z0-9_.@]/g, '')), setSaved(false))}
@@ -86,6 +87,15 @@ export function SettingsPage({ host, refreshHost }: PageProps) {
           <Link href="/changelog">Changelog</Link>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
+          <span className="spacer" />
+          {host.onboarding !== 'open' && (
+            <button className="link-button" onClick={() => void reopenSetup(refreshHost)}>
+              Setup guide
+            </button>
+          )}
+          <button className="link-button" onClick={startTour}>
+            Take the tour
+          </button>
         </footer>
       </div>
     </div>
@@ -100,48 +110,10 @@ function Appearance({ host, refreshHost }: { host: Host; refreshHost: () => Prom
     return guard(() => api('PATCH', '/settings', patch).then(refreshHost))();
   };
   return (
-    <Card id="settings-appearance" icon={badge('sun')} title="Appearance" description="The look of your dashboard and the companion app.">
+    <Card id="settings-appearance" badge="sun" hue="amber" title="Appearance" description="The look of your dashboard and the companion app.">
       <ErrorNotice error={error} />
       <div className="stack">
-        <div className="field">
-          Light or dark
-          <span className="hint">System matches your computer, and switches when it does.</span>
-          <Seg<UiMode>
-            label="Light or dark"
-            value={host.uiMode}
-            options={[
-              ['system', 'System'],
-              ['light', 'Light'],
-              ['dark', 'Dark'],
-            ]}
-            onChange={(uiMode) => save({ uiMode })}
-          />
-        </div>
-        <Choices<UiTheme>
-          label="Theme"
-          value={host.uiTheme}
-          options={UI_THEMES.map(({ id, label }) => [
-            id,
-            label,
-            <>
-              <span className="theme-swatch" aria-hidden="true">
-                {(['light', 'dark'] as const).map((mode) => {
-                  const [page, card, accent, second] = THEME_SWATCHES[id][mode];
-                  return (
-                    <span key={mode} className="theme-swatch-half" style={{ background: page }}>
-                      <span className="theme-swatch-card" style={{ background: card }}>
-                        <span style={{ background: accent }} />
-                        <span style={{ background: second }} />
-                      </span>
-                    </span>
-                  );
-                })}
-              </span>
-              {THEME_SWATCHES[id].note}
-            </>,
-          ])}
-          onChange={(uiTheme) => save({ uiTheme })}
-        />
+        <ThemeFields host={host} save={save} />
         <div className="field">
           What the theme changes
           <span className="hint">Colors only keeps Hyperion's own font and rounded corners with any theme.</span>
@@ -157,6 +129,53 @@ function Appearance({ host, refreshHost }: { host: Host; refreshHost: () => Prom
         </div>
       </div>
     </Card>
+  );
+}
+
+// Light or dark and the theme: in Settings and the welcome window. `save` applies a change at once.
+export function ThemeFields({ host, save }: { host: Host; save: (patch: { uiTheme?: UiTheme; uiMode?: UiMode }) => unknown }) {
+  return (
+    <>
+      <div className="field">
+        Light or dark
+        <span className="hint">System matches your computer, and switches when it does.</span>
+        <Seg<UiMode>
+          label="Light or dark"
+          value={host.uiMode}
+          options={[
+            ['system', 'System'],
+            ['light', 'Light'],
+            ['dark', 'Dark'],
+          ]}
+          onChange={(uiMode) => save({ uiMode })}
+        />
+      </div>
+      <Choices<UiTheme>
+        label="Theme"
+        value={host.uiTheme}
+        options={UI_THEMES.map(({ id, label }) => [
+          id,
+          label,
+          <>
+            <span className="theme-swatch" aria-hidden="true">
+              {(['light', 'dark'] as const).map((mode) => {
+                const [page, card, accent, second] = THEME_SWATCHES[id][mode];
+                return (
+                  <span key={mode} className="theme-swatch-half" style={{ background: page }}>
+                    <span className="theme-swatch-card" style={{ background: card }}>
+                      <span style={{ background: accent }} />
+                      <span style={{ background: second }} />
+                    </span>
+                  </span>
+                );
+              })}
+            </span>
+            {THEME_SWATCHES[id].note}
+          </>,
+        ])}
+        onChange={(uiTheme) => save({ uiTheme })}
+      />
+    </>
   );
 }
 
@@ -182,7 +201,7 @@ function YourData() {
   const remove = guard(() => api('POST', '/auth/delete-account', { password }).then(() => navigate('/')));
 
   return (
-    <Card id="settings-data" icon={badge('download')} title="Your data" description="Take a copy of everything your account holds, or delete it for good.">
+    <Card id="settings-data" badge="download" hue="teal" title="Your data" description="Take a copy of everything your account holds, or delete it for good.">
       <ErrorNotice error={error} />
       <div className="settings-panels">
         <div className="inset settings-panel">
@@ -236,7 +255,7 @@ function Account({ host }: { host: Host }) {
   const signOutEverywhere = guard(() => api('POST', '/auth/logout-all').then(() => navigate('/login')));
 
   return (
-    <Card id="settings-account" icon={badge('shield')} title="Account">
+    <Card id="settings-account" badge="shield" hue="indigo" title="Account">
       <div className="settings-who">
         <span className="settings-avatar" aria-hidden="true">
           {host.email[0]?.toUpperCase()}

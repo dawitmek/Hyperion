@@ -146,6 +146,7 @@ pub async fn check(ctl: &Arc<Controller>, manual: bool) {
             u.file = None;
         }),
         Err(error) => set(ctl, |u| {
+            crate::debug_log::info(format!("Update check failed: {error}"));
             if manual {
                 u.view = UpdateView { status: Status::Error, error: Some(error), ..Default::default() };
             }
@@ -181,6 +182,7 @@ fn spawn_install(ctl: Arc<Controller>, automatic: bool) {
 pub async fn install(ctl: Arc<Controller>, automatic: bool) -> Result<(), String> {
     let result = try_install(&ctl, automatic).await;
     if let Err(error) = &result {
+        crate::debug_log::info(format!("Update failed: {error}"));
         set(&ctl, |u| {
             u.view.status = Status::Error;
             u.view.error = Some(error.clone());

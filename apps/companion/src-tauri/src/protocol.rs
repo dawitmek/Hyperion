@@ -38,9 +38,17 @@ pub enum ServerMessage {
     Ready {},
     Error { reason: String },
     Action { action: KeyAction },
-    // The host's active profile. A game process, when set, becomes this PC's target.
+    // The host's active profile and the programs that count as its game: when there are any, they become this PC's
+    // target. Servers from before a profile could have several send only `gameProcess`.
     #[serde(rename_all = "camelCase")]
-    Profile { name: String, game_process: Option<String> },
+    Profile {
+        name: String,
+        game_process: Option<String>,
+        #[serde(default)]
+        game_processes: Option<Vec<String>>,
+    },
+    // Asks which programs have a window open, for picking a profile's games on the dashboard.
+    ListWindows {},
     // The active profile's commands. Key combinations among them still need this PC's own approval.
     Commands { commands: Vec<CommandInfo> },
     // The dashboard's look, which this window follows: a theme ("default", "solar-dusk"…) in "full" or "colors"
@@ -68,6 +76,8 @@ pub enum CompanionMessage<'a> {
     Macros { names: Vec<String> },
     // The game actions set up on this PC, by name. Like macros, their commands stay here.
     GameActions { names: Vec<String> },
+    // The programs with a window open, in answer to ListWindows.
+    Windows { windows: Vec<crate::input::GameWindow> },
 }
 
 #[cfg(test)]
@@ -84,10 +94,15 @@ mod tests {
 
     #[test]
     fn parses_profile_messages() {
+        let games: ServerMessage =
+            serde_json::from_str(r#"{"type":"profile","name":"MC","gameProcess":"javaw.exe","gameProcesses":["javaw.exe","minecraft.windows.exe"]}"#).unwrap();
+        assert!(matches!(games, ServerMessage::Profile { game_processes: Some(ref p), .. } if p == &["javaw.exe", "minecraft.windows.exe"]));
+        // From an older server: one game, or none.
         let with_game: ServerMessage = serde_json::from_str(r#"{"type":"profile","name":"GTA V","gameProcess":"gta5.exe"}"#).unwrap();
-        assert!(matches!(with_game, ServerMessage::Profile { ref name, game_process: Some(ref p) } if name == "GTA V" && p == "gta5.exe"));
+        assert!(matches!(with_game, ServerMessage::Profile { ref name, game_process: Some(ref p), game_processes: None } if name == "GTA V" && p == "gta5.exe"));
         let without: ServerMessage = serde_json::from_str(r#"{"type":"profile","name":"Default","gameProcess":null}"#).unwrap();
         assert!(matches!(without, ServerMessage::Profile { game_process: None, .. }));
+        assert!(matches!(serde_json::from_str(r#"{"type":"listWindows"}"#).unwrap(), ServerMessage::ListWindows {}));
     }
 
     #[test]

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { ACTION_TRIGGERS, ALERT_SOUNDS, BUILT_IN_MEDIA, AUDIENCES, DEFAULT_ALERT_STYLE, GOAL_METRICS, type GoalMetric, MAX_KEY_REPEATS, MAX_MEDIA_TOTAL_BYTES, type AlertFx, type AlertSound, type AlertStyle, type ServerToOverlay } from '@hyperion/shared';
 import { api, uploadMedia, type Action, type ActionTrigger, type Audience, type Command, type Goal, type Host, type MediaItem, type Screen } from '../api';
 import { playSound } from '../sounds';
-import { Card, cleanTyped, ConfirmButton, ErrorNotice, HueIcon, Scrubber, useError, type Hue } from '../ui';
+import { Card, cleanTyped, closeOnBackdrop, ConfirmButton, ErrorNotice, HueIcon, Scrubber, useError, type Hue } from '../ui';
 import { Icon, type IconName } from '../icons';
 import { alertPlace, useClearOfWidgets } from '../Overlay';
 import { coinCount, findGift, GiftPicker, useGifts } from './GiftPicker';
@@ -100,6 +100,8 @@ function DefaultLookCard({ host, refreshHost, actions, media }: Pick<PageProps, 
   const action = previewable.find((a) => a.id === previewed) ?? { ...newDraft(), text: '{viewer} followed!' };
   return (
     <Card
+      badge="sparkle"
+      hue="pink"
       title="Pop-up style"
       description="How your alerts look on stream: colors, font, shape and animation. Every action uses your main style unless you pick your second style or give it its own."
     >
@@ -327,19 +329,21 @@ function ActionsCard({ host, media, actions, setActions }: { host: Host; media: 
 
   return (
     <Card
-      title="Actions"
-      description="What happens when viewers do something: an alert on your overlay, a sound, a picture or video, a voice, a key press, or points. Test sends an action's alert to your open overlays, live or not."
+      badge="flow"
+      hue="indigo"
+      title="Alerts"
+      description="What happens when viewers do something: an alert on your overlay, a sound, a picture or video, a voice, a key press, or points. Test sends an alert to your open overlays, live or not."
       actions={
         <button className="btn btn-primary" onClick={() => setEditing('new')} disabled={editing === 'new'}>
-          New action
+          New alert
         </button>
       }
     >
       <ErrorNotice error={error} />
       {editing === 'new' && (
-        <ActionEditor title="New action" initial={{ ...newDraft(), sound: unlessHidden(newDraft().sound, host.hiddenSounds) }} {...context} onSave={(d) => save(null, d)} onCancel={() => setEditing(null)} />
+        <ActionEditor title="New alert" initial={{ ...newDraft(), sound: unlessHidden(newDraft().sound, host.hiddenSounds) }} {...context} onSave={(d) => save(null, d)} onCancel={() => setEditing(null)} />
       )}
-      {actions.length === 0 && editing !== 'new' && <p className="empty">No actions yet. Add one to thank followers, react to gifts, or let chat trigger something.</p>}
+      {actions.length === 0 && editing !== 'new' && <p className="empty">No alerts yet. Add one to thank followers, react to gifts, or let chat trigger something.</p>}
       <ul className="action-list">
         {actions.map((a) => (
           <li key={a.id} className={a.enabled ? '' : 'off'}>
@@ -1143,10 +1147,12 @@ function MediaCard({ media: all, reload, actions, setActions }: { media: MediaIt
 
   return (
     <Card
+      badge="download"
+      hue="orange"
       title="Uploads"
       description={`Built-in pictures and sounds are free to use and don't count toward your space; only your own uploads do. Your own pictures (PNG, JPEG, GIF, WebP), videos (MP4, WebM) and sounds (MP3, OGG, WAV, M4A) for your actions. Up to 10 MB each, ${megabytes(MAX_MEDIA_TOTAL_BYTES)} in all.`}
       actions={
-        <label className={`btn btn-primary ${uploading ? 'disabled' : ''}`}>
+        <label className={`btn btn-primary ${uploading ? 'disabled' : ''}`} data-tour="uploads">
           {uploading ? 'Uploading…' : 'Upload files'}
           <input type="file" multiple hidden accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,audio/*" onChange={upload} disabled={uploading} />
         </label>
@@ -1360,7 +1366,7 @@ function SoundsCard({
   const volume = (key: string, percent: number) => guard(() => api('PATCH', '/settings', { soundVolumes: { [key]: percent } }).then(refreshHost))();
 
   return (
-    <Card title="Built-in sounds" description="The sounds that come with Hyperion. Turn each one up or down on your overlays, or remove the ones you don't use from the Sound menu.">
+    <Card badge="bell" hue="sky" title="Built-in sounds" description="The sounds that come with Hyperion. Turn each one up or down on your overlays, or remove the ones you don't use from the Sound menu.">
       <ErrorNotice error={error} />
       {rows.length === 0 ? (
         <p className="empty">All built-in sounds are removed.</p>
@@ -1457,7 +1463,7 @@ function AlertPlaceDialog({ draft, screen, media, onDone, onClose }: { draft: Dr
   const [resizing, setResizing] = useState(false);
   const text = draft.text ? sampleText(draft.text) : '';
   return (
-    <dialog ref={dialog} className={`pos-dialog ${screen.layout}`} onClose={onClose} aria-labelledby="alert-place-title">
+    <dialog ref={dialog} className={`pos-dialog ${screen.layout}`} onClose={onClose} {...closeOnBackdrop()} aria-labelledby="alert-place-title">
       <div className="pos-head">
         <div>
           <h2 id="alert-place-title">{draft.name.trim() || 'Alert'}: place and size</h2>
@@ -1469,7 +1475,7 @@ function AlertPlaceDialog({ draft, screen, media, onDone, onClose }: { draft: Dr
           <Icon name="close" />
         </button>
       </div>
-      <div {...stageProps(screen.layout)} ref={stage}>
+      <div {...stageProps(screen.layout, screen.phoneSafe)} ref={stage}>
         <div className="pos-canvas" style={canvasStyle(screen.layout, fit)}>
           <div className={`overlay-screen layout-${screen.layout} alerts-${screen.alertPosition}`} style={{ '--overlay-scale': screen.scale / 100 } as CSSProperties}>
             <FadedWidgets widgets={screen.widgets} feed={{ stats, chat, bus }} />

@@ -9,8 +9,13 @@ export function dragAlert(e: PointerEvent<HTMLElement>, stage: HTMLElement, onMo
   const grab = { x: e.clientX - (alert.left + alert.width / 2), y: e.clientY - (alert.top + alert.height / 2) };
   const half = { x: (alert.width / 2 / box.width) * 100, y: (alert.height / 2 / box.height) * 100 };
   const clamp = (n: number, h: number) => Math.round(Math.min(Math.max(n, Math.min(h, 50)), Math.max(100 - h, 50)) * 10) / 10;
-  const move = (m: globalThis.PointerEvent) =>
+  // A press that barely moves is a click: it leaves the alert where it is.
+  let moved = false;
+  const move = (m: globalThis.PointerEvent) => {
+    if (!moved && Math.hypot(m.clientX - e.clientX, m.clientY - e.clientY) < 4) return;
+    moved = true;
     onMove({ x: clamp(((m.clientX - grab.x - box.left) / box.width) * 100, half.x), y: clamp(((m.clientY - grab.y - box.top) / box.height) * 100, half.y) });
+  };
   const stop = () => {
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', stop);

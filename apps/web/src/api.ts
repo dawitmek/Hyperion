@@ -33,6 +33,7 @@ import type {
   AlertEffect,
   AlertShape,
   ChainStep,
+  CommandDefaults,
   LiveLayout,
   ActionTrigger,
   AlertPosition,
@@ -44,7 +45,10 @@ import type {
   LeaderboardEntry,
   MediaItem,
   Mode,
+  OnboardingState,
+  OnboardingStep,
   OverlayScreen,
+  ProfileGame,
   Speech,
   TtsEngine,
   TtsMode,
@@ -117,13 +121,17 @@ export interface Host {
   uiMode: UiMode;
   liveLayout: LiveLayout | null; // the Live page's cards; null: DEFAULT_LIVE_LAYOUT
   streamRecap: boolean; // sum up a stream when it ends
+  commandDefaults: CommandDefaults | null; // what a new command starts with; null: DEFAULT_COMMAND
   alertStyle: AlertStyle | null; // the look of alerts whose action has none; null: DEFAULT_ALERT_STYLE
   alertStyle2: AlertStyle | null; // a second look actions can share; null: same as alertStyle
   hiddenSounds: AlertSound[]; // built-in sounds the host removed
   soundVolumes: Record<string, number>; // percent, by built-in sound or built-in file id; missing: 100
+  onboarding: OnboardingState; // the dashboard's setup guide
+  onboardingSteps: OnboardingStep[]; // its steps done so far
   // Active profile
   profileId: string;
   profileName: string;
+  profileGames: ProfileGame[];
   mode: Mode;
   voteWindowMs: number;
   turnMs: number;
@@ -194,7 +202,7 @@ export type Screen = OverlayScreen & { token: string };
 export interface Profile {
   id: string;
   name: string;
-  gameProcess: string | null;
+  games: ProfileGame[]; // the programs that count as its game; none: whatever the companion picked
   active: boolean;
 }
 

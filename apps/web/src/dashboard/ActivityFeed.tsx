@@ -3,7 +3,8 @@ import type { StreamEvent, StreamSummary } from '@hyperion/shared';
 import { api, type LiveStatus } from '../api';
 import { Icon } from '../icons';
 import { href } from '../router';
-import { Spinner } from '../ui';
+import { HueIcon, hueStyle, Spinner } from '../ui';
+import { CARD_INFO } from './LiveLayout';
 import { ViewerLink } from './ViewerPanel';
 
 export type Kind = StreamEvent['kind'];
@@ -248,14 +249,20 @@ export function ActivityFeed({
   const stream = page?.stream;
 
   return (
-    <section ref={section} className={`card activity-feed ${own ? 'in-window' : ''}`} aria-labelledby="full-activity">
+    <section ref={section} className={`card card-hued activity-feed ${own ? 'in-window' : ''}`} style={hueStyle(CARD_INFO.feed.hue)} aria-labelledby="full-activity">
       {own ? (
-        <h2 id="full-activity">Full activity</h2>
+        <h2 id="full-activity" className="card-title-badged">
+          <HueIcon name={CARD_INFO.feed.icon} hue={CARD_INFO.feed.hue} />
+          Full activity
+        </h2>
       ) : (
         <div className="activity-head">
           <button className="collapse-head" aria-expanded={open} aria-controls="full-activity-body" onClick={toggle}>
             <span>
-              <h2 id="full-activity">Full activity</h2>
+              <h2 id="full-activity" className="card-title-badged">
+                <HueIcon name={CARD_INFO.feed.icon} hue={CARD_INFO.feed.hue} />
+                Full activity
+              </h2>
               <span className="muted">Every chat message, gift, join, follow, share, like, subscription and sticker from your stream.</span>
             </span>
             <Icon name="chevron" size={18} />
@@ -264,6 +271,7 @@ export function ActivityFeed({
             <button
               className="btn btn-ghost btn-sm btn-icon"
               title="Open in a new window"
+              data-tour="pop-out"
               aria-label="Open full activity in a new window"
               onClick={() => window.open(href('/dashboard/activity-window'), 'hyperion-activity', 'popup,width=560,height=820')}
             >

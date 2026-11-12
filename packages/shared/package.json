@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./game-icons": {
+      "types": "./dist/game-icons.d.ts",
+      "default": "./dist/game-icons.js"
     }
   },
   "scripts": {

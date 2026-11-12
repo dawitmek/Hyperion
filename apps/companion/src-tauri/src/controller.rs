@@ -55,6 +55,16 @@ pub struct BedrockView {
 }
 
 /// The stop key. Taken from other programs only during a recording, so F9 keeps working in games otherwise.
+/// The programs keys may go to: the one picked on this PC, and when it's one of the active profile's games, the rest
+/// of them too, so a profile for Minecraft can follow Java and Bedrock alike.
+fn targets(picked: Option<&str>, profile_games: &[String]) -> Vec<String> {
+    match picked {
+        Some(picked) if profile_games.iter().any(|g| g == picked) => profile_games.to_vec(),
+        Some(picked) => vec![picked.to_string()],
+        None => vec![],
+    }
+}
+
 pub fn stop_key() -> Shortcut {
     Shortcut::new(None, Code::F9)
 }
@@ -86,8 +96,9 @@ pub struct Snapshot {
     paused: bool,
     paused_by_host: bool, // paused with the button or the panic key, rather than not started yet
     target_process: Option<String>,
+    targets: Vec<String>, // every program keys go to: the one picked, or all of the profile's games when it's one of them
     profile_name: Option<String>,
-    profile_game: Option<String>,
+    profile_games: Vec<String>,
     allowed_keys: Vec<String>,
     all_keys: Vec<String>,
     log: Vec<LogEntry>,
@@ -109,6 +120,7 @@ pub struct Snapshot {
     theme_style: Option<String>,
     theme_mode: Option<String>,
     version: &'static str,
+    debug_mode: bool,
     updates_supported: bool,
     auto_update: Option<bool>, // None until the host answers the one-time question
     update: UpdateView,
@@ -134,7 +146,7 @@ pub struct Controller {
     paused: AtomicBool,
     paused_by_host: AtomicBool,
     connection: Mutex<String>,
-    profile: Mutex<(Option<String>, Option<String>)>, // active dashboard profile: (name, game process)
+    profile: Mutex<(Option<String>, Vec<String>)>, // active dashboard profile: (name, the programs that count as its game)
     commands: Mutex<Vec<CommandInfo>>,               // the active profile's commands, from the server
     log: Mutex<VecDeque<LogEntry>>,
     held: Mutex<HashMap<String, u32>>, // key -> number of actions currently holding it
@@ -185,7 +197,7 @@ impl Controller {
             paused: AtomicBool::new(true),
             paused_by_host: AtomicBool::new(false),
             connection: Mutex::new("disconnected".into()),
-            profile: Mutex::new((None, None)),
+            profile: Mutex::new((None, Vec::new())),
             commands: Mutex::new(Vec::new()),
             log: Mutex::new(VecDeque::new()),
             held: Mutex::new(HashMap::new()),
@@ -247,7 +259,8 @@ impl Controller {
     pub fn snapshot(&self) -> Snapshot {
         let config = self.config();
         // Lock once: std's Mutex isn't reentrant, and two locks in one expression deadlock.
-        let (profile_name, profile_game) = self.profile.lock().unwrap().clone();
+        let (profile_name, profile_games) = self.profile.lock().unwrap().clone();
+        let targets = targets(config.target_process.as_deref(), &profile_games);
         let allowed = allowed_keys(&config.allowed_keys);
         let approved = config.approved_combos.clone().unwrap_or_default();
         let macro_names = self.macro_names();
@@ -266,8 +279,9 @@ impl Controller {
             paused: self.paused.load(Ordering::SeqCst),
             paused_by_host: self.paused_by_host.load(Ordering::SeqCst),
             target_process: config.target_process,
+            targets,
             profile_name,
-            profile_game,
+            profile_games,
             allowed_keys: allowed,
             all_keys: ALL_KEYS.iter().map(|k| k.to_string()).collect(),
             log: self.log.lock().unwrap().iter().cloned().collect(),
@@ -294,6 +308,7 @@ impl Controller {
             theme_style: config.theme_style,
             theme_mode: config.theme_mode,
             version: updater::CURRENT,
+            debug_mode: crate::debug_log::debug_on(),
             updates_supported: updater::SUPPORTED,
             auto_update: config.auto_update,
             update,
@@ -303,6 +318,7 @@ impl Controller {
     /// The server's list of the active profile's commands. The first list after updating carries approvals over
     /// from the old Ctrl/Alt toggles, so combinations that worked before keep working.
     pub fn set_commands(&self, commands: Vec<CommandInfo>) -> Result<(), String> {
+        crate::debug_log::debug(|| format!("Commands from the server: {}", commands.len()));
         let config = self.config();
         if config.approved_combos.is_none() {
             let carried = carried_over_approvals(&commands, &config.allowed_keys);
@@ -331,13 +347,25 @@ impl Controller {
     }
 
     pub fn set_connection(&self, status: impl Into<String>) {
-        *self.connection.lock().unwrap() = status.into();
+        let status = status.into();
+        let mut connection = self.connection.lock().unwrap();
+        if *connection != status {
+            crate::debug_log::info(format!("Connection: {status}"));
+        }
+        *connection = status;
+        drop(connection);
         self.emit();
     }
 
     /// `by_host`: the host paused, with the button or the panic key, so the window offers Resume rather than Play.
     pub fn set_paused(&self, paused: bool, by_host: bool) {
-        self.paused.store(paused, Ordering::SeqCst);
+        if self.paused.swap(paused, Ordering::SeqCst) != paused {
+            crate::debug_log::info(match (paused, by_host) {
+                (true, true) => "Paused by the host",
+                (true, false) => "Paused until Start (no game, or a new one from the profile)",
+                (false, _) => "Started: keys go to the game",
+            });
+        }
         self.paused_by_host.store(paused && by_host, Ordering::SeqCst);
         if paused {
             self.release_all();
@@ -347,18 +375,19 @@ impl Controller {
 
     /// Follows the dashboard's active profile. The host can still pick another game here until the next switch.
     /// A new game from the server waits for Play, so the dashboard (or a stolen account) can't point keys at another
-    /// program while they're going out.
-    pub fn apply_profile(&self, name: String, game_process: Option<String>) -> Result<(), String> {
-        let game_process = game_process.map(|p| p.to_lowercase());
-        *self.profile.lock().unwrap() = (Some(name), game_process.clone());
-        match game_process {
-            Some(process) => {
-                if self.config().target_process.as_deref() != Some(process.as_str()) {
-                    self.set_paused(true, false);
-                }
-                self.update_config(|c| c.target_process = Some(process))
+    /// program while they're going out. A profile can name several programs, such as Minecraft Java and Bedrock: if
+    /// this PC already targets one of them, nothing changes.
+    pub fn apply_profile(&self, name: String, games: Vec<String>) -> Result<(), String> {
+        let games: Vec<String> = games.into_iter().map(|p| p.to_lowercase()).collect();
+        crate::debug_log::info(format!("Profile {name}, for {}", if games.is_empty() { "any game".into() } else { games.join(", ") }));
+        *self.profile.lock().unwrap() = (Some(name), games.clone());
+        let current = self.config().target_process;
+        match games.first() {
+            Some(first) if !current.is_some_and(|c| games.contains(&c)) => {
+                self.set_paused(true, false);
+                self.update_config(|c| c.target_process = Some(first.clone()))
             }
-            None => {
+            _ => {
                 self.emit();
                 Ok(())
             }
@@ -408,11 +437,12 @@ impl Controller {
     }
 
     fn game_focused(&self) -> Result<(), String> {
-        let target = self.config().target_process.ok_or("no game selected")?;
-        if input::foreground_process().as_deref() != Some(target.as_str()) {
-            return Err("game not focused".into());
+        let picked = self.config().target_process.ok_or("no game selected")?;
+        let targets = targets(Some(&picked), &self.profile.lock().unwrap().1);
+        match input::foreground_process() {
+            Some(front) if targets.contains(&front) => Ok(()),
+            _ => Err("game not focused".into()),
         }
-        Ok(())
     }
 
     pub fn macro_names(&self) -> Vec<String> {
@@ -1005,6 +1035,16 @@ mod tests {
     }
     fn keys(list: &[&str]) -> Vec<String> {
         list.iter().map(|k| k.to_string()).collect()
+    }
+
+    #[test]
+    fn a_profiles_games_all_count_once_one_of_them_is_picked() {
+        let minecraft = keys(&["javaw.exe", "minecraft.windows.exe"]);
+        assert_eq!(targets(Some("minecraft.windows.exe"), &minecraft), minecraft);
+        // Picked by hand on this PC, outside the profile: only that one.
+        assert_eq!(targets(Some("notepad.exe"), &minecraft), keys(&["notepad.exe"]));
+        assert_eq!(targets(Some("gta5.exe"), &[]), keys(&["gta5.exe"]));
+        assert!(targets(None, &minecraft).is_empty());
     }
 
     #[test]

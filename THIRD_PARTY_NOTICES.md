@@ -18,3 +18,14 @@ Hyperion uses these components for text-to-speech and its interface. Each keeps 
 Only voices whose training data allows commercial use are bundled with `WITH_PIPER=true`. If you add more Piper voices (drop the
 `.onnx` and `.onnx.json` files into `PIPER_VOICES_DIR`), check each voice's `MODEL_CARD`: several popular
 voices (for example `lessac`, `ryan`, `hfc_*`) are non-commercial only.
+
+## Game icons
+
+The game profile templates show each game's icon (`packages/shared/src/game-icons.ts`), only to name the game. The
+icons and the games are trademarks of their owners, who don't endorse Hyperion.
+
+| Game | Source |
+| --- | --- |
+| Grand Theft Auto V (Rockstar Games), Euro Truck Simulator 2 (SCS Software), Hollow Knight (Team Cherry) | The game's icon on Steam |
+| Minecraft (Mojang Studios) | [Updated Minecraft cube.svg](https://commons.wikimedia.org/wiki/File:Updated_Minecraft_cube.svg), Wikimedia Commons, public domain |
+| Roblox (Roblox Corporation) | [Roblox (2025) (App Icon).svg](https://commons.wikimedia.org/wiki/File:Roblox_(2025)_(App_Icon).svg), Wikimedia Commons, public domain |

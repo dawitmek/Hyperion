@@ -70,6 +70,7 @@ async fn session(
     token: &str,
     backoff: &mut Duration,
 ) -> Result<(), Failure> {
+    crate::debug_log::debug(|| format!("Connecting to {}", ws_url(server_url)));
     let (ws, _) = connect_async(ws_url(server_url)).await.map_err(|e| Retry(e.to_string()))?;
     let (mut tx, mut rx) = ws.split();
     let hostname = crate::device::name();
@@ -93,15 +94,22 @@ async fn session(
         };
         let Some(message) = message else { break };
         match message.map_err(|e| Retry(e.to_string()))? {
-            Message::Text(text) => match serde_json::from_str::<ServerMessage>(&text) {
+            Message::Text(text) => match {
+                crate::debug_log::debug(|| format!("Server sent: {text}"));
+                serde_json::from_str::<ServerMessage>(&text)
+            } {
                 Ok(ServerMessage::Ready {}) => {
                     *backoff = Duration::from_secs(1);
                     controller.set_connection("connected");
                     tx.send(Message::text(send_macros(controller.macro_names()))).await.map_err(|e| Retry(e.to_string()))?;
                     tx.send(Message::text(send_actions(controller.game_action_names()))).await.map_err(|e| Retry(e.to_string()))?;
                 }
-                Ok(ServerMessage::Profile { name, game_process }) => {
-                    let _ = controller.apply_profile(name, game_process);
+                Ok(ServerMessage::Profile { name, game_process, game_processes }) => {
+                    let _ = controller.apply_profile(name, game_processes.unwrap_or_else(|| game_process.into_iter().collect()));
+                }
+                Ok(ServerMessage::ListWindows {}) => {
+                    let windows = CompanionMessage::Windows { windows: controller.list_windows() };
+                    tx.send(Message::text(serde_json::to_string(&windows).unwrap())).await.map_err(|e| Retry(e.to_string()))?;
                 }
                 Ok(ServerMessage::Commands { commands }) => {
                     let _ = controller.set_commands(commands);
@@ -116,6 +124,17 @@ async fn session(
                         (None, Some(name)) => controller.run_macro(name),
                         (None, None) => controller.perform(&action.key, action.hold_ms),
                     };
+                    let what = match (&action.game_action, &action.macro_name) {
+                        (Some(name), _) => format!("game action {name}"),
+                        (None, Some(name)) => format!("macro {name}"),
+                        (None, None) => format!("key {} for {} ms", action.key, action.hold_ms),
+                    };
+                    match &result {
+                        Ok(()) => crate::debug_log::debug(|| format!("Did {what}")),
+                        // Paused refusals come with every command while paused, so only debug mode keeps them.
+                        Err(reason) if reason == "paused" => crate::debug_log::debug(|| format!("Refused {what}: paused")),
+                        Err(reason) => crate::debug_log::info(format!("Refused {what}: {reason}")),
+                    }
                     let ack = CompanionMessage::Ack {
                         id: &action.id,
                         status: if result.is_ok() { "done" } else { "rejected" },

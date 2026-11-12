@@ -533,7 +533,7 @@ describe('live pipeline (simulated source)', () => {
 
     const companion = await connectCompanion(token);
     expect(await companion.next()).toMatchObject({ type: 'ready', hostId: me.id });
-    expect(await companion.next()).toEqual({ type: 'profile', name: 'Default', gameProcess: null });
+    expect(await companion.next()).toEqual({ type: 'profile', name: 'Default', gameProcess: null, gameProcesses: [] });
     const overlay = connect(`/ws/overlay?token=${me.overlayToken}`);
     await overlay.opened;
 
@@ -636,6 +636,14 @@ describe('live pipeline (simulated source)', () => {
     expect((await post({ keyword: 'nested', key: '', chain: [{ keyword: 'leap', delayMs: 0 }] })).statusCode).toBe(400);
     const self = await api(cookie, 'PATCH', `/api/commands/${leap.json().id}`, { chain: [{ keyword: 'leap', delayMs: 0 }] });
     expect(self.statusCode).toBe(400);
+    // Renaming a command renames it in the chains that run it.
+    const list = (await api(cookie, 'GET', '/api/commands')).json() as { id: string; keyword: string; chain: { keyword: string }[] | null }[];
+    const jump = list.find((c) => c.keyword === 'jump')!;
+    expect((await api(cookie, 'PATCH', `/api/commands/${jump.id}`, { keyword: 'Hop' })).json().keyword).toBe('hop');
+    const renamed = (await api(cookie, 'GET', '/api/commands')).json() as typeof list;
+    expect(renamed.find((c) => c.keyword === 'leap')!.chain!.map((s) => s.keyword)).toEqual(['run', 'hop', 'w']);
+    expect((await api(cookie, 'PATCH', `/api/commands/${jump.id}`, { keyword: 'run' })).statusCode).toBe(409);
+    await api(cookie, 'PATCH', `/api/commands/${jump.id}`, { keyword: 'jump' });
 
     // A chain has nothing for a PC to approve; a macro command says which macro.
     await companion.nextAside(); // the list on connect
@@ -831,12 +839,12 @@ describe('modes, gifts and leaderboard (simulated source)', () => {
 describe('game profiles', () => {
   it("starts a profile from a game template with that game's commands", async () => {
     const { cookie } = await signUp();
-    const res = await api(cookie, 'POST', '/api/profiles', { name: 'Celeste', gameProcess: 'celeste.exe', template: 'celeste' });
+    const res = await api(cookie, 'POST', '/api/profiles', { name: 'Hollow Knight', games: [{ process: 'hollow_knight.exe' }], template: 'hollow-knight' });
     expect(res.statusCode).toBe(201);
     await api(cookie, 'POST', `/api/profiles/${res.json().id}/activate`);
-    const celeste = (await api(cookie, 'GET', '/api/commands')).json();
-    expect(celeste.map((c: any) => [c.keyword, c.key])).toContainEqual(['dash', 'KeyX']);
-    expect(celeste.map((c: any) => c.keyword)).not.toContain('run'); // nothing copied from Default
+    const knight = (await api(cookie, 'GET', '/api/commands')).json();
+    expect(knight.map((c: any) => [c.keyword, c.key])).toContainEqual(['dash', 'KeyC']);
+    expect(knight.map((c: any) => c.keyword)).not.toContain('run'); // nothing copied from Default
     expect((await api(cookie, 'POST', '/api/profiles', { name: 'Nope', template: 'not-a-game' })).statusCode).toBe(400);
   });
 
@@ -844,21 +852,31 @@ describe('game profiles', () => {
     const { cookie } = await signUp();
     const companion = await connectCompanion((await pairCompanion(cookie)).token);
     await companion.next(); // ready
-    expect(await companion.next()).toEqual({ type: 'profile', name: 'Default', gameProcess: null });
+    expect(await companion.next()).toEqual({ type: 'profile', name: 'Default', gameProcess: null, gameProcesses: [] });
     await api(cookie, 'POST', '/api/live/start', { source: 'simulated' });
 
     // A new profile copies the active one; editing it doesn't touch the original.
-    const created = await api(cookie, 'POST', '/api/profiles', { name: 'GTA V', gameProcess: 'GTA5.exe' });
+    // A profile can follow several programs; names are lowercased and each kept once.
+    const icon = 'data:image/png;base64,iVBORw0KGgo=';
+    const games = [{ process: 'GTA5.exe', icon }, { process: 'gta5_enhanced.exe' }, { process: 'gta5.exe' }];
+    const created = await api(cookie, 'POST', '/api/profiles', { name: 'GTA V', games });
     expect(created.statusCode).toBe(201);
     const gta = created.json();
-    expect(gta.gameProcess).toBe('gta5.exe');
+    expect(gta.games).toEqual([{ process: 'gta5.exe', icon }, { process: 'gta5_enhanced.exe', icon: null }]);
     expect((await api(cookie, 'POST', '/api/profiles', { name: 'GTA V' })).statusCode).toBe(409);
-    expect((await api(cookie, 'POST', '/api/profiles', { name: 'Bad', gameProcess: 'C:\\Games\\gta5.exe' })).statusCode).toBe(400);
+    expect((await api(cookie, 'POST', '/api/profiles', { name: 'Bad', games: [{ process: 'C:\\Games\\gta5.exe' }] })).statusCode).toBe(400);
+    // Icons are small PNGs only: nothing a browser would run.
+    for (const bad of ['data:image/svg+xml;base64,PHN2Zz4=', 'javascript:alert(1)', `data:image/png;base64,${'A'.repeat(40_000)}`]) {
+      expect((await api(cookie, 'POST', '/api/profiles', { name: 'Bad', games: [{ process: 'x.exe', icon: bad }] })).statusCode).toBe(400);
+    }
     // macOS process names have no extension.
-    expect((await api(cookie, 'POST', '/api/profiles', { name: 'Mac game', gameProcess: 'TextEdit' })).json().gameProcess).toBe('textedit');
+    expect((await api(cookie, 'POST', '/api/profiles', { name: 'Mac game', games: [{ process: 'TextEdit' }] })).json().games).toEqual([
+      { process: 'textedit', icon: null },
+    ]);
 
     expect((await api(cookie, 'POST', `/api/profiles/${gta.id}/activate`)).statusCode).toBe(200);
-    expect(await companion.next()).toEqual({ type: 'profile', name: 'GTA V', gameProcess: 'gta5.exe' });
+    expect(await companion.next()).toEqual({ type: 'profile', name: 'GTA V', gameProcess: 'gta5.exe', gameProcesses: ['gta5.exe', 'gta5_enhanced.exe'] });
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().profileGames).toEqual(gta.games);
     const gtaCommands = (await api(cookie, 'GET', '/api/commands')).json();
     expect(gtaCommands.map((c: any) => c.keyword).sort()).toEqual(['a', 'd', 'jump', 'run', 's', 'w']);
     const left = gtaCommands.find((c: any) => c.keyword === 'a');
@@ -881,6 +899,42 @@ describe('game profiles', () => {
     await api(cookie, 'POST', '/api/live/simulate', { viewer: 'bob', text: 'a' });
     expect(await companion.next()).toMatchObject({ type: 'action', action: { key: 'KeyA' } });
     expect((await api(cookie, 'DELETE', `/api/profiles/${gta.id}`)).statusCode).toBe(204);
+  });
+
+  it("lists the programs open on the host's PCs, checking what the companion says", async () => {
+    const { cookie } = await signUp();
+    expect((await api(cookie, 'GET', '/api/profiles/running-games')).json()).toEqual({ companions: 0, answered: 0, games: [] });
+    const companion = await connectCompanion((await pairCompanion(cookie)).token);
+    await companion.next(); // ready
+    await companion.next(); // profile
+
+    const asked = api(cookie, 'GET', '/api/profiles/running-games');
+    expect(await companion.next()).toEqual({ type: 'listWindows' });
+    const icon = 'data:image/png;base64,iVBORw0KGgo=';
+    companion.send({
+      type: 'windows',
+      windows: [
+        { title: 'Grand Theft Auto V', process: 'GTA5.exe', icon },
+        { title: 'Bad icon', process: 'game.exe', icon: 'javascript:alert(1)' },
+        { title: 'A path', process: 'C:\\evil.exe', icon: null },
+        { title: 42, process: 'odd.exe' },
+      ],
+    });
+    expect((await asked).json()).toEqual({
+      companions: 1,
+      answered: 1,
+      games: [
+        { title: 'Grand Theft Auto V', process: 'gta5.exe', icon },
+        { title: 'Bad icon', process: 'game.exe', icon: null },
+      ],
+    });
+  });
+
+  it('counts a companion that never answers, such as an older version', async () => {
+    const { cookie } = await signUp();
+    const companion = await connectCompanion((await pairCompanion(cookie)).token);
+    await companion.next(); // ready
+    expect((await api(cookie, 'GET', '/api/profiles/running-games')).json()).toEqual({ companions: 1, answered: 0, games: [] });
   });
 
   it("can't reach another host's profiles", async () => {
@@ -1186,6 +1240,13 @@ describe('looks', () => {
     expect((await api(cookie, 'GET', '/api/auth/me')).json().streamRecap).toBe(true);
     await api(cookie, 'PATCH', '/api/settings', { streamRecap: false });
     expect((await api(cookie, 'GET', '/api/auth/me')).json().streamRecap).toBe(false);
+    // What a new command starts with.
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().commandDefaults).toBeNull();
+    const commandDefaults = { holdMs: 150, cooldownMs: 5000, minLevel: 2, cost: 10 };
+    expect((await api(cookie, 'PATCH', '/api/settings', { commandDefaults })).statusCode).toBe(200);
+    expect((await api(cookie, 'GET', '/api/auth/me')).json()).toMatchObject({ commandDefaults });
+    expect((await api(cookie, 'PATCH', '/api/settings', { commandDefaults: { ...commandDefaults, holdMs: 1 } })).statusCode).toBe(400);
+    expect((await api(cookie, 'PATCH', '/api/settings', { commandDefaults: { cooldownMs: 0 } })).statusCode).toBe(400);
     expect((await api(cookie, 'PATCH', '/api/settings', { liveLayout: { main: ['feed', 'feed'], side: [] } })).statusCode).toBe(400);
     await api(cookie, 'PATCH', '/api/settings', { liveLayout: null });
     expect((await api(cookie, 'GET', '/api/auth/me')).json().liveLayout).toBeNull();
@@ -1488,6 +1549,27 @@ describe('media and actions', () => {
     expect((await api(cookie, 'GET', '/api/auth/me')).json().hiddenSounds).toEqual([]);
   });
 
+  it('keeps the setup guide and its steps done', async () => {
+    const { cookie } = await signUp();
+    expect((await api(cookie, 'GET', '/api/auth/me')).json()).toMatchObject({ onboarding: 'new', onboardingSteps: [] });
+    expect((await api(cookie, 'PATCH', '/api/settings', { onboarding: 'gone' })).statusCode).toBe(400);
+    expect((await api(cookie, 'PATCH', '/api/settings', { onboardingSteps: ['nope'] })).statusCode).toBe(400);
+    expect((await api(cookie, 'PATCH', '/api/settings', { onboardingSteps: ['test', 'test'] })).statusCode).toBe(400);
+    await api(cookie, 'PATCH', '/api/settings', { onboarding: 'collapsed', onboardingSteps: ['tiktok', 'overlay'] });
+    expect((await api(cookie, 'GET', '/api/auth/me')).json()).toMatchObject({ onboarding: 'collapsed', onboardingSteps: ['tiktok', 'overlay'] });
+    await api(cookie, 'PATCH', '/api/settings', { onboarding: 'skipped' });
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().onboarding).toBe('skipped');
+    // Making or switching to a game profile ticks the game step, once.
+    const made = (await api(cookie, 'POST', '/api/profiles', { name: 'Minecraft', template: 'minecraft' })).json();
+    expect(made.games).toEqual([]); // none sent, so none to give an icon
+    const gta = (await api(cookie, 'POST', '/api/profiles', { name: 'GTA V', template: 'gta5', games: [{ process: 'gta5.exe', icon: null }, { process: 'other.exe', icon: null }] })).json();
+    expect(gta.games[0].icon).toMatch(/^data:image\/png;base64,/); // the template's own program gets the game's icon
+    expect(gta.games[1].icon).toBeNull();
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().onboardingSteps).toEqual(['tiktok', 'overlay', 'game']);
+    await api(cookie, 'POST', `/api/profiles/${made.id}/activate`);
+    expect((await api(cookie, 'GET', '/api/auth/me')).json().onboardingSteps).toEqual(['tiktok', 'overlay', 'game']);
+  });
+
   it('runs actions with files, audiences, points and new TikTok events while live', async () => {
     const { cookie } = await signUp();
     const me = (await api(cookie, 'GET', '/api/auth/me')).json();
@@ -1602,6 +1684,27 @@ describe('overlay screens', () => {
     await api(cookie, 'PATCH', `/api/screens/${side.id}`, { alertPosition: 'top', scale: 150 });
     expect(await overlay.nextAside()).toMatchObject({ type: 'screen', screen: { alertPosition: 'top', scale: 150 } });
     expect((await api(cookie, 'PATCH', `/api/screens/${side.id}`, { scale: 500 })).statusCode).toBe(400);
+    // The feed, leaderboard and mode panel can be moved and sized by hand; unknown parts and odd sizes can't.
+    const parts = { feed: { pos: { x: 10, y: 60 }, size: 120 }, leaderboard: { size: 80 } };
+    expect((await api(cookie, 'PATCH', `/api/screens/${side.id}`, { parts })).json().parts).toEqual(parts);
+    await overlay.nextAside();
+    expect((await api(cookie, 'PATCH', `/api/screens/${side.id}`, { parts: { ...parts, chat: { size: 100 } } })).json().parts).toEqual(parts); // dropped
+    await overlay.nextAside();
+    expect((await api(cookie, 'PATCH', `/api/screens/${side.id}`, { parts: { feed: { size: 10 } } })).statusCode).toBe(400);
+    // On a phone, how much TikTok covers can be changed, leaving widgets at least some room.
+    expect((await api(cookie, 'GET', '/api/screens')).json().find((x: { id: string }) => x.id === side.id).phoneSafe).toEqual({ top: 13, bottom: 30 });
+    expect((await api(cookie, 'PATCH', `/api/screens/${side.id}`, { phoneSafe: { top: 8, bottom: 22 } })).json().phoneSafe).toEqual({ top: 8, bottom: 22 });
+    await overlay.nextAside();
+    expect((await api(cookie, 'PATCH', `/api/screens/${side.id}`, { phoneSafe: { top: 40, bottom: 50 } })).statusCode).toBe(400);
+    expect((await api(cookie, 'PATCH', `/api/screens/${side.id}`, { phoneSafe: { top: -1, bottom: 20 } })).statusCode).toBe(400);
+    // A copy keeps the setup, under its own name and link; it's never the main screen.
+    const copy = (await api(cookie, 'POST', `/api/screens/${side.id}/duplicate`, { name: 'Side 2' })).json();
+    expect(copy).toMatchObject({ name: 'Side 2', main: false, alertPosition: 'top', scale: 150, feed: false });
+    expect(copy.id).not.toBe(side.id);
+    expect(copy.token).not.toBe(side.token);
+    expect((await api(cookie, 'POST', `/api/screens/${main.id}/duplicate`, { name: 'Main 2' })).json()).toMatchObject({ name: 'Main 2', main: false, feed: true });
+    expect((await api(cookie, 'POST', `/api/screens/${side.id}/duplicate`, { name: '' })).statusCode).toBe(400);
+    expect((await api((await signUp('copier@example.com')).cookie, 'POST', `/api/screens/${side.id}/duplicate`, { name: 'Mine' })).statusCode).toBe(404);
 
     const action = (await api(cookie, 'POST', '/api/actions', { name: 'Side follow', trigger: 'follow', text: 'side!', screenId: side.id })).json();
     expect((await api(cookie, 'POST', `/api/actions/${action.id}/test`)).json()).toMatchObject({ overlays: 1 });

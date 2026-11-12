@@ -1,6 +1,7 @@
 mod config;
 mod connection;
 mod controller;
+mod debug_log;
 mod device;
 mod bedrock;
 mod game_actions;
@@ -106,7 +107,7 @@ fn set_combo_approved(ctl: Ctl, key: String, approved: bool) -> Result<(), Strin
 #[tauri::command]
 fn set_paused(ctl: Ctl, paused: bool) -> Result<(), String> {
     if !paused && ctl.config().target_process.is_none() {
-        return Err("Pick your game first, then press Play".into());
+        return Err("Pick your game first, then press Start".into());
     }
     ctl.set_paused(paused, true);
     Ok(())
@@ -114,7 +115,12 @@ fn set_paused(ctl: Ctl, paused: bool) -> Result<(), String> {
 
 #[tauri::command]
 async fn tiktok_sign_in(app: AppHandle, ctl: Ctl<'_>) -> Result<bool, String> {
-    tiktok::sign_in(app, ctl.inner().clone()).await
+    let result = tiktok::sign_in(app, ctl.inner().clone()).await;
+    match &result {
+        Ok(signed_in) => debug_log::info(if *signed_in { "Signed in to TikTok" } else { "TikTok sign-in closed without signing in" }),
+        Err(reason) => debug_log::info(format!("TikTok sign-in failed: {reason}")),
+    }
+    result
 }
 
 #[tauri::command]
@@ -194,6 +200,44 @@ fn save_pack(app: tauri::AppHandle, ctl: Ctl, names: Vec<String>, name: String, 
     Ok(path.display().to_string())
 }
 
+#[tauri::command]
+fn set_debug_mode(ctl: Ctl, on: bool) -> Result<(), String> {
+    ctl.update_config(|c| c.debug_mode = Some(on))?;
+    debug_log::set_debug(on);
+    ctl.emit();
+    Ok(())
+}
+
+/// Something that went wrong in the window, for the log.
+#[tauri::command]
+fn log_window_error(message: String) {
+    debug_log::info(format!("Window: {message}"));
+}
+
+/// Saves the log to the Downloads folder and shows it there. Returns where it went. What's in it: see debug_log.rs.
+#[tauri::command]
+fn export_logs(app: AppHandle, ctl: Ctl) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
+    let config = ctl.config();
+    let now = std::time::SystemTime::now();
+    let header = [
+        "Hyperion Companion log".to_string(),
+        format!("Saved:      {}", debug_log::timestamp(now)),
+        format!("Version:    {}", updater::CURRENT),
+        format!("System:     {} {} ({})", std::env::consts::OS, std::env::consts::ARCH, device::platform()),
+        format!("Debug mode: {}", if debug_log::debug_on() { "on" } else { "off" }),
+        format!("Server:     {}", config.server_url.as_deref().unwrap_or("not paired")),
+        format!("Game:       {}", config.target_process.as_deref().unwrap_or("none picked")),
+    ]
+    .join("\n");
+    let dir = app.path().download_dir().map_err(|_| "Couldn't find your Downloads folder".to_string())?;
+    let path = dir.join(format!("hyperion-companion-log-{}.txt", debug_log::file_stamp(now)));
+    std::fs::write(&path, debug_log::export(&header)).map_err(|e| format!("Couldn't save the log: {e}"))?;
+    debug_log::info(format!("Log saved to {}", path.display()));
+    let _ = app.opener().reveal_item_in_dir(&path);
+    Ok(path.display().to_string())
+}
+
 /// A blank or missing password keeps the saved one, which never comes back to the window.
 #[tauri::command]
 fn set_minecraft(ctl: Ctl, host: String, port: u16, password: Option<String>, player: String) -> Result<(), String> {
@@ -207,7 +251,11 @@ fn set_bedrock(ctl: Ctl, on: bool) -> Result<(), String> {
 
 #[tauri::command]
 async fn test_minecraft(ctl: Ctl<'_>) -> Result<String, String> {
-    ctl.inner().clone().test_minecraft().await
+    let result = ctl.inner().clone().test_minecraft().await;
+    if let Err(reason) = &result {
+        debug_log::info(format!("Minecraft Java test failed: {reason}"));
+    }
+    result
 }
 
 #[tauri::command]
@@ -279,7 +327,20 @@ pub fn run() {
             let config_path = app.path().app_config_dir()?.join("config.json");
             let controller = Controller::new(app.handle().clone(), config_path);
             app.manage(controller.clone());
+            debug_log::set_debug(controller.config().debug_mode == Some(true));
+            debug_log::info(format!("Hyperion Companion {} started on {} {}", updater::CURRENT, std::env::consts::OS, std::env::consts::ARCH));
             app.global_shortcut().register(panic_key)?;
+            // On Windows, also beneath the game, for games that switch other programs' hotkeys off.
+            let watched = controller.clone();
+            let watching = input::watch_panic_key(Box::new(move || {
+                let controller = watched.clone();
+                // Off the hook's thread: pausing releases held keys, and the hook must return at once.
+                std::thread::spawn(move || controller.set_paused(true, true));
+            }));
+            // Not fatal: the global shortcut still works outside games that block it.
+            if let Err(reason) = watching {
+                debug_log::info(format!("Panic key hook not set up: {reason}"));
+            }
             if controller.config().device_token.is_some() {
                 connection::restart(&controller);
             }
@@ -324,7 +385,10 @@ pub fn run() {
             set_auto_update,
             check_update,
             install_update,
-            dismiss_update
+            dismiss_update,
+            set_debug_mode,
+            log_window_error,
+            export_logs
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Hyperion companion");

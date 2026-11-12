@@ -3,7 +3,8 @@ import { TIKTOK_VOICES } from '@hyperion/shared';
 import { api, type Host, type TtsEngine, type TtsMode } from '../api';
 import { Icon } from '../icons';
 import { Link } from '../router';
-import { ErrorNotice, NumberCell, Scrubber, Seg, useError } from '../ui';
+import { ErrorNotice, HueIcon, hueStyle, NumberCell, Scrubber, Seg, useError } from '../ui';
+import { CARD_INFO } from './LiveLayout';
 import type { PageProps } from './Dashboard';
 import { enginesFor, useVoices } from './VoicePage';
 
@@ -58,9 +59,12 @@ export function VoiceControls({ host, refreshHost }: PageProps) {
   };
 
   return (
-    <section className="card stack voice-controls" aria-labelledby="live-voice">
+    <section className="card stack card-hued voice-controls" style={hueStyle(CARD_INFO.voice.hue)} aria-labelledby="live-voice">
       <div className="mode-card-head">
-        <h2 id="live-voice">Voice</h2>
+        <h2 id="live-voice" className="card-title-badged">
+          <HueIcon name={CARD_INFO.voice.icon} hue={CARD_INFO.voice.hue} />
+          Voice
+        </h2>
         <Link href="/dashboard/voice" className="small">
           All voice settings
         </Link>

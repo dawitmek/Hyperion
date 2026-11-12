@@ -43,6 +43,7 @@ mod imp {
         INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
         KEYEVENTF_SCANCODE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
         MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL, MOUSEINPUT, INPUT_MOUSE, SendInput, VIRTUAL_KEY,
+        VK_BACK, VK_CONTROL, VK_LCONTROL, VK_LSHIFT, VK_RCONTROL, VK_RSHIFT, VK_SHIFT,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         DestroyIcon, EnumWindows, GetForegroundWindow, GetIconInfo, GetWindowTextLengthW, GetWindowTextW,
@@ -52,6 +53,7 @@ mod imp {
 
     use crate::macros::{Button, Input};
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use windows::Win32::Foundation::{LRESULT, POINT, WPARAM};
     use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -174,6 +176,52 @@ mod imp {
         });
         let thread_id = ready.recv().map_err(|e| e.to_string())??;
         Ok(RecordHook { thread_id, thread: Some(thread) })
+    }
+
+    // The panic key, watched beneath the game. A game can switch off other programs' hotkeys while it's in front
+    // (raw input's RIDEV_NOHOTKEYS), so the global shortcut doesn't always reach us; a low-level hook still does.
+    static ON_PANIC: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
+    static CTRL: AtomicBool = AtomicBool::new(false);
+    static SHIFT: AtomicBool = AtomicBool::new(false);
+
+    unsafe extern "system" fn on_panic_key(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code == HC_ACTION as i32 {
+            let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+            // Only the player's own keys: a viewer's Ctrl or Shift, sent by us, doesn't count as held.
+            if event.flags.0 & LLKHF_INJECTED.0 == 0 {
+                let down = event.flags.0 & LLKHF_UP.0 == 0;
+                match VIRTUAL_KEY(event.vkCode as u16) {
+                    VK_CONTROL | VK_LCONTROL | VK_RCONTROL => CTRL.store(down, Ordering::SeqCst),
+                    VK_SHIFT | VK_LSHIFT | VK_RSHIFT => SHIFT.store(down, Ordering::SeqCst),
+                    VK_BACK if down && CTRL.load(Ordering::SeqCst) && SHIFT.load(Ordering::SeqCst) => {
+                        if let Some(on_panic) = ON_PANIC.lock().unwrap().as_ref() {
+                            on_panic();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    }
+
+    /// Calls `on_panic` whenever the player presses Ctrl+Shift+Backspace, for as long as the app runs. `on_panic`
+    /// must return at once: Windows drops a hook that keeps the keyboard waiting.
+    pub fn watch_panic_key(on_panic: Box<dyn Fn() + Send>) -> Result<(), String> {
+        *ON_PANIC.lock().unwrap() = Some(on_panic);
+        let (started, ready) = std::sync::mpsc::channel();
+        std::thread::spawn(move || unsafe {
+            if let Err(e) = SetWindowsHookExW(WH_KEYBOARD_LL, Some(on_panic_key), None, 0) {
+                return drop(started.send(Err(e.to_string())));
+            }
+            let _ = started.send(Ok(()));
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        });
+        ready.recv().map_err(|e| e.to_string())?
     }
 
     // Windows tracks modifier state from the modifier key events themselves, so `_held` isn't needed here.
@@ -528,13 +576,18 @@ mod pointer {
     pub fn start_recording(_sink: Box<dyn FnMut(Input) + Send>) -> Result<RecordHook, String> {
         Err("Recording macros needs Windows for now".into())
     }
+
+    /// Elsewhere the global shortcut is enough.
+    pub fn watch_panic_key(_on_panic: Box<dyn Fn() + Send>) -> Result<(), String> {
+        Ok(())
+    }
 }
 #[cfg(not(windows))]
-pub use pointer::{RecordHook, start_recording};
+pub use pointer::{RecordHook, start_recording, watch_panic_key};
 #[cfg(not(windows))]
 use pointer::send_pointer;
 #[cfg(windows)]
-pub use imp::{RecordHook, start_recording};
+pub use imp::{RecordHook, start_recording, watch_panic_key};
 #[cfg(windows)]
 use imp::send_pointer;
 

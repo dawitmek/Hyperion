@@ -6,6 +6,41 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-12
+
+A setup guide and tour for new accounts, profiles that follow several games, a rebuilt overlay editor, and debug logs in the companion.
+
+### Added
+- A welcome window on first sign-in that sets up the account in four steps: your TikTok username, your game (a ready-made profile with its controls as commands), the crowd mode, with a short animation of how each mode plays, and the dashboard's theme, which changes behind the window as you pick. Any step can be skipped.
+- A setup checklist at the top of the Live page: add your TikTok username, choose a game profile, pair the companion, add the overlay to your stream and try a test stream. Each step ticks itself off when done, and the next one stands out. Hide it to the sidebar or skip it; Settings brings it back.
+- A quick tour of the parts that are easy to miss: going live and test mode with auto chat, arranging the Live page, popping the activity feed into its own window, the stream controls in the corner of other pages, changing many commands at once, uploads, widget links and game profiles. Start it from the checklist or Settings. It moves between pages by itself, and a test stream it starts stops when it ends.
+- Game profiles can follow several programs, such as Minecraft Java and Bedrock, picked from the programs running on your paired PCs, with their icons. Profiles made from a ready-made game come with that game's icon.
+- A ready-made Hollow Knight profile.
+- Defaults for new commands on the Commands page: hold, cooldown, level and cost. Commands already made keep their own.
+- Renaming a command with the pencil beside its name. Commands that chain it follow the new name.
+- Ctrl+A (Cmd+A on a Mac) on the Commands page picks every command shown.
+- In the overlay editor: each overlay is a tab (double-click to rename; right-click to rename, duplicate or delete), and a duplicate gets a link of its own. Add several widgets at once from a searchable grid, change the spot or look of several together, and undo or redo moving, sizing, adding and removing with Ctrl+Z and Ctrl+Shift+Z. The activity feed, leaderboard and crowd mode panel can be moved and resized like widgets. Goals and widget links have tabs of their own.
+- On phone screens, drag the edges to set how much of the screen TikTok's buttons and chat cover; widgets and alerts stay in the space between.
+- In the companion: debug mode and Export logs, under Misc. The log always keeps starts, connection changes, pauses and anything refused or failing; debug mode adds every message from the server and every key and action. Export saves it to your Downloads folder as a text file, without passwords or sign-ins.
+- In the companion: game actions are grouped by game, and each group folds away under its heading.
+- Gameplay clips for the games on the site's home page.
+
+### Changed
+- The Actions page is now Alerts, at `/dashboard/alerts`; old links still open it. The Voice page is now Text to Speech.
+- With no TikTok username yet, the Live page's Offline status links straight to the username field in Settings.
+- Every dashboard card has an icon in its section's colour.
+- The stream recap counts its numbers up as it opens, and slides away when closed.
+- In the companion, Play is now Start, and the TikTok voices section is part of a new Misc section.
+- The Minecraft Bedrock starter pack and guide show who sent each action as a coloured line above your hotbar, rather than a chat message.
+- Profiles that had a game keep it, now as the first of their games.
+
+### Removed
+- The Celeste profile template. Profiles already made from it keep working.
+
+### Fixed
+- Renaming a command no longer breaks the chained commands that ran it.
+- The companion's panic key (Ctrl+Shift+Backspace) works on Windows in games that switch off other programs' hotkeys.
+
 ## [0.9.0] - 2026-11-11
 
 A public demo, auto chat for test mode, your data to download or delete, and a rebuilt site in a new blue look.
@@ -170,7 +205,8 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/dawitmek/Hyperion/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/dawitmek/Hyperion/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dawitmek/Hyperion/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dawitmek/Hyperion/compare/v0.7.0...v0.7.1

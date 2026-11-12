@@ -4,6 +4,7 @@ import { actions, hosts, profiles } from '../db/schema.js';
 import {
   ALERT_SOUNDS,
   CLOUD_PROVIDERS,
+  MAX_LEVEL,
   MAX_TTS_TEMPLATE_LENGTH,
   PLAIN_TEXT_PATTERN,
   templatePattern,
@@ -12,6 +13,8 @@ import {
   TTS_ENGINES,
   TTS_MODES,
   UI_MODES,
+  ONBOARDING_STATES,
+  ONBOARDING_STEPS,
   UI_THEMES,
   VOICE_EFFECTS,
   type CloudProvider,
@@ -20,7 +23,10 @@ import {
   type TtsMode,
   type AlertSound,
   type AlertStyle,
+  type CommandDefaults,
   type UiMode,
+  type OnboardingState,
+  type OnboardingStep,
   type UiTheme,
   type UiThemeStyle,
   type VoiceEffect,
@@ -78,10 +84,13 @@ type Body = {
   uiMode?: UiMode;
   liveLayout?: LiveLayout | null;
   streamRecap?: boolean;
+  commandDefaults?: CommandDefaults | null;
   alertStyle?: AlertStyle | null;
   alertStyle2?: AlertStyle | null;
   hiddenSounds?: AlertSound[];
   soundVolumes?: Record<string, number>;
+  onboarding?: OnboardingState;
+  onboardingSteps?: OnboardingStep[];
 };
 
 // Tells the host's companions the dashboard's theme, which they follow.
@@ -157,6 +166,19 @@ export async function settingsRoutes(app: FastifyInstance) {
             uiThemeStyle: { enum: ['full', 'colors'] },
             uiMode: { enum: UI_MODES },
             streamRecap: { type: 'boolean' },
+            onboarding: { enum: ONBOARDING_STATES },
+            onboardingSteps: { type: 'array', uniqueItems: true, maxItems: ONBOARDING_STEPS.length, items: { enum: ONBOARDING_STEPS } },
+            commandDefaults: {
+              type: ['object', 'null'],
+              additionalProperties: false,
+              required: ['holdMs', 'cooldownMs', 'minLevel', 'cost'],
+              properties: {
+                holdMs: { type: 'integer', minimum: 10, maximum: 5000 },
+                cooldownMs: { type: 'integer', minimum: 0, maximum: 600000 },
+                minLevel: { type: 'integer', minimum: 1, maximum: MAX_LEVEL },
+                cost: { type: 'integer', minimum: 0, maximum: 1000000 },
+              },
+            },
             liveLayout: {
               type: ['object', 'null'],
               additionalProperties: false,
@@ -178,7 +200,7 @@ export async function settingsRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const { tiktokUsername, actionsPerSecond, progression, levelGating, uiTheme, uiThemeStyle, uiMode, liveLayout, streamRecap, alertStyle, alertStyle2, hiddenSounds, soundVolumes } = req.body;
+      const { tiktokUsername, actionsPerSecond, progression, levelGating, uiTheme, uiThemeStyle, uiMode, liveLayout, streamRecap, commandDefaults, alertStyle, alertStyle2, hiddenSounds, soundVolumes, onboarding, onboardingSteps } = req.body;
       const tts = Object.fromEntries(Object.entries(req.body).filter(([k]) => k.startsWith('tts')));
       const points = Object.fromEntries(Object.entries(req.body).filter(([k]) => k.startsWith('points')));
       if (typeof req.body.ttsCloudKey === 'string') tts.ttsCloudKey = app.secrets.seal(req.body.ttsCloudKey);
@@ -206,9 +228,12 @@ export async function settingsRoutes(app: FastifyInstance) {
         ...(uiMode !== undefined && { uiMode }),
         ...(liveLayout !== undefined && { liveLayout }),
         ...(streamRecap !== undefined && { streamRecap }),
+        ...(commandDefaults !== undefined && { commandDefaults }),
         ...(alertStyle !== undefined && { alertStyle }),
         ...(alertStyle2 !== undefined && { alertStyle2 }),
         ...(hiddenSounds !== undefined && { hiddenSounds }),
+        ...(onboarding !== undefined && { onboarding }),
+        ...(onboardingSteps !== undefined && { onboardingSteps }),
         // Merged into the saved ones, so each slider only sends its own.
         ...(soundVolumes !== undefined && { soundVolumes: sql`${hosts.soundVolumes} || ${JSON.stringify(soundVolumes)}::jsonb` }),
       };

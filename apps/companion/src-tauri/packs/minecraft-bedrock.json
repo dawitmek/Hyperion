@@ -10,7 +10,7 @@
       "game": "minecraftBedrock",
       "commands": [
         "summon creeper ~ ~ ~",
-        "say {viewer} sent a creeper!"
+        "titleraw @a actionbar {\"rawtext\":[{\"text\":\"§a{viewer} sent a creeper!\"}]}"
       ],
       "repeat": 1,
       "delayMs": 0
@@ -19,7 +19,8 @@
       "name": "Named zombie",
       "game": "minecraftBedrock",
       "commands": [
-        "summon zombie \"{viewer}\" ~ ~ ~"
+        "summon zombie \"{viewer}\" ~ ~ ~",
+        "titleraw @a actionbar {\"rawtext\":[{\"text\":\"§2{viewer} joined as a zombie!\"}]}"
       ],
       "repeat": 1,
       "delayMs": 0
@@ -28,7 +29,8 @@
       "name": "TNT rain",
       "game": "minecraftBedrock",
       "commands": [
-        "summon tnt ~ ~8 ~"
+        "summon tnt ~ ~8 ~",
+        "titleraw @a actionbar {\"rawtext\":[{\"text\":\"§c{viewer} made it rain TNT!\"}]}"
       ],
       "repeat": 5,
       "delayMs": 1000
@@ -38,7 +40,7 @@
       "game": "minecraftBedrock",
       "commands": [
         "give @s diamond {count}",
-        "title @s title {viewer} sent diamonds"
+        "titleraw @a actionbar {\"rawtext\":[{\"text\":\"§b{viewer} sent {count} diamonds!\"}]}"
       ],
       "repeat": 1,
       "delayMs": 0
@@ -47,7 +49,8 @@
       "name": "Lightning",
       "game": "minecraftBedrock",
       "commands": [
-        "summon lightning_bolt ~ ~ ~"
+        "summon lightning_bolt ~ ~ ~",
+        "titleraw @a actionbar {\"rawtext\":[{\"text\":\"§e{viewer} called down lightning!\"}]}"
       ],
       "repeat": 1,
       "delayMs": 0
@@ -58,7 +61,7 @@
       "commands": [
         "weather thunder",
         "time set night",
-        "say {viewer} brought the storm"
+        "titleraw @a actionbar {\"rawtext\":[{\"text\":\"§9{viewer} brought the storm!\"}]}"
       ],
       "repeat": 1,
       "delayMs": 0
@@ -67,7 +70,8 @@
       "name": "Speed boost",
       "game": "minecraftBedrock",
       "commands": [
-        "effect @s speed 30 2"
+        "effect @s speed 30 2",
+        "titleraw @a actionbar {\"rawtext\":[{\"text\":\"§d{viewer} gave you a speed boost!\"}]}"
       ],
       "repeat": 1,
       "delayMs": 0
@@ -76,7 +80,8 @@
       "name": "Random teleport",
       "game": "minecraftBedrock",
       "commands": [
-        "spreadplayers ~ ~ 0 50 @s"
+        "spreadplayers ~ ~ 0 50 @s",
+        "titleraw @a actionbar {\"rawtext\":[{\"text\":\"§5{viewer} teleported you!\"}]}"
       ],
       "repeat": 1,
       "delayMs": 0

@@ -132,6 +132,15 @@ export async function commandRoutes(app: FastifyInstance) {
           .where(and(eq(commands.id, req.params.id), eq(commands.hostId, req.hostId)))
           .returning();
         if (!updated) return reply.code(404).send({ error: 'Command not found' });
+        // A renamed command stays in the chains that run it.
+        if (updated.keyword !== current.keyword) {
+          const users = await db.select().from(commands).where(eq(commands.profileId, current.profileId));
+          for (const c of users) {
+            if (!c.chain?.some((s) => s.keyword === current.keyword)) continue;
+            const chain = c.chain.map((s) => (s.keyword === current.keyword ? { ...s, keyword: updated.keyword } : s));
+            await db.update(commands).set({ chain }).where(eq(commands.id, c.id));
+          }
+        }
         await app.live.reload(req.hostId);
         await sendCommandsToCompanions(app, req.hostId);
         return updated;

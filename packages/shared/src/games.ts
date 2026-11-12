@@ -6,7 +6,7 @@
 export interface GameTemplate {
   id: string;
   name: string;
-  process: string; // the Windows executable, as the companion lists it
+  processes: string[]; // the Windows executables, as the companion lists them: any of them counts as the game
   commands: { keyword: string; key: string; holdMs: number }[];
 }
 
@@ -14,7 +14,7 @@ export const GAME_TEMPLATES: readonly GameTemplate[] = [
   {
     id: 'gta5',
     name: 'GTA V',
-    process: 'gta5.exe',
+    processes: ['gta5.exe', 'gta5_enhanced.exe'], // the original and the Enhanced edition
     commands: [
       { keyword: 'w', key: 'KeyW', holdMs: 1500 },
       { keyword: 's', key: 'KeyS', holdMs: 1000 },
@@ -30,7 +30,7 @@ export const GAME_TEMPLATES: readonly GameTemplate[] = [
   {
     id: 'minecraft',
     name: 'Minecraft',
-    process: 'javaw.exe',
+    processes: ['javaw.exe', 'minecraft.windows.exe'], // Java and Bedrock
     commands: [
       { keyword: 'w', key: 'KeyW', holdMs: 1000 },
       { keyword: 's', key: 'KeyS', holdMs: 600 },
@@ -49,7 +49,7 @@ export const GAME_TEMPLATES: readonly GameTemplate[] = [
   {
     id: 'roblox',
     name: 'Roblox',
-    process: 'robloxplayerbeta.exe',
+    processes: ['robloxplayerbeta.exe'],
     commands: [
       { keyword: 'w', key: 'KeyW', holdMs: 1000 },
       { keyword: 's', key: 'KeyS', holdMs: 600 },
@@ -65,7 +65,7 @@ export const GAME_TEMPLATES: readonly GameTemplate[] = [
   {
     id: 'ets2',
     name: 'Euro Truck Simulator 2',
-    process: 'eurotrucks2.exe',
+    processes: ['eurotrucks2.exe'],
     commands: [
       { keyword: 'w', key: 'KeyW', holdMs: 2000 },
       { keyword: 's', key: 'KeyS', holdMs: 1000 },
@@ -79,17 +79,19 @@ export const GAME_TEMPLATES: readonly GameTemplate[] = [
     ],
   },
   {
-    id: 'celeste',
-    name: 'Celeste',
-    process: 'celeste.exe',
+    id: 'hollow-knight',
+    name: 'Hollow Knight',
+    processes: ['hollow_knight.exe'],
     commands: [
       { keyword: 'left', key: 'ArrowLeft', holdMs: 400 },
       { keyword: 'right', key: 'ArrowRight', holdMs: 400 },
-      { keyword: 'up', key: 'ArrowUp', holdMs: 200 },
+      { keyword: 'up', key: 'ArrowUp', holdMs: 200 }, // look up, or aim a spell or strike up
       { keyword: 'down', key: 'ArrowDown', holdMs: 200 },
-      { keyword: 'jump', key: 'KeyC', holdMs: 250 },
-      { keyword: 'dash', key: 'KeyX', holdMs: 100 },
-      { keyword: 'grab', key: 'KeyZ', holdMs: 800 },
+      { keyword: 'jump', key: 'KeyZ', holdMs: 300 }, // held longer, it jumps higher
+      { keyword: 'attack', key: 'KeyX', holdMs: 100 },
+      { keyword: 'dash', key: 'KeyC', holdMs: 100 },
+      { keyword: 'heal', key: 'KeyA', holdMs: 1200 }, // Focus: held until it heals a mask
+      { keyword: 'cast', key: 'KeyF', holdMs: 100 }, // Quick Cast
     ],
   },
 ];

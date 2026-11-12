@@ -103,7 +103,7 @@ const FEATURES: { title: string; text: string; points: string[]; art: ReactNode 
     points: [
       'Pairs with your account using a short code, and updates itself.',
       'Its own list of allowed keys; system keys are never pressed.',
-      'Presses keys only while your game’s window is in front, and waits for you to press Play.',
+      'Presses keys only while your game’s window is in front, and waits for you to press Start.',
       'Records macros of keys and mouse movement on Windows, and keeps game actions for Minecraft.',
       'Ctrl+Shift+Backspace pauses instantly and lets go of every held key.',
     ],

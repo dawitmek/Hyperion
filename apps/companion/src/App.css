@@ -392,3 +392,25 @@ body.modal-open { overflow: hidden; }
 .theme-swatch-card { display: flex; align-items: center; gap: 4px; width: 70%; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 5px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
 .theme-swatch-card > span { width: 10px; height: 10px; border-radius: 50%; }
 .theme-swatch-card > span:first-child { width: 18px; border-radius: 999px; }
+
+/* Misc: one row per setting, an icon on a tinted tile, then what it does, then its control */
+.misc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 0; border-top: 1px solid var(--line); }
+.misc-row:first-of-type, .misc-block > .misc-row:first-child { border-top: 0; }
+.misc-block { border-top: 1px solid var(--line); }
+.misc-block > .row, .misc-block > .notice { margin-left: 52px; margin-bottom: 4px; }
+.misc-icon { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: calc(11px * var(--radius-scale)); background: var(--pink-soft); color: var(--pink); }
+.misc-text { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 3px; }
+.misc-text strong { font-weight: 600; }
+
+/* Game actions under a heading for their game */
+.action-group { display: flex; flex-direction: column; gap: 8px; }
+.action-group + .action-group { margin-top: 10px; }
+.action-group-head { display: flex; align-items: center; gap: 10px; }
+.action-group-head h3 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 650; }
+.action-group-toggle { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.action-group-toggle:focus-visible { outline: 2px solid var(--indigo-fill); outline-offset: 4px; border-radius: calc(6px * var(--radius-scale)); }
+.action-group-toggle > svg { flex: none; margin-left: auto; color: var(--muted); transition: transform 0.15s, color 0.15s; }
+.action-group-toggle[aria-expanded='true'] > svg { transform: rotate(180deg); }
+.action-group-toggle:hover > svg { color: var(--ink); }
+.action-group-count { min-width: 20px; padding: 1px 7px; border-radius: 999px; background: var(--panel2); color: var(--muted); font-size: 12px; font-weight: 600; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .action-group-toggle > svg { transition: none; } }

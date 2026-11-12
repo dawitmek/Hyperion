@@ -27,6 +27,8 @@ pub struct Config {
     pub minecraft_java: Option<crate::minecraft::Settings>,
     /// Whether to listen for Minecraft Bedrock's /connect.
     pub minecraft_bedrock: Option<bool>,
+    /// Debug mode: the log keeps every message and key, for troubleshooting.
+    pub debug_mode: Option<bool>,
 }
 
 impl Config {

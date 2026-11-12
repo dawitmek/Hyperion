@@ -1,4 +1,5 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import type { PhoneSafe } from '@hyperion/shared';
 
 // One place the knob can rest, across and down the screen from 0 to 1.
 export type PadSpot<T extends string> = { id: T; x: number; y: number; label: string };
@@ -17,6 +18,7 @@ export function SpotPad<T extends string>({
   custom,
   label,
   portrait,
+  band,
   onPick,
 }: {
   spots: PadSpot<T>[];
@@ -24,6 +26,7 @@ export function SpotPad<T extends string>({
   custom?: { x: number; y: number } | null;
   label: string;
   portrait?: boolean; // a phone screen's shape
+  band?: PhoneSafe; // on a portrait pad, how much TikTok covers, if not its usual
   onPick: (id: T) => void;
 }) {
   const pad = useRef<HTMLDivElement>(null);
@@ -75,7 +78,7 @@ export function SpotPad<T extends string>({
   const place = (p: { x: number; y: number }) => ({ left: `${p.x * 100}%`, top: `${p.y * 100}%` });
 
   return (
-    <div ref={pad} className={`spot-pad ${portrait ? 'portrait' : ''} ${drag ? 'dragging' : ''}`} role="radiogroup" aria-label={label} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => setDrag(null)} onKeyDown={key}>
+    <div ref={pad} className={`spot-pad ${portrait ? 'portrait' : ''} ${drag ? 'dragging' : ''}`} style={band && ({ '--band-top': band.top / 100, '--band-bottom': band.bottom / 100 } as CSSProperties)} role="radiogroup" aria-label={label} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => setDrag(null)} onKeyDown={key}>
       <div className="spot-pad-area">
         {spots.map((s) => (
           <button

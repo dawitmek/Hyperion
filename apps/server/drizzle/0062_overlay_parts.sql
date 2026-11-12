@@ -1,0 +1,1 @@
+ALTER TABLE "overlay_screens" ADD COLUMN "parts" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -25,6 +25,8 @@ export function CompanionPage({ status }: PageProps) {
   return (
     <div className="stack">
       <Card
+        badge="chain"
+        hue="teal"
         title="Pair a companion"
         description="The companion app runs on your gaming PC and presses keys in your game. Create a code here, then enter it in the companion along with this server's address."
         actions={
@@ -68,6 +70,8 @@ export function CompanionPage({ status }: PageProps) {
         </div>
       </Card>
       <Card
+        badge="companion"
+        hue="indigo"
         title="Paired devices"
         description={`${status.companionsOnline} online now. Revoking a device disconnects it; pair it again with a new code.`}
         actions={

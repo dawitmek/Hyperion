@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { ALERT_FONTS, PLAIN_TEXT_PATTERN, ALERT_POSITIONS, WIDGET_STYLE_LIMITS, MAX_LEADERBOARD_SIZE, MAX_MESSAGE_LENGTH, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, SCREEN_LAYOUTS, WIDGET_SPOTS, WIDGET_TYPES, type GoalRaise, type OverlayScreen } from '@hyperion/shared';
+import { ALERT_FONTS, OVERLAY_PARTS, PHONE_SAFE_LIMITS, PLAIN_TEXT_PATTERN, ALERT_POSITIONS, WIDGET_STYLE_LIMITS, MAX_LEADERBOARD_SIZE, MAX_MESSAGE_LENGTH, MAX_WIDGETS, MIN_LEADERBOARD_SIZE, MIN_PHONE_ROOM, SCREEN_LAYOUTS, WIDGET_SPOTS, WIDGET_TYPES, type GoalRaise, type OverlayScreen } from '@hyperion/shared';
 import { hosts, overlayScreens } from '../db/schema.js';
 import { requireHost } from '../auth/session.js';
 import { newToken } from '../crypto.js';
@@ -56,6 +56,29 @@ const fields = {
   alertScale: { type: 'integer', minimum: 50, maximum: 200 },
   layout: { enum: SCREEN_LAYOUTS },
   linkStyles: { type: 'object', maxProperties: 40, propertyNames: { maxLength: 64 }, additionalProperties: widgetStyle },
+  parts: {
+    type: 'object',
+    additionalProperties: false,
+    properties: Object.fromEntries(
+      OVERLAY_PARTS.map((part) => [
+        part,
+        {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            pos: { type: 'object', additionalProperties: false, required: ['x', 'y'], properties: { x: { type: 'number', minimum: 0, maximum: 100 }, y: { type: 'number', minimum: 0, maximum: 100 } } },
+            size: { type: 'integer', minimum: WIDGET_STYLE_LIMITS.size[0], maximum: WIDGET_STYLE_LIMITS.size[1] },
+          },
+        },
+      ]),
+    ),
+  },
+  phoneSafe: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['top', 'bottom'],
+    properties: Object.fromEntries(Object.entries(PHONE_SAFE_LIMITS).map(([key, [minimum, maximum]]) => [key, { type: 'integer', minimum, maximum }])),
+  },
   widgets: {
     type: 'array',
     maxItems: MAX_WIDGETS,
@@ -110,10 +133,30 @@ export async function screenRoutes(app: FastifyInstance) {
     },
   );
 
+  // A copy of a screen's setup under a new name, with a link of its own. Widget links' looks stay with the main screen.
+  app.post<{ Params: { id: string }; Body: { name: string } }>(
+    '/:id/duplicate',
+    { schema: { params: idParam, body: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: fields.name } } } },
+    async (req, reply) => {
+      const rows = await db.select().from(overlayScreens).where(eq(overlayScreens.hostId, req.hostId));
+      const source = rows.find((r) => r.id === req.params.id);
+      if (!source) return reply.code(404).send({ error: 'Screen not found' });
+      if (rows.length >= MAX_SCREENS) return reply.code(400).send({ error: `You can have up to ${MAX_SCREENS} screens` });
+      const { id: _id, token: _token, main: _main, position: _position, linkStyles: _styles, ...setup } = source;
+      const [created] = await db
+        .insert(overlayScreens)
+        .values({ ...setup, name: req.body.name.trim(), token: newToken() })
+        .returning();
+      return reply.code(201).send({ ...toScreen(created!), token: created!.token });
+    },
+  );
+
   app.patch<{ Params: { id: string }; Body: Partial<Omit<OverlayScreen, 'id' | 'main'>> }>(
     '/:id',
     { schema: { params: idParam, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: fields } } },
     async (req, reply) => {
+      const safe = req.body.phoneSafe;
+      if (safe && 100 - safe.top - safe.bottom < MIN_PHONE_ROOM) return reply.code(400).send({ error: `Leave at least ${MIN_PHONE_ROOM}% of the screen for widgets` });
       const patch = { ...req.body, ...(req.body.name !== undefined && { name: req.body.name.trim() }) };
       const [updated] = await db
         .update(overlayScreens)

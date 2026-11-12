@@ -32,11 +32,11 @@ export const CARD_LABELS: Record<LiveCard, string> = {
 };
 
 // How each card looks in the picker: panels do something or show a lot; numbers are one figure from the stream.
-const CARD_INFO: Record<LiveCard, { icon: IconName; hue: Hue; blurb: string; kind: 'panel' | 'number' }> = {
+export const CARD_INFO: Record<LiveCard, { icon: IconName; hue: Hue; blurb: string; kind: 'panel' | 'number' }> = {
   commands: { icon: 'commands', hue: 'indigo', blurb: 'Every command and how often chat uses it', kind: 'panel' },
   feed: { icon: 'feed', hue: 'sky', blurb: 'Everything viewers do, as it happens', kind: 'panel' },
   stream: { icon: 'analytics', hue: 'teal', blurb: 'Numbers and charts for this stream', kind: 'panel' },
-  mode: { icon: 'crowd', hue: 'violet', blurb: 'Switch how the crowd shares control', kind: 'panel' },
+  mode: { icon: 'crowd', hue: 'orange', blurb: 'Switch how the crowd shares control', kind: 'panel' },
   voice: { icon: 'voice', hue: 'violet', blurb: 'Skip, pause and the read-aloud queue', kind: 'panel' },
   activity: { icon: 'live', hue: 'red', blurb: 'Recent chat, gifts and follows', kind: 'panel' },
   players: { icon: 'leaderboard', hue: 'sky', blurb: 'The three most active viewers', kind: 'panel' },
@@ -158,7 +158,7 @@ export function LiveCards({ host, refreshHost, card, extra }: Pick<PageProps, 'h
         </section>
       ) : (
         <div className="live-edit-open">
-          <button className="btn btn-ghost btn-sm" onClick={() => setDraft(saved)}>
+          <button className="btn btn-ghost btn-sm" data-tour="arrange" onClick={() => setDraft(saved)}>
             <Icon name="layout" size={14} />
             {hidden.length > 0 ? 'Add cards and arrange' : 'Arrange cards'}
           </button>

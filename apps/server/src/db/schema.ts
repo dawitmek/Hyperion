@@ -1,6 +1,6 @@
 import { bigserial, boolean, customType, index, integer, jsonb, pgTable, primaryKey, real, serial, text, timestamp, unique, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
-import type { ActionEffect, AlertEffect, AlertShape, ChainStep, GoalRaise, LiveLayout, WidgetStyle } from '@hyperion/shared';
-import type { ActionTrigger, ActivityKind, AlertPosition, AlertSound, AlertStyle, Audience, CloudProvider, GoalMetric, MediaKind, Mode, ScreenLayout, ScreenWidget, TtsEngine, TtsMode, UiMode, UiTheme, UiThemeStyle, VoiceEffect } from '@hyperion/shared';
+import type { ActionEffect, AlertEffect, AlertShape, ChainStep, CommandDefaults, OverlayPart, PartPlace, PhoneSafe, GoalRaise, LiveLayout, ProfileGame, WidgetStyle } from '@hyperion/shared';
+import type { ActionTrigger, ActivityKind, AlertPosition, AlertSound, AlertStyle, Audience, CloudProvider, GoalMetric, MediaKind, Mode, ScreenLayout, ScreenWidget, OnboardingState, OnboardingStep, TtsEngine, TtsMode, UiMode, UiTheme, UiThemeStyle, VoiceEffect } from '@hyperion/shared';
 
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 
@@ -57,10 +57,13 @@ export const hosts = pgTable('hosts', {
   uiMode: text('ui_mode').$type<UiMode>().notNull().default('system'), // light or dark, or the system's
   liveLayout: jsonb('live_layout').$type<LiveLayout>(), // the dashboard Live page's cards; null: DEFAULT_LIVE_LAYOUT
   streamRecap: boolean('stream_recap').notNull().default(true), // the dashboard sums up a stream when it ends
+  commandDefaults: jsonb('command_defaults').$type<CommandDefaults>(), // what a new command starts with; null: DEFAULT_COMMAND
   alertStyle: jsonb('alert_style').$type<AlertStyle>(), // the look of alerts whose action has none; null: DEFAULT_ALERT_STYLE
   alertStyle2: jsonb('alert_style_2').$type<AlertStyle>(), // a second look actions can share; null: same as alertStyle
   hiddenSounds: jsonb('hidden_sounds').$type<AlertSound[]>().notNull().default([]), // built-in sounds the host removed
   soundVolumes: jsonb('sound_volumes').$type<Record<string, number>>().notNull().default({}), // percent, by built-in sound or file id; missing: 100
+  onboarding: text('onboarding').$type<OnboardingState>().notNull().default('new'), // the dashboard's setup guide
+  onboardingSteps: jsonb('onboarding_steps').$type<OnboardingStep[]>().notNull().default([]), // its steps done so far
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -86,7 +89,7 @@ export const profiles = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     hostId: uuid('host_id').notNull().references(() => hosts.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    gameProcess: text('game_process'), // executable name, lowercase, e.g. "gta5.exe"
+    games: jsonb('games').$type<ProfileGame[]>().notNull().default([]), // programs that count as the game, lowercase
     mode: text('mode').$type<Mode>().notNull().default('anarchy'),
     voteWindowMs: integer('vote_window_ms').notNull().default(3000),
     turnMs: integer('turn_ms').notNull().default(30000),
@@ -297,6 +300,8 @@ export const overlayScreens = pgTable(
     layout: text('layout').$type<ScreenLayout>().notNull().default('desktop'),
     widgets: jsonb('widgets').$type<ScreenWidget[]>().notNull().default([]),
     linkStyles: jsonb('link_styles').$type<Record<string, WidgetStyle>>().notNull().default({}),
+    parts: jsonb('parts').$type<Partial<Record<OverlayPart, PartPlace>>>().notNull().default({}), // the feed, leaderboard and mode panel moved or sized by hand
+    phoneSafe: jsonb('phone_safe').$type<PhoneSafe>().notNull().default({ top: 13, bottom: 30 }),
   },
   (t) => [index('overlay_screens_host_idx').on(t.hostId)],
 );

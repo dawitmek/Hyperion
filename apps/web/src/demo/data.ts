@@ -118,12 +118,19 @@ export const host: Host = {
   uiMode: 'system',
   liveLayout: null,
   streamRecap: true,
+  commandDefaults: null,
   alertStyle: null,
   alertStyle2: null,
   hiddenSounds: [],
   soundVolumes: {},
+  onboarding: 'done',
+  onboardingSteps: [],
   profileId: MINECRAFT,
   profileName: 'Minecraft',
+  profileGames: [
+    { process: 'javaw.exe', icon: null },
+    { process: 'minecraft.windows.exe', icon: null },
+  ],
   mode: 'anarchy',
   voteWindowMs: 3000,
   turnMs: 30000,
@@ -145,7 +152,7 @@ const PROFILE_IDS: Record<string, string> = { minecraft: MINECRAFT, gta5: GTA };
 export const profiles: (Profile & ProfileSettings)[] = GAME_TEMPLATES.map((t) => ({
   id: PROFILE_IDS[t.id] ?? newId(),
   name: t.name,
-  gameProcess: t.process,
+  games: t.processes.map((process) => ({ process, icon: null })),
   active: t.id === 'minecraft',
   mode: t.id === 'gta5' ? 'democracy' : 'anarchy',
   voteWindowMs: 3000,
@@ -249,6 +256,8 @@ const screen = (token: string, name: string, extra: Partial<Screen>): Screen => 
   layout: 'desktop',
   widgets: [],
   linkStyles: {},
+  parts: {},
+  phoneSafe: { top: 13, bottom: 30 },
   ...extra,
 });
 export const screens: Screen[] = [
