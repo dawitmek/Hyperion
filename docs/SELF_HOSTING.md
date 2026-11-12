@@ -221,6 +221,9 @@ docker compose -f docker/compose.yml --env-file .env start hyperion
 ## Troubleshooting
 
 See what a service is doing with `docker compose -f docker/compose.yml --env-file .env logs -f hyperion` (or `caddy`).
+With Caddy, every request is also logged to `logs/caddy/access.log` (one JSON line each, overlay tokens blanked) and
+Caddy's warnings and errors to `logs/caddy/error.log`. Watch traffic live with
+`tail -f logs/caddy/access.log | jq -r '"\(.request.client_ip) \(.request.method) \(.request.uri) \(.status)"'`.
 
 | Problem | Likely cause |
 | --- | --- |

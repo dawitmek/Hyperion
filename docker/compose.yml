@@ -54,6 +54,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
+      - ../logs/caddy:/var/log/caddy
 
   postgres:
     container_name: hyperion-postgres

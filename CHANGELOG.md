@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-11-12
+
+Request logs for self-hosted servers.
+
+### Added
+- Self-hosted servers using Caddy log every request to `logs/caddy/access.log`, one JSON line each, and Caddy's warnings and errors (such as certificate problems or Hyperion not answering) to `logs/caddy/error.log`. Overlay links and tokens are blanked in the log, as they are in the server's own log. Both files roll over at 10 MB. The self-hosting guide's Troubleshooting section shows how to watch traffic live.
+
 ## [0.10.2] - 2026-11-12
 
 Your TikTok picture in the dashboard, a tidier landing page, and setup polish.
@@ -229,7 +236,8 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.10.3...HEAD
+[0.10.3]: https://github.com/dawitmek/Hyperion/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/dawitmek/Hyperion/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/dawitmek/Hyperion/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/dawitmek/Hyperion/compare/v0.9.0...v0.10.0

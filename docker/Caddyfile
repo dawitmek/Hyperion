@@ -1,3 +1,25 @@
+{
+	# Caddy's own warnings and errors (certificates, Hyperion not answering). Also in `docker compose logs caddy`.
+	log errors {
+		output file /var/log/caddy/error.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		level WARN
+	}
+}
+
 {$DOMAIN} {
+	# Every request, one JSON line each. Overlay links are secrets, so their tokens are blanked like in the server's log.
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 10MiB
+			roll_keep 10
+		}
+		format filter {
+			request>uri regexp "^/overlay/[^/?#]+" "/overlay/[redacted]"
+			request>uri regexp "([?&]token=)[^&#]*" "${1}[redacted]"
+		}
+	}
 	reverse_proxy hyperion:3000
 }
