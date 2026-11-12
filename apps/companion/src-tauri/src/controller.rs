@@ -65,6 +65,12 @@ fn targets(picked: Option<&str>, profile_games: &[String]) -> Vec<String> {
     }
 }
 
+/// Whether a profile change lets keys reach a program they couldn't before.
+fn gains_target(picked: Option<&str>, old_games: &[String], new_games: &[String]) -> bool {
+    let before = targets(picked, old_games);
+    targets(picked, new_games).iter().any(|t| !before.contains(t))
+}
+
 pub fn stop_key() -> Shortcut {
     Shortcut::new(None, Code::F9)
 }
@@ -374,20 +380,25 @@ impl Controller {
     }
 
     /// Follows the dashboard's active profile. The host can still pick another game here until the next switch.
-    /// A new game from the server waits for Play, so the dashboard (or a stolen account) can't point keys at another
-    /// program while they're going out. A profile can name several programs, such as Minecraft Java and Bedrock: if
-    /// this PC already targets one of them, nothing changes.
+    /// Any program the server adds waits for Start, so the dashboard (or a stolen account) can't point keys at another
+    /// program while they're going out: a new game, or another program added to the profile this PC already follows.
+    /// A profile can name several programs, such as Minecraft Java and Bedrock: if this PC already targets one of them
+    /// and the list gains nothing, nothing changes.
     pub fn apply_profile(&self, name: String, games: Vec<String>) -> Result<(), String> {
         let games: Vec<String> = games.into_iter().map(|p| p.to_lowercase()).collect();
         crate::debug_log::info(format!("Profile {name}, for {}", if games.is_empty() { "any game".into() } else { games.join(", ") }));
-        *self.profile.lock().unwrap() = (Some(name), games.clone());
+        let old_games = std::mem::replace(&mut *self.profile.lock().unwrap(), (Some(name), games.clone())).1;
         let current = self.config().target_process;
         match games.first() {
-            Some(first) if !current.is_some_and(|c| games.contains(&c)) => {
+            Some(first) if !current.as_ref().is_some_and(|c| games.contains(c)) => {
                 self.set_paused(true, false);
                 self.update_config(|c| c.target_process = Some(first.clone()))
             }
             _ => {
+                if gains_target(current.as_deref(), &old_games, &games) {
+                    crate::debug_log::info("Paused: the profile added a program keys can go to");
+                    self.set_paused(true, false);
+                }
                 self.emit();
                 Ok(())
             }
@@ -1045,6 +1056,19 @@ mod tests {
         assert_eq!(targets(Some("notepad.exe"), &minecraft), keys(&["notepad.exe"]));
         assert_eq!(targets(Some("gta5.exe"), &[]), keys(&["gta5.exe"]));
         assert!(targets(None, &minecraft).is_empty());
+    }
+
+    #[test]
+    fn a_profile_that_adds_a_program_pauses() {
+        let minecraft = keys(&["javaw.exe", "minecraft.windows.exe"]);
+        let with_cmd = keys(&["javaw.exe", "minecraft.windows.exe", "cmd.exe"]);
+        assert!(gains_target(Some("javaw.exe"), &minecraft, &with_cmd));
+        // The first time a profile names the picked game, its other programs are new too.
+        assert!(gains_target(Some("javaw.exe"), &[], &minecraft));
+        // The same list again, or fewer programs, changes nothing.
+        assert!(!gains_target(Some("javaw.exe"), &minecraft, &minecraft));
+        assert!(!gains_target(Some("javaw.exe"), &with_cmd, &minecraft));
+        assert!(!gains_target(Some("gta5.exe"), &[], &keys(&["gta5.exe"])));
     }
 
     #[test]

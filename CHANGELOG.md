@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-12
+
+A companion safety fix.
+
+### Security
+- The companion pauses until you press Start when the dashboard adds a program to the game profile it's following, as it already did when the profile switched to a new game. Before, a program added beside the game you picked (for example a command prompt) could get keys straight away, once it was in front.
+
 ## [0.10.0] - 2026-11-12
 
 A setup guide and tour for new accounts, profiles that follow several games, a rebuilt overlay editor, and debug logs in the companion.
@@ -205,7 +212,8 @@ Stream reports, phone layouts and a published image.
 ### Security
 - Logging in ends the session the browser already had, so an old session can't stay valid after it.
 
-[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/dawitmek/Hyperion/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/dawitmek/Hyperion/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/dawitmek/Hyperion/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/dawitmek/Hyperion/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dawitmek/Hyperion/compare/v0.7.1...v0.8.0
